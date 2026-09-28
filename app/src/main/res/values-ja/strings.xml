@@ -215,9 +215,13 @@
     <string name="launcher_hide_homes">ホームアプリを非表示にする</string>
     <string name="widget_edit_toggle">ウィジェットの編集／終了</string>
     <string name="primary_mode">本体画面モード（実験的）</string>
-    <string name="primary_note">外部画面の代わりに本体画面を使用します。切替時は停止するので、再度開始してください。標準ホームは変更しません。端末のウィンドウ表示対応が必要です。</string>
+    <string name="primary_note">この端末の画面にデスクトップを表示します。外部画面は不要です。標準ホームは変更しません。</string>
     <string name="primary_start">本体画面でデスクトップを開始</string>
     <string name="primary_running">本体画面で実行中 · タップで設定</string>
     <string name="exit_desktop">デスクトップを終了</string>
     <string name="reopen_desktop">デスクトップを表示</string>
+    <string name="external_start_explicit">外部画面で開始（USB / scrcpy）</string>
+    <string name="external_wait_explicit">外部画面の接続を待つ（USB / scrcpy）</string>
+    <string name="external_start_note">USBディスプレイを接続するか、PCの scrcpy --new-display で仮想画面を作成してください。このボタンでは仮想画面を作成しません。未接続の場合は接続を待機します。</string>
+    <string name="mode_stop_first">表示先を変えるときは、デスクトップを終了してから開始ボタンを選んでください。</string>
 </resources>
