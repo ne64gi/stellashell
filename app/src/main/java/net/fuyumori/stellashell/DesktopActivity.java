@@ -31,33 +31,39 @@ public final class DesktopActivity extends Activity implements DisplayManager.Di
         FrameLayout shortcutCanvas=new FrameLayout(this);
         FrameLayout.LayoutParams shortcutParams=new FrameLayout.LayoutParams(-1,-1);shortcutParams.bottomMargin=Ui.dp(this,64);
         root.addView(shortcutCanvas,shortcutParams);shortcuts=new DesktopShortcuts(this,shortcutCanvas,displayId);
-        TextView menu=Ui.text(this,"⋮",26,Ui.MUTED);menu.setGravity(Gravity.CENTER);menu.setContentDescription(this.getString(R.string.ui_desktop_menu));menu.setOnClickListener(v->desktopMenu(menu));
-        root.addView(menu,new FrameLayout.LayoutParams(Ui.dp(this,48),Ui.dp(this,48),Gravity.TOP|Gravity.RIGHT));
-        root.setOnLongClickListener(v->{desktopMenu(menu);return true;});
-        root.setOnGenericMotionListener((v,event)->{if((event.getActionMasked()==MotionEvent.ACTION_BUTTON_PRESS)&&(event.getButtonState()&MotionEvent.BUTTON_SECONDARY)!=0){desktopMenu(menu);return true;}return false;});
+        View anchor=new View(this);root.addView(anchor,new FrameLayout.LayoutParams(1,1,Gravity.BOTTOM|Gravity.LEFT));
+        root.setOnLongClickListener(v->{desktopMenu(anchor,0);return true;});
+        root.setOnGenericMotionListener((v,event)->{if(event.getActionMasked()==MotionEvent.ACTION_BUTTON_PRESS&&(event.getButtonState()&MotionEvent.BUTTON_SECONDARY)!=0){desktopMenu(anchor,0);return true;}return false;});
+        root.post(()->desktopAction(getIntent()));
         setContentView(root);
         getWindow().getInsetsController().hide(WindowInsets.Type.systemBars());
         getWindow().getInsetsController().setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
     }
-    private void desktopMenu(View anchor){
+    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);root.post(()->desktopAction(intent));}
+    private void desktopAction(Intent intent){
+        if(!intent.hasExtra("desktop_action"))return;
+        int action=intent.getIntExtra("desktop_action",0);intent.removeExtra("desktop_action");
+        if(action>=0&&action<=7)desktopMenu(root,action);
+    }
+    private void desktopMenu(View anchor,int action){
         PopupMenu popup=new PopupMenu(this,anchor);
-        popup.getMenu().add(this.getString(R.string.ui_snap_icons_to_grid)).setCheckable(true).setChecked(Launches.prefs(this).getBoolean("shortcut_snap",false)).setOnMenuItemClickListener(item->{Launches.prefs(this).edit().putBoolean("shortcut_snap",!item.isChecked()).apply();return true;});
-        popup.getMenu().add(this.getString(R.string.ui_new_shortcut)).setOnMenuItemClickListener(item->{
+        popup.getMenu().add(0,1,0,this.getString(R.string.ui_snap_icons_to_grid)).setCheckable(true).setChecked(Launches.prefs(this).getBoolean("shortcut_snap",false)).setOnMenuItemClickListener(item->{Launches.prefs(this).edit().putBoolean("shortcut_snap",!item.isChecked()).apply();return true;});
+        popup.getMenu().add(0,2,0,this.getString(R.string.ui_new_shortcut)).setOnMenuItemClickListener(item->{
             List<Launches.App> apps=Launches.catalog(this);String[] labels=new String[apps.size()];for(int i=0;i<labels.length;i++)labels[i]=apps.get(i).label;
             new android.app.AlertDialog.Builder(this).setTitle(this.getString(R.string.ui_add_shortcut)).setItems(labels,(d,n)->{String component=apps.get(n).component;if(!Launches.desktop(this).contains(component))Launches.toggleDesktop(this,component);}).setNegativeButton(this.getString(R.string.ui_cancel),null).show();return true;
         });
-        popup.getMenu().add(this.getString(R.string.ui_wallpaper)).setOnMenuItemClickListener(item->{
+        popup.getMenu().add(0,3,0,this.getString(R.string.ui_wallpaper)).setOnMenuItemClickListener(item->{
             new android.app.AlertDialog.Builder(this).setTitle(this.getString(R.string.ui_wallpaper)).setItems(new String[]{this.getString(R.string.ui_choose_image),this.getString(R.string.ui_fill_screen_with_image),this.getString(R.string.ui_fit_entire_image_with_margins),this.getString(R.string.ui_deep_ocean),this.getString(R.string.ui_dusk),this.getString(R.string.ui_graphite)},(d,n)->{
                 if(n==0)imageWallpaper.choose();
                 else if(n<3){Launches.prefs(this).edit().putBoolean("wallpaper_fit",n==2).apply();}
                 else Launches.prefs(this).edit().putInt("wallpaper",n-3).putBoolean("wallpaper_image",false).apply();
             }).setNegativeButton(this.getString(R.string.ui_close),null).show();return true;
         });
-        popup.getMenu().add(this.getString(R.string.ui_display_settings)).setOnMenuItemClickListener(item->{try{startActivity(new Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS),android.app.ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle());}catch(RuntimeException e){Launches.problem(this,e.getMessage());}return true;});
-        popup.getMenu().add(getString(R.string.ui_desktop_settings)).setOnMenuItemClickListener(item->{Launches.settings(this,displayId);return true;});
-        popup.getMenu().add(this.getString(R.string.ui_add_widget)).setOnMenuItemClickListener(item->{widgets.choose();return true;});
-        popup.getMenu().add(widgets.isEditing()?this.getString(R.string.ui_finish_editing_widgets):this.getString(R.string.ui_edit_widgets)).setOnMenuItemClickListener(item->{widgets.setEditing(!widgets.isEditing());return true;});
-        popup.show();
+        popup.getMenu().add(0,4,0,this.getString(R.string.ui_display_settings)).setOnMenuItemClickListener(item->{try{startActivity(new Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS),android.app.ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle());}catch(RuntimeException e){Launches.problem(this,e.getMessage());}return true;});
+        popup.getMenu().add(0,5,0,getString(R.string.ui_desktop_settings)).setOnMenuItemClickListener(item->{Launches.settings(this,displayId);return true;});
+        popup.getMenu().add(0,6,0,this.getString(R.string.ui_add_widget)).setOnMenuItemClickListener(item->{widgets.choose();return true;});
+        popup.getMenu().add(0,7,0,widgets.isEditing()?this.getString(R.string.ui_finish_editing_widgets):this.getString(R.string.ui_edit_widgets)).setOnMenuItemClickListener(item->{widgets.setEditing(!widgets.isEditing());return true;});
+        if(action==0)popup.show();else popup.getMenu().performIdentifierAction(action,0);
     }
     private void wallpaper(){
         int[][] colors={{Color.rgb(12,27,42),Color.rgb(24,58,67),Color.rgb(12,19,33)},{0xff392b50,0xff824652,0xff222139},{0xff30343b,0xff1c2028,0xff11151b}};

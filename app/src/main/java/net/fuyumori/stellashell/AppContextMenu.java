@@ -27,6 +27,10 @@ final class AppContextMenu {
         menu.add(Launches.desktop(c).contains(component)?c.getString(R.string.ui_remove_from_desktop):c.getString(R.string.ui_add_to_desktop)).setOnMenuItemClickListener(m->{Launches.toggleDesktop(c,component);return true;});
         menu.add(Launches.pins(c).contains(component)?c.getString(R.string.ui_unpin_from_taskbar):c.getString(R.string.ui_pin_to_taskbar)).setOnMenuItemClickListener(m->{Launches.togglePin(c,component);return true;});
         menu.add(c.getString(R.string.ui_app_info)).setOnMenuItemClickListener(m->{dismiss.run();try{c.startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+p.packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),ActivityOptions.makeBasic().setLaunchDisplayId(display).toBundle());}catch(RuntimeException e){Launches.problem(c,e.getMessage());}return true;});
+        SubMenu groups=menu.addSubMenu(c.getString(R.string.launcher_assign_group));
+        java.util.List<String> names=new java.util.ArrayList<>();names.add("");names.addAll(AppOrganization.groups(c));
+        for(String group:names)groups.add(group.isEmpty()?c.getString(R.string.launcher_ungrouped):group).setCheckable(true).setChecked(group.equals(AppOrganization.group(c,component))).setOnMenuItemClickListener(item->{AppOrganization.assign(c,component,group);return true;});
+        menu.add(c.getString(AppOrganization.hidden(c,component)?R.string.launcher_show_app:R.string.launcher_hide_app)).setOnMenuItemClickListener(item->{AppOrganization.hide(c,component,!AppOrganization.hidden(c,component));return true;});
         popup.show();
     }
     private static void customSize(Context c,String component,AppLaunchProfile p){

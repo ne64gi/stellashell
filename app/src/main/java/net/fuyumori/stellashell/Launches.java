@@ -64,6 +64,13 @@ final class Launches {
         prefs(c).edit().putString("last_error",message==null?c.getString(R.string.ui_unknown_error):message).apply();
         Ui.message(c,message==null?c.getString(R.string.ui_operation_failed):message);
     }
+    static void desktopAction(Context c,int displayId,int action){
+        try{
+            Displays.require(c,displayId);
+            Intent intent=new Intent(c,DesktopActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("desktop_action",action);
+            c.startActivity(intent,ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle());
+        }catch(RuntimeException e){problem(c,e.getMessage());}
+    }
     static void home(Context c,int displayId) {
         launch(c,new ComponentName(c,DesktopActivity.class).flattenToString(),displayId,1,false);
     }

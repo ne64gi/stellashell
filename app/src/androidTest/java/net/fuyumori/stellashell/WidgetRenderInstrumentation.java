@@ -15,10 +15,10 @@ public final class WidgetRenderInstrumentation extends Instrumentation {
         Bundle result=new Bundle();
         try{
             Throwable[] failure={null};
-            runOnMainSync(()->{try{check(400,300,200,100);check(100,120,200,100);check(200,100,200,100);iconPreview();locales();}catch(Throwable error){failure[0]=error;}});
+            runOnMainSync(()->{try{check(400,300,200,100);check(100,120,200,100);check(200,100,200,100);iconPreview();locales();organization();}catch(Throwable error){failure[0]=error;}});
             if(failure[0]!=null)throw failure[0];
             wallpaperDecode();
-            result.putString("stream","WidgetViewport: 3 rendering/input scenarios + bounded wallpaper decoding + locale checks passed\n");finish(-1,result);
+            result.putString("stream","WidgetViewport: 3 rendering/input scenarios + bounded wallpaper decoding + locale + app organization checks passed\n");finish(-1,result);
         }catch(Throwable error){result.putString("stream","FAILED: "+error+"\n");finish(0,result);}
     }
     private void check(int width,int height,int logicalWidth,int logicalHeight){
@@ -39,6 +39,22 @@ public final class WidgetRenderInstrumentation extends Instrumentation {
         MotionEvent event=MotionEvent.obtain(0,0,MotionEvent.ACTION_DOWN,x,y,0);viewport.dispatchTouchEvent(event);event.recycle();
         require(Math.abs(touch[0]-logicalWidth*.75f)<.01f&&Math.abs(touch[1]-logicalHeight*.25f)<.01f,"input coordinate mismatch");
         event=MotionEvent.obtain(0,1,MotionEvent.ACTION_UP,x,y,0);viewport.dispatchTouchEvent(event);event.recycle();
+    }
+    private void organization(){
+        android.content.Context isolated=new android.content.ContextWrapper(getTargetContext()){
+            @Override public android.content.SharedPreferences getSharedPreferences(String name,int mode){return super.getSharedPreferences("instrumentation_app_organization",mode);}
+        };
+        try{
+            isolated.getSharedPreferences("app_organization",0).edit().clear().commit();
+            AppOrganization.addGroup(isolated,"Tools");AppOrganization.assign(isolated,"test.package/.Main","Tools");AppOrganization.hide(isolated,"test.package/.Main",true);
+            require(AppOrganization.hidden(isolated,"test.package/.Main"),"hidden flag not saved");
+            AppOrganization.renameGroup(isolated,"Tools","Work");
+            require("Work".equals(AppOrganization.group(isolated,"test.package/.Main")),"rename lost membership");
+            AppOrganization.renameGroup(isolated,"Work","");
+            require(AppOrganization.group(isolated,"test.package/.Main").isEmpty(),"deleted group retained membership");
+            require(AppOrganization.hidden(isolated,"test.package/.Main"),"group edit changed visibility");
+            AppOrganization.hide(isolated,"test.package/.Main",false);require(!AppOrganization.hidden(isolated,"test.package/.Main"),"unhide failed");
+        }finally{getTargetContext().deleteSharedPreferences("instrumentation_app_organization");}
     }
     private void locales(){
         android.content.res.Configuration configuration=new android.content.res.Configuration(getTargetContext().getResources().getConfiguration());

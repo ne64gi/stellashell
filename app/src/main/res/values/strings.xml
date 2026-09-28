@@ -189,4 +189,29 @@
     <plurals name="app_count"><item quantity="one">%d app</item><item quantity="other">%d apps</item></plurals>
     <string name="display_connected">%1$s connected</string>
     <string name="setup_status">%1$s\n%2$s\nTaskbar overlay: %3$s</string>
+    <string name="widget_search_hint">Search widgets or apps</string>
+    <string name="widget_search_clear">Clear search</string>
+    <string name="widget_search_empty">No matching widgets</string>
+    <string name="battery_unknown">Battery —</string>
+    <string name="battery_percent">%1$d%%</string>
+    <string name="battery_charging">Battery %1$d%%, charging</string>
+    <string name="battery_remaining">Battery %1$d%% remaining</string>
+    <string name="external_back">Back on external display</string>
+    <string name="launcher_tools">Desktop and launcher settings</string>
+    <string name="launcher_desktop_tools">Desktop tools</string>
+    <string name="launcher_filter">Filter app group</string>
+    <string name="launcher_all">All apps</string>
+    <string name="launcher_ungrouped">Ungrouped</string>
+    <string name="launcher_hidden">Hidden apps</string>
+    <string name="launcher_new_group">New group…</string>
+    <string name="launcher_rename_group">Rename group…</string>
+    <string name="launcher_delete_group">Delete group</string>
+    <string name="launcher_delete_group_note">Apps in this group will become ungrouped. Apps will not be uninstalled.</string>
+    <string name="launcher_group_name">Group name</string>
+    <string name="launcher_group_invalid">Enter a unique, non-empty group name.</string>
+    <string name="launcher_assign_group">App group</string>
+    <string name="launcher_hide_app">Hide from launcher</string>
+    <string name="launcher_show_app">Show in launcher</string>
+    <string name="launcher_hide_homes">Hide home launcher apps</string>
+    <string name="widget_edit_toggle">Edit / finish editing widgets</string>
 </resources>

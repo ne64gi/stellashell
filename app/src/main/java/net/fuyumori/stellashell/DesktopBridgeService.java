@@ -75,6 +75,12 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
             return "OK: " + exec(command);
         } catch (Exception e) { return "ERROR: " + e.getMessage(); }
     }
+    @Override public synchronized String back(int displayId){
+        try{
+            if(context==null)throw new IllegalStateException("Shizuku context unavailable");
+            return "OK: "+exec(Policy.backCommand(displayId,Displays.ids(context)));
+        }catch(Exception e){return "ERROR: "+e.getMessage();}
+    }
     private TaskBackend taskBackend;
     private TaskBackend tasks() throws Exception {
         if(context==null)throw new IllegalStateException("Shizuku context unavailable");

@@ -52,10 +52,46 @@ final class DesktopWidgets {
         List<AppWidgetProviderInfo> providers=new ArrayList<>(manager.getInstalledProviders());
         providers.removeIf(p->(p.widgetCategory&AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN)==0);
         providers.sort(Comparator.comparing(p->p.loadLabel(activity.getPackageManager()),String.CASE_INSENSITIVE_ORDER));
-        String[] labels=new String[providers.size()];for(int i=0;i<labels.length;i++){AppWidgetProviderInfo p=providers.get(i);labels[i]=p.loadLabel(activity.getPackageManager())+"\n"+p.provider.getPackageName();}
-        if(labels.length==0){Ui.message(activity,activity.getString(R.string.ui_no_widgets_available));return;}
-        new AlertDialog.Builder(activity).setTitle(activity.getString(R.string.ui_add_widget)).setItems(labels,(d,n)->allocate(providers.get(n))).setNegativeButton(activity.getString(R.string.ui_cancel),null).show();
+        if(providers.isEmpty()){Ui.message(activity,activity.getString(R.string.ui_no_widgets_available));return;}
+        List<String> labels=new ArrayList<>(),index=new ArrayList<>();
+        for(AppWidgetProviderInfo provider:providers){
+            String widget=provider.loadLabel(activity.getPackageManager()),app=provider.provider.getPackageName();
+            try{app=String.valueOf(activity.getPackageManager().getApplicationLabel(activity.getPackageManager().getApplicationInfo(provider.provider.getPackageName(),0)));}
+            catch(android.content.pm.PackageManager.NameNotFoundException ignored){}
+            labels.add(widget+"\n"+app+" · "+provider.provider.getPackageName());
+            index.add(searchKey(widget+" "+app+" "+provider.provider.getPackageName()));
+        }
+        LinearLayout panel=new LinearLayout(activity);panel.setOrientation(LinearLayout.VERTICAL);panel.setPadding(dp(16),0,dp(16),0);
+        LinearLayout searchRow=new LinearLayout(activity);
+        EditText search=new EditText(activity);search.setSingleLine(true);search.setHint(R.string.widget_search_hint);search.setContentDescription(activity.getString(R.string.widget_search_hint));
+        searchRow.addView(search,new LinearLayout.LayoutParams(0,dp(48),1));
+        TextView clear=Ui.text(activity,"×",24,Ui.TEXT);clear.setGravity(Gravity.CENTER);clear.setContentDescription(activity.getString(R.string.widget_search_clear));clear.setOnClickListener(v->search.setText(""));
+        searchRow.addView(clear,new LinearLayout.LayoutParams(dp(48),dp(48)));panel.addView(searchRow);
+        TextView empty=Ui.text(activity,activity.getString(R.string.widget_search_empty),14,Ui.MUTED);empty.setPadding(0,dp(12),0,dp(12));panel.addView(empty);
+        ListView list=new ListView(activity);
+        panel.addView(list,new LinearLayout.LayoutParams(-1,Math.max(dp(100),Math.min(dp(360),activity.getResources().getDisplayMetrics().heightPixels/2))));
+        List<AppWidgetProviderInfo> visible=new ArrayList<>();
+        ArrayAdapter<String> adapter=new ArrayAdapter<>(activity,android.R.layout.simple_list_item_1,new ArrayList<>());list.setAdapter(adapter);
+        Runnable filter=()->{
+            String query=searchKey(search.getText().toString()).trim();String[] terms=query.isEmpty()?new String[0]:query.split("\\s+");
+            visible.clear();adapter.setNotifyOnChange(false);adapter.clear();
+            for(int i=0;i<providers.size();i++){
+                boolean match=true;for(String term:terms)if(!index.get(i).contains(term)){match=false;break;}
+                if(match){visible.add(providers.get(i));adapter.add(labels.get(i));}
+            }
+            adapter.notifyDataSetChanged();list.setSelection(0);empty.setVisibility(visible.isEmpty()?View.VISIBLE:View.GONE);clear.setVisibility(query.isEmpty()?View.INVISIBLE:View.VISIBLE);
+        };
+        search.addTextChangedListener(new android.text.TextWatcher(){
+            public void beforeTextChanged(CharSequence s,int start,int count,int after){}
+            public void onTextChanged(CharSequence s,int start,int before,int count){filter.run();}
+            public void afterTextChanged(android.text.Editable text){}
+        });
+        AlertDialog dialog=new AlertDialog.Builder(activity).setTitle(activity.getString(R.string.ui_add_widget)).setView(panel).setNegativeButton(activity.getString(R.string.ui_cancel),null).create();
+        list.setOnItemClickListener((parent,view,position,id)->{AppWidgetProviderInfo selected=visible.get(position);dialog.dismiss();allocate(selected);});
+        filter.run();dialog.setOnShowListener(d->dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN|WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE));dialog.show();
+
     }
+    private static String searchKey(String value){return java.text.Normalizer.normalize(value,java.text.Normalizer.Form.NFKC).toLowerCase(Locale.ROOT);}
     private void allocate(AppWidgetProviderInfo info){
         try{
             pending=host.allocateAppWidgetId();prefs.edit().putInt("pending",pending).apply();

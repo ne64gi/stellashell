@@ -189,4 +189,29 @@
     <plurals name="app_count"><item quantity="other">%d 件のアプリ</item></plurals>
     <string name="display_connected">%1$s 接続済み</string>
     <string name="setup_status">%1$s\n%2$s\n操作バー: %3$s</string>
+    <string name="widget_search_hint">ウィジェット名・アプリ名で検索</string>
+    <string name="widget_search_clear">検索をクリア</string>
+    <string name="widget_search_empty">一致するウィジェットがありません</string>
+    <string name="battery_unknown">バッテリー —</string>
+    <string name="battery_percent">%1$d%%</string>
+    <string name="battery_charging">バッテリー %1$d%%、充電中</string>
+    <string name="battery_remaining">バッテリー残量 %1$d%%</string>
+    <string name="external_back">外部画面で戻る</string>
+    <string name="launcher_tools">デスクトップ・ランチャー設定</string>
+    <string name="launcher_desktop_tools">デスクトップ操作</string>
+    <string name="launcher_filter">アプリグループの絞り込み</string>
+    <string name="launcher_all">すべてのアプリ</string>
+    <string name="launcher_ungrouped">グループなし</string>
+    <string name="launcher_hidden">非表示のアプリ</string>
+    <string name="launcher_new_group">グループを作成…</string>
+    <string name="launcher_rename_group">グループ名を変更…</string>
+    <string name="launcher_delete_group">グループを削除</string>
+    <string name="launcher_delete_group_note">所属アプリを「グループなし」に戻します。アプリはアンインストールされません。</string>
+    <string name="launcher_group_name">グループ名</string>
+    <string name="launcher_group_invalid">空欄や既存と同じ名前は使えません</string>
+    <string name="launcher_assign_group">アプリのグループ</string>
+    <string name="launcher_hide_app">ランチャーで非表示</string>
+    <string name="launcher_show_app">ランチャーに表示</string>
+    <string name="launcher_hide_homes">ホームアプリを非表示にする</string>
+    <string name="widget_edit_toggle">ウィジェットの編集／終了</string>
 </resources>

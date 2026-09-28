@@ -25,4 +25,10 @@ public class PolicyTest {
         List<String> recent=Policy.recent(old,"com.example/App3");
         assertEquals(6,recent.size());assertEquals("com.example/App3",recent.get(0));assertEquals(6,new HashSet<>(recent).size());
     }
+    @org.junit.Test public void backIsExplicitlyScopedToAnAvailableExternalDisplay(){
+        org.junit.Assert.assertArrayEquals(new String[]{"/system/bin/input","-d","9","keyevent","4"},Policy.backCommand(9,java.util.Arrays.asList(9,43)));
+        for(int id:new int[]{0,-1,7}){
+            try{Policy.backCommand(id,java.util.Arrays.asList(9,43));org.junit.Assert.fail("Rejected display expected");}catch(IllegalArgumentException expected){}
+        }
+    }
 }

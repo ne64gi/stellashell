@@ -16,6 +16,29 @@ public final class DockService extends Service implements DisplayManager.Display
     private static final String STOP="net.fuyumori.stellashell.STOP";
     private DisplayManager displays; private WindowManager windows; private View dock; private int displayId=-1;
     private AppMenu menu;private boolean collapsed;
+    private TextView batteryText;private int batteryPercent=-1;private boolean batteryCharging,backPending,batteryRegistered;
+    private final BroadcastReceiver batteryReceiver=new BroadcastReceiver(){public void onReceive(Context context,Intent intent){
+        int level=intent.getIntExtra(BatteryManager.EXTRA_LEVEL,-1),scale=intent.getIntExtra(BatteryManager.EXTRA_SCALE,-1);
+        batteryPercent=level>=0&&scale>0?Math.min(100,Math.round(level*100f/scale)):-1;
+        batteryCharging=intent.getIntExtra(BatteryManager.EXTRA_PLUGGED,0)!=0;updateBattery();
+    }};
+    private void updateBattery(){
+        if(batteryText==null)return;
+        String label=batteryPercent<0?getString(R.string.battery_unknown):getString(R.string.battery_percent,batteryPercent);
+        batteryText.setText((batteryCharging?"⚡ ":"")+label);
+        batteryText.setTextColor(batteryPercent>=0&&batteryPercent<=20&&!batteryCharging?0xffffad79:Ui.TEXT);
+        String description=batteryPercent<0?label:getString(batteryCharging?R.string.battery_charging:R.string.battery_remaining,batteryPercent);
+        batteryText.setContentDescription(description);batteryText.setTooltipText(description);
+    }
+    private View batteryView(Context c){batteryText=Ui.text(c,"",13,Ui.TEXT);batteryText.setGravity(Gravity.CENTER);updateBattery();return batteryText;}
+    private void back(){
+        if(menu!=null&&menu.isOpen()){menu.close();return;}
+        if(backPending)return;
+        Bridge bridge=Bridge.get(this);if(!bridge.ready()){Ui.message(this,bridge.status());return;}
+        int target=displayId;backPending=true;
+        bridge.call(service->service.back(target),(result,error)->{backPending=false;if(error!=null)Launches.problem(this,error);});
+    }
+
     private TaskSession tasks;private WindowChrome chrome;private String taskSignature="";
     private final ExecutorService menuLoader=Executors.newSingleThreadExecutor();
     static void enableHome(Context c,boolean enabled) {
@@ -38,6 +61,9 @@ public final class DockService extends Service implements DisplayManager.Display
     }
     @Override public void onCreate() {
         super.onCreate();
+        IntentFilter batteryFilter=new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+        Intent battery=Build.VERSION.SDK_INT>=33?registerReceiver(batteryReceiver,batteryFilter,Context.RECEIVER_NOT_EXPORTED):registerReceiver(batteryReceiver,batteryFilter);
+        batteryRegistered=true;if(battery!=null)batteryReceiver.onReceive(this,battery);
         NotificationManager notifications=getSystemService(NotificationManager.class);
         notifications.createNotificationChannel(new NotificationChannel("desktop",this.getString(R.string.ui_external_desktop),NotificationManager.IMPORTANCE_LOW));
         startForeground(41,notification(this.getString(R.string.ui_waiting_for_a_display)));
@@ -64,7 +90,7 @@ public final class DockService extends Service implements DisplayManager.Display
         if(!keepChrome){if(chrome!=null)chrome.clear();chrome=null;}
         if(menu!=null)menu.close();menu=null;
         if(dock!=null && windows!=null)try{windows.removeViewImmediate(dock);}catch(RuntimeException ignored){}
-        dock=null;if(!keepChrome)windows=null;
+        dock=null;batteryText=null;if(!keepChrome)windows=null;
     }
     private void update(boolean openHome) {
         int preferred=displayId>0?displayId:Launches.prefs(this).getInt("preferred_display",-1);
@@ -94,6 +120,8 @@ public final class DockService extends Service implements DisplayManager.Display
             });apps.setContentDescription(this.getString(R.string.ui_app_menu));apps.setTextColor(Ui.ACCENT);
             row.addView(apps,new LinearLayout.LayoutParams(Ui.dp(c,collapsed?56:106),Ui.dp(c,44)));
             if(!collapsed){
+            Button back=Ui.button(c,"‹",this::back);back.setContentDescription(getString(R.string.external_back));back.setTooltipText(getString(R.string.external_back));
+            row.addView(back,new LinearLayout.LayoutParams(Ui.dp(c,44),Ui.dp(c,44)));
             Button home=Ui.button(c,"▱",()->Launches.home(this,displayId));home.setContentDescription(this.getString(R.string.ui_show_desktop));home.setTooltipText(this.getString(R.string.ui_show_desktop));
             row.addView(home,new LinearLayout.LayoutParams(Ui.dp(c,48),Ui.dp(c,44)));
             int widthDp=Math.round(c.getResources().getDisplayMetrics().widthPixels/c.getResources().getDisplayMetrics().density);
@@ -109,15 +137,15 @@ public final class DockService extends Service implements DisplayManager.Display
             for(TaskSession.Task t:running)if(!represented.contains(t.id))addEntry(c,entries,t.component,t,false);
             row.addView(strip,new LinearLayout.LayoutParams(0,Ui.dp(c,44),1));
 
+            row.addView(batteryView(c),new LinearLayout.LayoutParams(Ui.dp(c,76),Ui.dp(c,44)));
             TextView connection=Ui.text(c,Bridge.get(this).ready()?"●":"○",12,Bridge.get(this).ready()?Ui.ACCENT:Ui.MUTED);
             connection.setGravity(Gravity.CENTER);connection.setContentDescription(Bridge.get(this).status());connection.setTooltipText(Bridge.get(this).status());
             connection.setOnClickListener(v->Launches.settings(this,displayId));row.addView(connection,new LinearLayout.LayoutParams(Ui.dp(c,28),-1));
             if(widthDp>=500){TextClock clock=new TextClock(c);clock.setFormat24Hour("HH:mm");clock.setFormat12Hour("HH:mm");clock.setTextColor(Ui.TEXT);clock.setTextSize(16);row.addView(clock,new LinearLayout.LayoutParams(Ui.dp(c,58),-2));}
-            Button settings=Ui.button(c,"⚙",()->{if(menu!=null)menu.close();Launches.settings(this,displayId);});settings.setContentDescription(this.getString(R.string.ui_desktop_settings));
-            row.addView(settings,new LinearLayout.LayoutParams(Ui.dp(c,48),Ui.dp(c,44)));
             Button hide=Ui.button(c,"−",()->{collapsed=true;removeDock();update(false);});hide.setContentDescription(this.getString(R.string.ui_collapse_taskbar));
             row.addView(hide,new LinearLayout.LayoutParams(Ui.dp(c,44),Ui.dp(c,44)));
             }
+            if(collapsed)row.addView(batteryView(c),new LinearLayout.LayoutParams(Ui.dp(c,76),Ui.dp(c,44)));
             WindowManager.LayoutParams p=new WindowManager.LayoutParams(collapsed?-2:-1,-2,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,PixelFormat.TRANSLUCENT);
             p.gravity=Gravity.BOTTOM|Gravity.LEFT;p.setFitInsetsTypes(0);p.y=Ui.dp(c,4);p.setTitle("StellaShell dock");
@@ -159,6 +187,7 @@ public final class DockService extends Service implements DisplayManager.Display
         if("pinned".equals(key)){removeDock();if(displayId>0)attachDock();}
     }
     @Override public void onDestroy(){
+        if(batteryRegistered){unregisterReceiver(batteryReceiver);batteryRegistered=false;}
         if(displays!=null)displays.unregisterDisplayListener(this);
         Launches.prefs(this).unregisterOnSharedPreferenceChangeListener(this);if(tasks!=null)tasks.close();removeDock();menuLoader.shutdownNow();super.onDestroy();
     }

@@ -29,6 +29,10 @@ public final class Policy {
                 "--windowingMode", Integer.toString(mode), "-a", "android.intent.action.MAIN", "-n", component,
                 "-f", "0x10200000"};
     }
+    public static String[] backCommand(int displayId,Collection<Integer> available){
+        requireTarget(displayId,available);
+        return new String[]{"/system/bin/input","-d",Integer.toString(displayId),"keyevent","4"};
+    }
     public static List<String> recent(List<String> old, String component) {
         component(component);
         List<String> out = new ArrayList<>(); out.add(component);
