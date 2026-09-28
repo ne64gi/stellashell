@@ -2,6 +2,10 @@
 
 <img src="docs/stellashell-icon.svg" width="112" alt="StellaShell icon">
 
+**[APKをダウンロード / Download APK — v0.5.5](https://github.com/ne64gi/stellashell/releases/download/v0.5.5/StellaShell-0.5.5.apk)** · [リリース情報・SHA-256](https://github.com/ne64gi/stellashell/releases/tag/v0.5.5)
+
+実機検証済みの開発用署名APKです。必要条件と導入手順は下記を参照してください。
+
 Androidの外部画面をデスクトップとして使う、Shizukuベースの独立したDesktop Shell。Sony SOG06 / Android 14 と REDMAGIC NX809J / Android 16 で検証しています。Dextop の topology API・アクセシビリティミラー・Flutter は使いません。本体の標準ホームは変更しません。
 
 ## Requirements / 通常のセットアップ
