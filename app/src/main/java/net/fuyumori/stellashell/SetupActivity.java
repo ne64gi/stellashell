@@ -19,7 +19,7 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         super.onCreate(state);
         // scrcpy --start-app opens the launcher entry on its own display.
         // Explicit settings launches have no LAUNCHER category and stay here.
-        if(getIntent().hasCategory(Intent.CATEGORY_LAUNCHER) && getDisplay()!=null && getDisplay().getDisplayId()>0
+        if(!Displays.primary(this) && getIntent().hasCategory(Intent.CATEGORY_LAUNCHER) && getDisplay()!=null && getDisplay().getDisplayId()>0
                 && Displays.ids(this).contains(getDisplay().getDisplayId()) && Settings.canDrawOverlays(this)) {
             DockService.start(this);finish();return;
         }
@@ -40,6 +40,11 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
                 .setMessage(this.getString(R.string.ui_enable_freeform_windows_and_turn_off_android_s_force_desktop_mode))
                 .setNegativeButton(this.getString(R.string.ui_cancel),null).setPositiveButton(this.getString(R.string.ui_enable),(d,w)->apply(false)).show());
         root.addView(enable);
+        Switch primary=new Switch(this);primary.setText(R.string.primary_mode);primary.setTextColor(Ui.TEXT);
+        primary.setChecked(Displays.primary(this));primary.setOnCheckedChangeListener((button,checked)->{
+            if(Launches.prefs(this).getBoolean("enabled",false))DockService.stop(this,false);
+            Launches.prefs(this).edit().putBoolean("primary_mode",checked).apply();refresh();
+        });root.addView(primary);Ui.note(root,getString(R.string.primary_note));
         start=Ui.button(this,this.getString(R.string.ui_start_external_desktop),()->{
             if(Launches.prefs(this).getBoolean("enabled",false)){DockService.stop(this);refresh();return;}
             if(!bridge.ready()){Ui.message(this,this.getString(R.string.ui_connect_to_shizuku_first));return;}
@@ -51,8 +56,8 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         Switch mode=new Switch(this);mode.setText(this.getString(R.string.ui_launch_in_windows_experimental));mode.setTextColor(Ui.TEXT);mode.setTextSize(15);mode.setPadding(0,Ui.dp(this,8),0,Ui.dp(this,8));
         mode.setChecked(Launches.prefs(this).getBoolean("freeform",false));mode.setOnCheckedChangeListener((button,checked)->Launches.prefs(this).edit().putBoolean("freeform",checked).apply());root.addView(mode);
         Ui.note(root,this.getString(R.string.ui_when_off_apps_open_fullscreen_drag_the_active_window_s_title_bar));
-        root.addView(Ui.button(this,this.getString(R.string.ui_reopen_external_desktop),()->{
-            int id=Policy.selectDisplay(-1,Displays.ids(this));
+        root.addView(Ui.button(this,this.getString(R.string.reopen_desktop),()->{
+            int id=Displays.target(this,Launches.prefs(this).getInt("preferred_display",-1));
             if(id<0){Ui.message(this,this.getString(R.string.ui_connect_an_external_display_first));return;}
             if(!Launches.prefs(this).getBoolean("enabled",false)){Ui.message(this,this.getString(R.string.ui_start_the_external_desktop_first));return;}
             Launches.home(this,id);
@@ -99,7 +104,7 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         String version="?";
         try{version=getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(PackageManager.NameNotFoundException ignored){}
         StringBuilder s=new StringBuilder("StellaShell ").append(version).append(this.getString(R.string.ui_model)).append(Build.MODEL).append(" / Android ").append(Build.VERSION.RELEASE)
-                .append("\n").append(bridge.status()).append(this.getString(R.string.ui_overlay_permission)).append(Settings.canDrawOverlays(this))
+                .append("\nPrimary mode: ").append(Displays.primary(this)).append("\n").append(bridge.status()).append(this.getString(R.string.ui_overlay_permission)).append(Settings.canDrawOverlays(this))
                 .append(this.getString(R.string.ui_session)).append(Launches.prefs(this).getBoolean("enabled",false))
                 .append(this.getString(R.string.ui_restore_record)).append(Launches.prefs(this).contains("before_desktop"));
         for(Display d:Displays.available(this))s.append(this.getString(R.string.ui_display)).append(d.getDisplayId()).append(": ").append(d.getName())
@@ -111,8 +116,9 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         if(status==null || isDestroyed())return;
         List<Display> monitors=Displays.available(this);
         String display=monitors.isEmpty()?getString(R.string.ui_no_external_display_connected):getString(R.string.display_connected,monitors.get(0).getName());
+        if(Displays.primary(this))display=getString(R.string.primary_mode);
         status.setText(getString(R.string.setup_status,display,bridge.status(),getString(Settings.canDrawOverlays(this)?R.string.ui_allowed:R.string.ui_permission_required)));
-        start.setText(Launches.prefs(this).getBoolean("enabled",false)?this.getString(R.string.ui_stop_external_desktop):this.getString(R.string.ui_start_external_desktop));
+        start.setText(Launches.prefs(this).getBoolean("enabled",false)?getString(R.string.exit_desktop):getString(Displays.primary(this)?R.string.primary_start:R.string.ui_start_external_desktop));
         enable.setEnabled(!busy && bridge.ready());restore.setEnabled(!busy && bridge.ready() && Launches.prefs(this).contains("before_desktop"));
         detail.setText(diagnostics());
     }

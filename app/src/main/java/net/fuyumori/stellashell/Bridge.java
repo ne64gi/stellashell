@@ -31,7 +31,7 @@ public final class Bridge {
     private Bridge(Context context) {
         this.context=context;
         args = new Shizuku.UserServiceArgs(new ComponentName(context, DesktopBridgeService.class))
-                .daemon(false).processNameSuffix("desktop_bridge").debuggable(false).version(8);
+                .daemon(false).processNameSuffix("desktop_bridge").debuggable(false).version(9);
         Shizuku.addBinderReceivedListenerSticky(this::connect);
         Shizuku.addBinderDeadListener(() -> { service = null; binding = false; changed(); });
         Shizuku.addRequestPermissionResultListener((code, result) -> { if (result == PackageManager.PERMISSION_GRANTED) connect(); changed(); });
@@ -69,6 +69,7 @@ public final class Bridge {
             try {
                 IDesktopBridge current = service;
                 if (current == null || !current.asBinder().isBinderAlive()) throw new IllegalStateException(status());
+                current.setPrimaryMode(Displays.primaryActive(context));
                 value = work.run(current);
                 if (value == null || value.startsWith("ERROR:")) throw new IllegalStateException(value);
             } catch (Exception e) { failure = e.getMessage() == null ? e.toString() : e.getMessage(); }

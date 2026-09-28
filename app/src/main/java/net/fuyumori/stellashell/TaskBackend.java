@@ -13,6 +13,7 @@ import java.util.*;
 
 /** Shell-UID backend. Every mutation re-reads the task and its external display. */
 final class TaskBackend {
+    boolean primaryMode;
     private final Context context;
     private final Class<?> api, transaction, token;
     private final Object manager, organizer;
@@ -52,7 +53,7 @@ final class TaskBackend {
         return c!=null?c:(ComponentName)field(task,"topActivity");
     }
     private Display display(int id) {
-        if(id<=0)throw new IllegalArgumentException("The main display is not supported");
+        if(id<0 || (id==0 && !primaryMode))throw new IllegalArgumentException("The main display is not supported");
         Display d=context.getSystemService(DisplayManager.class).getDisplay(id);
         if(d==null||!d.isValid()||(d.getFlags()&Display.FLAG_PRIVATE)!=0)throw new IllegalArgumentException("No external display");
         return d;

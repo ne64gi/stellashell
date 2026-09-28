@@ -65,7 +65,7 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
 
     @Override public synchronized String launch(String component, int displayId, int mode) {
         try {
-            String[] command = Policy.launchCommand(component, displayId, mode);
+            String[] command = Policy.launchCommand(component, displayId, mode,primaryMode);
             if (context == null) throw new IllegalStateException("Shizuku API 13 or later is required");
             Display display = context.getSystemService(DisplayManager.class).getDisplay(displayId);
             if (display == null || !display.isValid() || (display.getFlags() & Display.FLAG_PRIVATE) != 0)
@@ -78,13 +78,16 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
     @Override public synchronized String back(int displayId){
         try{
             if(context==null)throw new IllegalStateException("Shizuku context unavailable");
-            return "OK: "+exec(Policy.backCommand(displayId,Displays.ids(context)));
+            return "OK: "+exec(Policy.backCommand(displayId,Displays.allIds(context),primaryMode));
         }catch(Exception e){return "ERROR: "+e.getMessage();}
     }
+    private boolean primaryMode;
+    @Override public synchronized void setPrimaryMode(boolean enabled){ primaryMode=enabled; }
     private TaskBackend taskBackend;
     private TaskBackend tasks() throws Exception {
         if(context==null)throw new IllegalStateException("Shizuku context unavailable");
         if(taskBackend==null)taskBackend=new TaskBackend(context);
+        taskBackend.primaryMode=primaryMode;
         return taskBackend;
     }
     @Override public synchronized String taskSnapshot(int displayId) {

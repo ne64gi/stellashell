@@ -10,7 +10,7 @@ import android.widget.*;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 
-/** Display-scoped, focusable app menu. Never creates a window on the phone. */
+/** Display-scoped, focusable app menu. Primary display requires explicit opt-in. */
 final class AppMenu implements android.content.SharedPreferences.OnSharedPreferenceChangeListener {
     private final Context context;
     private final WindowManager windows;
@@ -143,6 +143,7 @@ final class AppMenu implements android.content.SharedPreferences.OnSharedPrefere
             for(Launches.App app:all)if(packages.contains(android.content.ComponentName.unflattenFromString(app.component).getPackageName()))AppOrganization.hide(context,app.component,true);
             groups.setSelection(2);return true;
         });
+        menu.add(context.getString(R.string.exit_desktop)).setOnMenuItemClickListener(item->{close();DockService.stop(context);return true;});
         popup.show();
     }
     private void showDialog(android.app.AlertDialog dialog){dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);dialog.show();}

@@ -31,4 +31,18 @@ public class PolicyTest {
             try{Policy.backCommand(id,java.util.Arrays.asList(9,43));org.junit.Assert.fail("Rejected display expected");}catch(IllegalArgumentException expected){}
         }
     }
+    @Test public void primarySelectionRequiresExplicitOptIn(){
+        assertEquals(0,Policy.selectDisplay(9,Arrays.asList(0,9),true));
+        assertEquals(-1,Policy.selectDisplay(9,Arrays.asList(9),true));
+        assertEquals(-1,Policy.selectDisplay(0,Arrays.asList(0),false));
+    }
+    @Test public void primaryCommandsAreRevocable(){
+        Policy.requireTarget(0,Arrays.asList(0),true);
+        assertEquals("0",Policy.launchCommand("com.example/.Main",0,5,true)[5]);
+        assertEquals("0",Policy.backCommand(0,Arrays.asList(0),true)[2]);
+        assertThrows(IllegalArgumentException.class,()->Policy.launchCommand("com.example/.Main",0,5,false));
+        assertThrows(IllegalArgumentException.class,()->Policy.backCommand(0,Arrays.asList(0),false));
+        assertThrows(IllegalArgumentException.class,()->Policy.requireTarget(-1,Arrays.asList(-1,0),true));
+        assertThrows(IllegalArgumentException.class,()->Policy.requireTarget(0,Arrays.asList(9),true));
+    }
 }
