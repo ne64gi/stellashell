@@ -196,7 +196,7 @@
     <string name="battery_percent">%1$d%%</string>
     <string name="battery_charging">Battery %1$d%%, charging</string>
     <string name="battery_remaining">Battery %1$d%% remaining</string>
-    <string name="external_back">Back on external display</string>
+    <string name="external_back">Back on desktop display</string>
     <string name="launcher_tools">Desktop and launcher settings</string>
     <string name="launcher_desktop_tools">Desktop tools</string>
     <string name="launcher_filter">Filter app group</string>
@@ -214,4 +214,10 @@
     <string name="launcher_show_app">Show in launcher</string>
     <string name="launcher_hide_homes">Hide home launcher apps</string>
     <string name="widget_edit_toggle">Edit / finish editing widgets</string>
+    <string name="primary_mode">Device screen mode (experimental)</string>
+    <string name="primary_note">Use the built-in screen instead of an external display. Switching modes stops the current session; press Start again. Your default home app stays unchanged. Freeform support is required.</string>
+    <string name="primary_start">Start desktop on device screen</string>
+    <string name="primary_running">Running on device screen · Tap for settings</string>
+    <string name="exit_desktop">Stop desktop</string>
+    <string name="reopen_desktop">Show desktop</string>
 </resources>

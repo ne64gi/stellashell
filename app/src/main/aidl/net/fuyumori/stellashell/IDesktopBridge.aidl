@@ -8,4 +8,5 @@ interface IDesktopBridge {
     String taskOperation(int displayId, int taskId, String action, int left, int top, int right, int bottom) = 5;
     String launchProfile(String component, String resolved, int displayId, int mode, int left, int top, int right, int bottom, boolean newWindow) = 6;
     String back(int displayId) = 7;
+    void setPrimaryMode(boolean enabled) = 8;
 }

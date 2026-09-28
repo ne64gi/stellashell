@@ -196,7 +196,7 @@
     <string name="battery_percent">%1$d%%</string>
     <string name="battery_charging">バッテリー %1$d%%、充電中</string>
     <string name="battery_remaining">バッテリー残量 %1$d%%</string>
-    <string name="external_back">外部画面で戻る</string>
+    <string name="external_back">デスクトップ画面で戻る</string>
     <string name="launcher_tools">デスクトップ・ランチャー設定</string>
     <string name="launcher_desktop_tools">デスクトップ操作</string>
     <string name="launcher_filter">アプリグループの絞り込み</string>
@@ -214,4 +214,10 @@
     <string name="launcher_show_app">ランチャーに表示</string>
     <string name="launcher_hide_homes">ホームアプリを非表示にする</string>
     <string name="widget_edit_toggle">ウィジェットの編集／終了</string>
+    <string name="primary_mode">本体画面モード（実験的）</string>
+    <string name="primary_note">外部画面の代わりに本体画面を使用します。切替時は停止するので、再度開始してください。標準ホームは変更しません。端末のウィンドウ表示対応が必要です。</string>
+    <string name="primary_start">本体画面でデスクトップを開始</string>
+    <string name="primary_running">本体画面で実行中 · タップで設定</string>
+    <string name="exit_desktop">デスクトップを終了</string>
+    <string name="reopen_desktop">デスクトップを表示</string>
 </resources>

@@ -17,8 +17,18 @@ final class Displays {
     static List<Integer> ids(Context context) {
         List<Integer> ids=new ArrayList<>(); for(Display d:available(context)) ids.add(d.getDisplayId()); return ids;
     }
+    static boolean primary(Context context) { return Launches.prefs(context).getBoolean("primary_mode",false); }
+    static boolean primaryActive(Context context) { return primary(context) && Launches.prefs(context).getBoolean("enabled",false); }
+    static List<Integer> allIds(Context context) {
+        List<Integer> out=ids(context);
+        Display main=context.getSystemService(DisplayManager.class).getDisplay(0);
+        if(main!=null && main.isValid() && (main.getFlags()&Display.FLAG_PRIVATE)==0)out.add(0);
+        return out;
+    }
+    static int target(Context context,int preferred) { return Policy.selectDisplay(preferred,allIds(context),primary(context)); }
     static Display require(Context context,int id) {
-        Policy.requireTarget(id,ids(context));
+        if(primary(context) && id!=0)throw new IllegalArgumentException("Primary display mode is selected");
+        Policy.requireTarget(id,allIds(context),primaryActive(context));
         Display d=context.getSystemService(DisplayManager.class).getDisplay(id);
         if(d==null || !d.isValid()) throw new IllegalArgumentException(context.getString(R.string.ui_the_external_display_is_disconnected));
         return d;

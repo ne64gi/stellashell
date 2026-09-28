@@ -14,6 +14,7 @@ import java.util.concurrent.*;
 
 public final class DockService extends Service implements DisplayManager.DisplayListener,SharedPreferences.OnSharedPreferenceChangeListener {
     private static final String STOP="net.fuyumori.stellashell.STOP";
+    private String displayGeometry="";
     private DisplayManager displays; private WindowManager windows; private View dock; private int displayId=-1;
     private AppMenu menu;private boolean collapsed;
     private TextView batteryText;private int batteryPercent=-1;private boolean batteryCharging,backPending,batteryRegistered;
@@ -53,8 +54,16 @@ public final class DockService extends Service implements DisplayManager.Display
         try {c.startForegroundService(new Intent(c,DockService.class));}
         catch(RuntimeException e){Launches.prefs(c).edit().putBoolean("enabled",false).apply();enableHome(c,false);Launches.problem(c,e.getMessage());}
     }
-    static void stop(Context c) {
-        Launches.prefs(c).edit().putBoolean("enabled",false).apply();c.stopService(new Intent(c,DockService.class));enableHome(c,false);
+    static void stop(Context c) { stop(c,true); }
+    static void stop(Context c,boolean showHome) {
+        boolean returnHome=showHome && Displays.primaryActive(c);
+        Launches.prefs(c).edit().putBoolean("enabled",false).apply();
+        Bridge.get(c).call(s->{s.setPrimaryMode(false);return "OK";},(result,error)->{});
+        if(returnHome)try {
+            android.app.ActivityOptions options=android.app.ActivityOptions.makeBasic().setLaunchDisplayId(0);
+            c.startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),options.toBundle());
+        }catch(RuntimeException e){Launches.problem(c,e.getMessage());}
+        c.stopService(new Intent(c,DockService.class));enableHome(c,false);
     }
     @Override public void onConfigurationChanged(android.content.res.Configuration configuration){
         super.onConfigurationChanged(configuration);removeDock();update(false);
@@ -94,7 +103,7 @@ public final class DockService extends Service implements DisplayManager.Display
     }
     private void update(boolean openHome) {
         int preferred=displayId>0?displayId:Launches.prefs(this).getInt("preferred_display",-1);
-        int next=Policy.selectDisplay(preferred,Displays.ids(this));
+        int next=Displays.target(this,preferred);
         boolean changed=next!=displayId;
         if(changed){removeDock();if(tasks!=null)tasks.close();tasks=null;taskSignature="";displayId=next;}
         if(next<0){getSystemService(NotificationManager.class).notify(41,notification(this.getString(R.string.ui_waiting_for_a_display)));return;}
@@ -103,7 +112,7 @@ public final class DockService extends Service implements DisplayManager.Display
         if(dock==null)attachDock();
         if(dock==null){getSystemService(NotificationManager.class).notify(41,notification(this.getString(R.string.ui_could_not_show_the_taskbar_check_permissions)));return;}
         if(dock!=null && (changed || openHome))Launches.home(this,next);
-        getSystemService(NotificationManager.class).notify(41,notification(this.getString(R.string.ui_running_on_an_external_display_tap_for_settings)));
+        getSystemService(NotificationManager.class).notify(41,notification(this.getString(Displays.primary(this)?R.string.primary_running:R.string.ui_running_on_an_external_display_tap_for_settings)));
     }
     private void attachDock() {
         try {
@@ -114,17 +123,18 @@ public final class DockService extends Service implements DisplayManager.Display
             if(chrome==null)chrome=new WindowChrome(c,windows,tasks);
             LinearLayout row=new LinearLayout(c);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(Ui.dp(c,6),Ui.dp(c,4),Ui.dp(c,6),Ui.dp(c,4));
             row.setBackground(Ui.rounded(c,Ui.PANEL,18));
-            Button apps=Ui.button(c,collapsed?"▦":getString(R.string.start_menu_label),()->{
+            int widthDp=Math.round(c.getResources().getDisplayMetrics().widthPixels/c.getResources().getDisplayMetrics().density);
+            boolean compact=widthDp<500;
+            Button apps=Ui.button(c,(collapsed||compact)?"▦":getString(R.string.start_menu_label),()->{
                 if(collapsed){collapsed=false;removeDock();update(false);}
                 toggleMenu();
             });apps.setContentDescription(this.getString(R.string.ui_app_menu));apps.setTextColor(Ui.ACCENT);
-            row.addView(apps,new LinearLayout.LayoutParams(Ui.dp(c,collapsed?56:106),Ui.dp(c,44)));
+            row.addView(apps,new LinearLayout.LayoutParams(Ui.dp(c,(collapsed||compact)?56:106),Ui.dp(c,44)));
             if(!collapsed){
             Button back=Ui.button(c,"‹",this::back);back.setContentDescription(getString(R.string.external_back));back.setTooltipText(getString(R.string.external_back));
             row.addView(back,new LinearLayout.LayoutParams(Ui.dp(c,44),Ui.dp(c,44)));
             Button home=Ui.button(c,"▱",()->Launches.home(this,displayId));home.setContentDescription(this.getString(R.string.ui_show_desktop));home.setTooltipText(this.getString(R.string.ui_show_desktop));
             row.addView(home,new LinearLayout.LayoutParams(Ui.dp(c,48),Ui.dp(c,44)));
-            int widthDp=Math.round(c.getResources().getDisplayMetrics().widthPixels/c.getResources().getDisplayMetrics().density);
             android.widget.HorizontalScrollView strip=new android.widget.HorizontalScrollView(c);strip.setHorizontalScrollBarEnabled(false);
             LinearLayout entries=new LinearLayout(c);entries.setGravity(Gravity.CENTER_VERTICAL);strip.addView(entries);
             java.util.List<TaskSession.Task> running=tasks==null?new java.util.ArrayList<>():tasks.tasks();
@@ -148,8 +158,8 @@ public final class DockService extends Service implements DisplayManager.Display
             if(collapsed)row.addView(batteryView(c),new LinearLayout.LayoutParams(Ui.dp(c,76),Ui.dp(c,44)));
             WindowManager.LayoutParams p=new WindowManager.LayoutParams(collapsed?-2:-1,-2,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,PixelFormat.TRANSLUCENT);
-            p.gravity=Gravity.BOTTOM|Gravity.LEFT;p.setFitInsetsTypes(0);p.y=Ui.dp(c,4);p.setTitle("StellaShell dock");
-            windows.addView(row,p);dock=row;
+            p.gravity=Gravity.BOTTOM|Gravity.LEFT;p.setFitInsetsTypes(displayId==0?WindowInsets.Type.navigationBars():0);p.y=Ui.dp(c,4);p.setTitle("StellaShell dock");
+            windows.addView(row,p);dock=row;displayGeometry=geometry(displayId);
         }catch(RuntimeException e){removeDock();Launches.problem(this,this.getString(R.string.ui_could_not_show_the_taskbar)+e.getMessage());}
     }
     private void tasksChanged(){
@@ -179,12 +189,21 @@ public final class DockService extends Service implements DisplayManager.Display
         }catch(Exception ignored){}
     }
     private void toggleMenu(){try{if(chrome!=null)chrome.clear();if(menu!=null)menu.open(menuLoader);}catch(RuntimeException e){Launches.problem(this,this.getString(R.string.ui_could_not_open_the_app_menu)+e.getMessage());}}
-    @Override public void onDisplayAdded(int id){update(true);}
+    @Override public void onDisplayAdded(int id){if(!Displays.primary(this))update(true);}
     @Override public void onDisplayRemoved(int id){update(false);}
-    @Override public void onDisplayChanged(int id){if(id==displayId)removeDock();update(false);}
+    private String geometry(int id){
+        Display d=displays.getDisplay(id);if(d==null)return "missing";
+        android.util.DisplayMetrics metrics=new android.util.DisplayMetrics();d.getRealMetrics(metrics);
+        return metrics.widthPixels+":"+metrics.heightPixels+":"+metrics.densityDpi+":"+d.getRotation();
+    }
+    @Override public void onDisplayChanged(int id){
+        // Refresh-rate/brightness changes are not layout changes. Recreating an
+        // overlay between pointer down/up loses taps on adaptive-refresh phones.
+        if(id==displayId && !geometry(id).equals(displayGeometry)){removeDock();update(false);}
+    }
     @Override public void onSharedPreferenceChanged(SharedPreferences p,String key){
         if("enabled".equals(key) && !p.getBoolean("enabled",false)){stopSelf();return;}
-        if("pinned".equals(key)){removeDock();if(displayId>0)attachDock();}
+        if("pinned".equals(key)){removeDock();if(displayId>=0)attachDock();}
     }
     @Override public void onDestroy(){
         if(batteryRegistered){unregisterReceiver(batteryReceiver);batteryRegistered=false;}
