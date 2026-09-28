@@ -71,14 +71,14 @@ final class WindowChrome {
         private boolean isMaximized(){android.graphics.Point size=new android.graphics.Point();context.getDisplay().getRealSize(size);return rendered.left==0&&rendered.top<=Ui.dp(context,32)&&rendered.right>=size.x-2&&rendered.bottom>=size.y-Ui.dp(context,60)-2;}
         private View content(int edge){
             if(edge!=0){
-                View h=new ResizeHandle(context,edge);h.setContentDescription(label+" のサイズを変更");
+                View h=new ResizeHandle(context,edge);h.setContentDescription(context.getString(R.string.ui_resize,label));
                 int cursor=(edge==1||edge==2)?PointerIcon.TYPE_HORIZONTAL_DOUBLE_ARROW:(edge==3||edge==4)?PointerIcon.TYPE_VERTICAL_DOUBLE_ARROW:(edge==5||edge==8)?PointerIcon.TYPE_TOP_LEFT_DIAGONAL_DOUBLE_ARROW:PointerIcon.TYPE_TOP_RIGHT_DIAGONAL_DOUBLE_ARROW;
                 h.setPointerIcon(PointerIcon.getSystemIcon(context,cursor));gesture(h,edge);return h;
             }
             LinearLayout title=new LinearLayout(context);title.setGravity(Gravity.CENTER_VERTICAL);
             TextView name=Ui.text(context,label,13,Ui.TEXT);name.setGravity(Gravity.CENTER_VERTICAL);name.setSingleLine();name.setEllipsize(android.text.TextUtils.TruncateAt.END);name.setPadding(Ui.dp(context,12),0,0,0);
-            title.addView(name,new LinearLayout.LayoutParams(0,-1,1));name.setContentDescription(label+" を前面化して移動");gesture(name,0);
-            button(title,"左半分","left");button(title,"右半分","right");button(title,"最小化","minimize");button(title,"最大化／元に戻す","maximize");button(title,"閉じる","close");return title;
+            title.addView(name,new LinearLayout.LayoutParams(0,-1,1));name.setContentDescription(context.getString(R.string.ui_bring_to_front_and_move,label));gesture(name,0);
+            button(title,context.getString(R.string.ui_snap_left),"left");button(title,context.getString(R.string.ui_snap_right),"right");button(title,context.getString(R.string.ui_minimize),"minimize");button(title,context.getString(R.string.ui_maximize_restore),"maximize");button(title,context.getString(R.string.ui_close),"close");return title;
         }
         private void button(LinearLayout row,String description,String action){
             CaptionButton b=new CaptionButton(context,action);b.setContentDescription(label+" "+description);b.setTooltipText(description);

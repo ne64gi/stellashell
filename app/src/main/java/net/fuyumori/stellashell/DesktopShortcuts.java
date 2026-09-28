@@ -42,7 +42,7 @@ final class DesktopShortcuts {
             TextView name=Ui.text(activity,label,13,Ui.TEXT);name.setGravity(Gravity.CENTER);name.setMaxLines(2);name.setEllipsize(android.text.TextUtils.TruncateAt.END);name.setShadowLayer(dp(2),0,dp(1),0xaa000000);cell.addView(name,new LinearLayout.LayoutParams(-1,-2));
             cell.setContentDescription(label);cell.setFocusable(true);cell.setTooltipText(label);
             cell.setOnClickListener(v->{if(moving==cell){cancelMove();return;}Launches.app(activity,component,display);});
-            View.OnLongClickListener menu=v->{cancelMove();AppContextMenu.show(activity,cell,component,display,()->{},null,null,()->{moving=cell;cell.setSelected(true);cell.requestFocus();Ui.message(activity,"このアイコンをドラッグして配置。タップ／戻るで取消");});return true;};
+            View.OnLongClickListener menu=v->{cancelMove();AppContextMenu.show(activity,cell,component,display,()->{},null,null,()->{moving=cell;cell.setSelected(true);cell.requestFocus();Ui.message(activity,activity.getString(R.string.ui_drag_this_icon_to_place_it_tap_or_press_back_to_cancel));});return true;};
             cell.setOnLongClickListener(menu);cell.setOnContextClickListener(v->menu.onLongClick(v));
             cell.setOnKeyListener((v,key,event)->{if(moving!=cell||event.getAction()!=KeyEvent.ACTION_DOWN)return false;
                 if(key==KeyEvent.KEYCODE_ESCAPE){cancelMove();return true;}

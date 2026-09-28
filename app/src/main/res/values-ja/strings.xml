@@ -1,0 +1,192 @@
+<resources>
+    <string name="ui_the_external_display_is_disconnected" formatted="false">"外部ディスプレイが切断されています"</string>
+    <string name="ui_could_not_load_saved_widgets" formatted="false">"ウィジェットの保存情報を読み込めませんでした"</string>
+    <string name="ui_widget_update" formatted="false">"ウィジェット更新: "</string>
+    <string name="ui_a_widget_is_still_being_added_cancel_it_and_choose_another" formatted="false">"追加途中のウィジェットがあります。取り消して選び直しますか？"</string>
+    <string name="ui_back" formatted="false">"戻る"</string>
+    <string name="ui_choose_again" formatted="false">"選び直す"</string>
+    <string name="ui_no_widgets_available" formatted="false">"利用できるウィジェットがありません"</string>
+    <string name="ui_add_widget" formatted="false">"ウィジェットを追加"</string>
+    <string name="ui_cancel" formatted="false">"キャンセル"</string>
+    <string name="ui_could_not_add_widget" formatted="false">"追加できません: "</string>
+    <string name="ui_widget_binding_did_not_complete" formatted="false">"ウィジェットの割り当てが完了しませんでした"</string>
+    <string name="ui_could_not_open_configuration" formatted="false">"初期設定を開けません: "</string>
+    <string name="ui_drag_the_top_bar_to_move_the_provider_marks_this_widget_as_fixed" formatted="false">"上の帯で移動できます。このウィジェットは提供元が固定サイズに指定しています"</string>
+    <string name="ui_drag_the_top_bar_to_move_or_the_bottom_right_corner_to_resize_fin" formatted="false">"上の帯で移動、右下でサイズ変更。空白のメニューから編集を終了できます"</string>
+    <string name="ui_widget_unavailable_remove_it_in_edit_mode" formatted="false">"利用できないウィジェット\n編集モードで削除できます"</string>
+    <string name="ui_move" formatted="false">"移動 "</string>
+    <string name="ui_widget" formatted="false">"ウィジェット"</string>
+    <string name="ui_move_widget" formatted="false">"ウィジェットを移動"</string>
+    <string name="ui_widget_display_settings" formatted="false">"ウィジェットの表示設定"</string>
+    <string name="ui_remove_widget" formatted="false">"ウィジェットを削除"</string>
+    <string name="ui_remove_this_widget" formatted="false">"このウィジェットを削除しますか？"</string>
+    <string name="ui_remove" formatted="false">"削除"</string>
+    <string name="ui_resize_widget" formatted="false">"ウィジェットのサイズ変更"</string>
+    <string name="ui_fixed_size" formatted="false">"固定サイズ"</string>
+    <string name="ui_the_provider_does_not_support_resizing" formatted="false">"提供元がサイズ変更に非対応"</string>
+    <string name="ui_normal_respect_provider_limits" formatted="false">"通常（提供元の制限に従う）"</string>
+    <string name="ui_force_resize_adjust_width_and_height" formatted="false">"強制リサイズ（縦横を自由に変更）"</string>
+    <string name="ui_scale_proportionally_may_add_margins" formatted="false">"縦横比を維持して拡大（余白あり）"</string>
+    <string name="ui_drag_the_bottom_right_corner_to_resize_content_reflow_depends_on" formatted="false">"右下で縦横を変更できます。中身の再配置は提供元によります"</string>
+    <string name="ui_drag_the_bottom_right_corner_to_scale_use_render_size_to_adjust_t" formatted="false">"右下で拡大・縮小。⋮ の描画サイズで元のレイアウトを調整できます"</string>
+    <string name="ui_provider_size_limits_are_now_applied" formatted="false">"提供元のサイズ制限に従います"</string>
+    <string name="ui_render_size" formatted="false">"描画サイズ…"</string>
+    <string name="ui_reset_to_recommended_size" formatted="false">"推奨サイズに戻す"</string>
+    <string name="ui_close" formatted="false">"閉じる"</string>
+    <string name="ui_size_before_scaling_dp_including_padding_increase_it_if_content_i" formatted="false">"拡大前の描画サイズ（dp、余白込み）。文字や内容が潰れる場合はここを広げてください。適用すると縦横比維持モードになります。"</string>
+    <string name="ui_width_dp" formatted="false">"幅 (dp)"</string>
+    <string name="ui_height_dp" formatted="false">"高さ (dp)"</string>
+    <string name="ui_size_before_scaling" formatted="false">"拡大前の描画サイズ"</string>
+    <string name="ui_apply" formatted="false">"適用"</string>
+    <string name="ui_enter_width_80_2048_and_height_60_2048_dp" formatted="false">"幅80〜2048、高さ60〜2048 dpで入力してください"</string>
+    <string name="ui_invalid_app_component" formatted="false">"起動するアプリの指定が不正です"</string>
+    <string name="ui_unsupported_setting_value" formatted="false">"未対応の設定値です"</string>
+    <string name="ui_will_not_redirect_to_the_phone_display" formatted="false">"スマホ画面への転送は行いません"</string>
+    <string name="ui_unsupported_windowing_mode" formatted="false">"未対応のウィンドウモードです"</string>
+    <string name="ui_resize">%1$s のサイズを変更</string>
+    <string name="ui_bring_to_front_and_move">%1$s を前面化して移動</string>
+    <string name="ui_snap_left" formatted="false">"左半分"</string>
+    <string name="ui_snap_right" formatted="false">"右半分"</string>
+    <string name="ui_minimize" formatted="false">"最小化"</string>
+    <string name="ui_maximize_restore" formatted="false">"最大化／元に戻す"</string>
+    <string name="ui_could_not_choose_an_image" formatted="false">"画像を選択できません: "</string>
+    <string name="ui_could_not_save_the_image" formatted="false">"画像を保存できませんでした"</string>
+    <string name="ui_could_not_read_the_image_your_previous_wallpaper_is_unchanged" formatted="false">"画像を読み込めません。以前の壁紙を保持します"</string>
+    <string name="ui_could_not_read_the_saved_wallpaper_choose_an_image_again" formatted="false">"保存した壁紙を読み込めません。画像を選び直してください"</string>
+    <string name="ui_allow_the_taskbar_overlay_first" formatted="false">"先に操作バーの表示を許可してください"</string>
+    <string name="ui_external_desktop" formatted="false">"外部デスクトップ"</string>
+    <string name="ui_waiting_for_a_display" formatted="false">"ディスプレイの接続を待っています"</string>
+    <string name="ui_back_to_desktop" formatted="false">"デスクトップへ戻る"</string>
+    <string name="ui_stop" formatted="false">"停止"</string>
+    <string name="ui_overlay_permission_was_revoked" formatted="false">"操作バーの表示許可が取り消されました"</string>
+    <string name="ui_could_not_show_the_taskbar_check_permissions" formatted="false">"操作バーを表示できません。設定を確認してください"</string>
+    <string name="ui_running_on_an_external_display_tap_for_settings" formatted="false">"外部ディスプレイで使用中 · タップして設定"</string>
+    <string name="ui_app_menu" formatted="false">"アプリメニュー"</string>
+    <string name="ui_show_desktop" formatted="false">"デスクトップを表示"</string>
+    <string name="ui_desktop_settings" formatted="false">"デスクトップ設定"</string>
+    <string name="ui_collapse_taskbar" formatted="false">"バーを折り畳む"</string>
+    <string name="ui_could_not_show_the_taskbar" formatted="false">"操作バーを表示できません: "</string>
+    <string name="ui_running" formatted="false">" 実行中"</string>
+    <string name="ui_pinned" formatted="false">" ピン留め"</string>
+    <string name="ui_could_not_open_the_app_menu" formatted="false">"アプリメニューを開けません: "</string>
+    <string name="ui_turn_usb_c_or_a_separate_scrcpy_display_into_a_desktop_keep_your" formatted="false">"USB-C や scrcpy の独立画面をデスクトップに。\nスマホのホームは、そのまま。"</string>
+    <string name="ui_1_allow_taskbar_overlay" formatted="false">"1  操作バーの表示を許可"</string>
+    <string name="ui_2_connect_authorize_shizuku_retry" formatted="false">"2  Shizuku に接続・許可／再試行"</string>
+    <string name="ui_3_configure_desktop_mode" formatted="false">"3  Desktop Shell 用に設定する"</string>
+    <string name="ui_enable_desktop_features" formatted="false">"デスクトップ機能を有効にする"</string>
+    <string name="ui_enable_freeform_windows_and_turn_off_android_s_force_desktop_mode" formatted="false">"自由形式ウィンドウを有効にし、Android の強制デスクトップモードをオフにします。StellaShell が外部ホームとバーを担当します。元の設定は保存します。反映には scrcpy の再接続または USB の抜き差しが必要です。"</string>
+    <string name="ui_enable" formatted="false">"有効にする"</string>
+    <string name="ui_start_external_desktop" formatted="false">"外部デスクトップを開始"</string>
+    <string name="ui_connect_to_shizuku_first" formatted="false">"先に Shizuku に接続してください"</string>
+    <string name="ui_after_starting_display_connections_are_detected_automatically_aft" formatted="false">"開始後は接続・抜線を自動検出します。再起動後は Shizuku と本アプリを起動してください。停止だけでは端末設定は戻りません。復元は下のボタンから行えます。"</string>
+    <string name="ui_launch_in_windows_experimental" formatted="false">"ウィンドウで起動する（試験）"</string>
+    <string name="ui_when_off_apps_open_fullscreen_drag_the_active_window_s_title_bar" formatted="false">"オフは全画面起動。アクティブな窓は上のタイトル部分で移動、縁でサイズ変更できます。アプリの最小サイズは OS に制限される場合があります。"</string>
+    <string name="ui_reopen_external_desktop" formatted="false">"外部ホームを開き直す"</string>
+    <string name="ui_connect_an_external_display_first" formatted="false">"先に外部ディスプレイを接続してください"</string>
+    <string name="ui_start_the_external_desktop_first" formatted="false">"先に外部デスクトップを開始してください"</string>
+    <string name="ui_restore_previous_device_settings" formatted="false">"変更前の端末設定に戻す"</string>
+    <string name="ui_restore_device_settings" formatted="false">"端末設定を復元する"</string>
+    <string name="ui_stop_the_external_desktop_and_restore_the_two_device_settings_sav" formatted="false">"外部デスクトップを停止し、このアプリが保存した変更前の2項目に戻します。"</string>
+    <string name="ui_restore" formatted="false">"復元"</string>
+    <string name="ui_copy_diagnostics" formatted="false">"診断情報をコピー"</string>
+    <string name="ui_diagnostics_copied" formatted="false">"診断情報をコピーしました"</string>
+    <string name="ui_connect_to_shizuku" formatted="false">"Shizuku に接続してください"</string>
+    <string name="ui_no_settings_to_restore" formatted="false">"復元する変更はありません"</string>
+    <string name="ui_could_not_save_the_previous_settings" formatted="false">"変更前の設定を保存できません"</string>
+    <string name="ui_previous_settings_restored" formatted="false">"変更前の設定に戻しました"</string>
+    <string name="ui_enabled_reconnect_the_display" formatted="false">"有効にしました。USB をつなぎ直してください"</string>
+    <string name="ui_model" formatted="false">"\n機種: "</string>
+    <string name="ui_overlay_permission" formatted="false">"\n操作バー表示: "</string>
+    <string name="ui_session" formatted="false">"\nセッション: "</string>
+    <string name="ui_restore_record" formatted="false">"\n復元記録: "</string>
+    <string name="ui_display" formatted="false">"\n画面 "</string>
+    <string name="ui_last_error" formatted="false">"\n最終エラー: "</string>
+    <string name="ui_window_management" formatted="false">"\nウィンドウ操作: "</string>
+    <string name="ui_not_connected" formatted="false">"未接続"</string>
+    <string name="ui_no_external_display_connected" formatted="false">"外部ディスプレイ未接続"</string>
+    <string name="ui_allowed" formatted="false">"許可済み"</string>
+    <string name="ui_permission_required" formatted="false">"許可が必要"</string>
+    <string name="ui_stop_external_desktop" formatted="false">"外部デスクトップを停止"</string>
+    <string name="ui_operation_timed_out" formatted="false">"操作がタイムアウトしました"</string>
+    <string name="ui_operation_was_rejected" formatted="false">"操作が拒否されました"</string>
+    <string name="ui_could_not_verify_settings" formatted="false">"設定を確認できません: "</string>
+    <string name="ui_some_settings_could_not_be_restored_use_restore_to_retry" formatted="false">" / 復元できない項目があります。復元ボタンで再試行してください"</string>
+    <string name="ui_shizuku_api_13_or_later_is_required" formatted="false">"Shizuku API 13 以降が必要です"</string>
+    <string name="ui_enable_desktop_features_first" formatted="false">"先にデスクトップ機能を有効にしてください"</string>
+    <string name="ui_shizuku_is_not_running_start_shizuku_for_full_window_management_t" formatted="false">"Shizuku が停止しています。ウィンドウ操作を使うには Shizuku を起動し、再試行してください"</string>
+    <string name="ui_shizuku_permission_is_required" formatted="false">"Shizuku の利用許可が必要です"</string>
+    <string name="ui_reconnect_to_shizuku" formatted="false">"Shizuku に再接続してください"</string>
+    <string name="ui_shizuku_connected" formatted="false">"Shizuku 接続済み"</string>
+    <string name="ui_waiting_for_shizuku" formatted="false">"Shizuku 接続待ち"</string>
+    <string name="ui_retry_the_connection" formatted="false">"接続を再試行してください"</string>
+    <string name="ui_the_main_display_is_not_supported" formatted="false">"本体画面は操作しません"</string>
+    <string name="ui_no_external_display" formatted="false">"外部画面がありません"</string>
+    <string name="ui_the_window_closed_or_moved_to_another_display" formatted="false">"対象ウィンドウは終了または別画面へ移動しています"</string>
+    <string name="ui_could_not_find_the_launched_window" formatted="false">"起動先のウィンドウを確認できませんでした"</string>
+    <string name="ui_could_not_close_the_window" formatted="false">"終了できませんでした"</string>
+    <string name="ui_unsupported_operation" formatted="false">"未対応の操作です"</string>
+    <string name="ui_desktop_menu" formatted="false">"デスクトップメニュー"</string>
+    <string name="ui_snap_icons_to_grid" formatted="false">"アイコンをグリッドに吸着"</string>
+    <string name="ui_new_shortcut" formatted="false">"新しいショートカット"</string>
+    <string name="ui_add_shortcut" formatted="false">"ショートカットを追加"</string>
+    <string name="ui_wallpaper" formatted="false">"壁紙"</string>
+    <string name="ui_choose_image" formatted="false">"画像を選ぶ…"</string>
+    <string name="ui_fill_screen_with_image" formatted="false">"画像を画面いっぱいに表示"</string>
+    <string name="ui_fit_entire_image_with_margins" formatted="false">"画像全体を表示（余白あり）"</string>
+    <string name="ui_deep_ocean" formatted="false">"深海"</string>
+    <string name="ui_dusk" formatted="false">"夕暮れ"</string>
+    <string name="ui_graphite" formatted="false">"グラファイト"</string>
+    <string name="ui_display_settings" formatted="false">"表示設定"</string>
+    <string name="ui_finish_editing_widgets" formatted="false">"ウィジェットの編集を終了"</string>
+    <string name="ui_edit_widgets" formatted="false">"ウィジェットを編集"</string>
+    <string name="ui_move_2" formatted="false">"移動"</string>
+    <string name="ui_open" formatted="false">"開く"</string>
+    <string name="ui_open_in_new_window" formatted="false">"新しいウィンドウで開く"</string>
+    <string name="ui_launch_mode_next_launch" formatted="false">"起動モード（次回起動時）"</string>
+    <string name="ui_windowed" formatted="false">"ウィンドウ"</string>
+    <string name="ui_maximized" formatted="false">"最大化"</string>
+    <string name="ui_fullscreen" formatted="false">"フルスクリーン"</string>
+    <string name="ui_last_state" formatted="false">"前回の状態"</string>
+    <string name="ui_initial_window_size" formatted="false">"初期ウィンドウサイズ"</string>
+    <string name="ui_50_of_screen_width_and_height" formatted="false">"幅・高さを画面の50%"</string>
+    <string name="ui_last_size" formatted="false">"前回のサイズ"</string>
+    <string name="ui_custom" formatted="false">"カスタム…"</string>
+    <string name="ui_initial_position" formatted="false">"起動位置"</string>
+    <string name="ui_automatic" formatted="false">"自動"</string>
+    <string name="ui_center" formatted="false">"中央"</string>
+    <string name="ui_last_position" formatted="false">"前回の位置"</string>
+    <string name="ui_remember_position_and_size" formatted="false">"位置・サイズを記憶"</string>
+    <string name="ui_current_window" formatted="false">"現在のウィンドウ"</string>
+    <string name="ui_restore_size" formatted="false">"元のサイズ"</string>
+    <string name="ui_remove_from_desktop" formatted="false">"デスクトップから削除"</string>
+    <string name="ui_add_to_desktop" formatted="false">"デスクトップに追加"</string>
+    <string name="ui_unpin_from_taskbar" formatted="false">"ピン留めを解除"</string>
+    <string name="ui_pin_to_taskbar" formatted="false">"タスクバーにピン留め"</string>
+    <string name="ui_app_info" formatted="false">"アプリ情報"</string>
+    <string name="ui_width_px" formatted="false">"幅（px）"</string>
+    <string name="ui_height_px" formatted="false">"高さ（px）"</string>
+    <string name="ui_initial_width" formatted="false">"起動幅"</string>
+    <string name="ui_initial_height" formatted="false">"起動高さ"</string>
+    <string name="ui_initial_size_display_pixels" formatted="false">"初期サイズ（表示座標 px）"</string>
+    <string name="ui_save" formatted="false">"保存"</string>
+    <string name="ui_width_must_be_240_16384_and_height_160_16384" formatted="false">"幅240以上・高さ160以上、16384以下で入力"</string>
+    <string name="ui_drag_this_icon_to_place_it_tap_or_press_back_to_cancel" formatted="false">"このアイコンをドラッグして配置。タップ／戻るで取消"</string>
+    <string name="ui_apps" formatted="false">"アプリ"</string>
+    <string name="ui_search_by_name" formatted="false">"名前で検索"</string>
+    <string name="ui_search_apps" formatted="false">"アプリ検索"</string>
+    <string name="ui_loading" formatted="false">"読み込み中…"</string>
+    <string name="ui_right_click_or_long_press_for_launch_settings" formatted="false">"右クリック／長押しで起動設定"</string>
+    <string name="ui_could_not_load_apps" formatted="false">"一覧を読み込めませんでした"</string>
+    <string name="ui_no_matching_apps" formatted="false">"一致するアプリがありません"</string>
+    <string name="ui_the_display_is_too_small" formatted="false">"画面が小さすぎます"</string>
+    <string name="ui_you_can_pin_up_to_6_apps" formatted="false">"ピン留めは6件までです"</string>
+    <string name="ui_unknown_error" formatted="false">"不明なエラー"</string>
+    <string name="ui_operation_failed" formatted="false">"操作に失敗しました"</string>
+    <string name="ui_launch_profiles_require_a_shizuku_connection" formatted="false">"起動プロファイルには Shizuku の接続が必要です"</string>
+    <string name="ui_this_app_reused_its_existing_window" formatted="false">"このアプリは既存のウィンドウを使用しました"</string>
+    <string name="ui_reconnect_to_shizuku_to_launch_a_window" formatted="false">"ウィンドウ起動には Shizuku の再接続が必要です"</string>
+    <string name="start_menu_label">▦ スタート</string>
+    <plurals name="app_count"><item quantity="other">%d 件のアプリ</item></plurals>
+    <string name="display_connected">%1$s 接続済み</string>
+    <string name="setup_status">%1$s\n%2$s\n操作バー: %3$s</string>
+</resources>

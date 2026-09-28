@@ -19,7 +19,7 @@ public final class AppLaunchProfile {
     }
     public Plan plan(int screenWidth,int screenHeight,int caption,int dock,int cascade){
         int availableHeight=screenHeight-dock-caption;
-        if(screenWidth<=0||availableHeight<=0)throw new IllegalArgumentException("画面が小さすぎます");
+        if(screenWidth<=0||availableHeight<=0)throw new IllegalArgumentException("The display is too small");
         Mode state=launchMode==Mode.RESTORE_LAST?lastState:launchMode;
         if(state==Mode.RESTORE_LAST)state=Mode.WINDOWED;
         if(state==Mode.FULLSCREEN)return new Plan(state,0,0,screenWidth,screenHeight);

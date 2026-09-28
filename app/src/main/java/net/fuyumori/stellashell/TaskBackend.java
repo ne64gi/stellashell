@@ -52,9 +52,9 @@ final class TaskBackend {
         return c!=null?c:(ComponentName)field(task,"topActivity");
     }
     private Display display(int id) {
-        if(id<=0)throw new IllegalArgumentException("本体画面は操作しません");
+        if(id<=0)throw new IllegalArgumentException("The main display is not supported");
         Display d=context.getSystemService(DisplayManager.class).getDisplay(id);
-        if(d==null||!d.isValid()||(d.getFlags()&Display.FLAG_PRIVATE)!=0)throw new IllegalArgumentException("外部画面がありません");
+        if(d==null||!d.isValid()||(d.getFlags()&Display.FLAG_PRIVATE)!=0)throw new IllegalArgumentException("No external display");
         return d;
     }
     private List<?> tasks(int id) throws Exception {
@@ -68,7 +68,7 @@ final class TaskBackend {
     }
     private Object requireTask(int id,int taskId) throws Exception {
         for(Object t:tasks(id))if(number(t,"taskId")==taskId && eligible(t,id))return t;
-        throw new IllegalArgumentException("対象ウィンドウは終了または別画面へ移動しています");
+        throw new IllegalArgumentException("The window closed or moved to another display");
     }
     private boolean method(Class<?> cls,String name,Class<?>... types){try{cls.getMethod(name,types);return true;}catch(NoSuchMethodException e){return false;}}
     String snapshot(int id) throws Exception {
@@ -141,7 +141,7 @@ final class TaskBackend {
             }
             if(created)break;android.os.SystemClock.sleep(100);
         }while(android.os.SystemClock.uptimeMillis()<until);
-        if(found==null)throw new IllegalStateException("起動先のウィンドウを確認できませんでした");
+        if(found==null)throw new IllegalStateException("Could not find the launched window");
         if(created){
             Object tx=transaction.getConstructor().newInstance();Object taskToken=field(found,"token");
             transaction.getMethod("setWindowingMode",token,int.class).invoke(tx,taskToken,windowMode);
@@ -173,7 +173,7 @@ final class TaskBackend {
                 case "focus": apply(change(t,"reorder",boolean.class,true));break;
                 case "minimize": apply(change(t,"reorder",boolean.class,false));break;
                 case "close":
-                    if(!(Boolean)api.getMethod("removeTask",int.class).invoke(manager,taskId))throw new IllegalStateException("終了できませんでした");
+                    if(!(Boolean)api.getMethod("removeTask",int.class).invoke(manager,taskId))throw new IllegalStateException("Could not close the window");
                     restoreBounds.remove(taskId);break;
                 case "bounds":
                 case "left":
@@ -204,7 +204,7 @@ final class TaskBackend {
                     record(action+" task="+taskId+" via="+lastBoundsDispatch+" requested="+wanted+" actual="+bounds(requireTask(id,taskId)));
                     return "OK";
                 }
-                default:throw new IllegalArgumentException("未対応の操作です");
+                default:throw new IllegalArgumentException("Unsupported operation");
             }
             record(action+" task="+taskId+" display="+id);return "OK";
         }catch(Exception e){record("FAILED "+action+" task="+taskId+" "+reason(e));throw e;}

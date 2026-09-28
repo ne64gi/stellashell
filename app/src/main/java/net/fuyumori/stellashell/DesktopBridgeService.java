@@ -28,12 +28,12 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
         }, "desktop-command-output");
         reader.setDaemon(true); reader.start();
         try {
-            if (!process.waitFor(8, TimeUnit.SECONDS)) throw new IOException("操作がタイムアウトしました");
+            if (!process.waitFor(8, TimeUnit.SECONDS)) throw new IOException("Operation timed out");
             reader.join(1000);
             String result;
             synchronized (output) { result = output.toString(StandardCharsets.UTF_8.name()).trim(); }
             if (process.exitValue() != 0 || result.contains("Error:") || result.contains("Exception"))
-                throw new IOException(result.isEmpty() ? "操作が拒否されました" : result);
+                throw new IOException(result.isEmpty() ? "Operation was rejected" : result);
             return result;
         } finally { process.destroy(); }
     }
@@ -44,7 +44,7 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
         Policy.setting(value);
         if ("null".equals(value)) exec("/system/bin/settings", "delete", "global", key);
         else exec("/system/bin/settings", "put", "global", key, value);
-        if (!read(key).equals(value)) throw new IOException("設定を確認できません: " + key);
+        if (!read(key).equals(value)) throw new IOException("Could not verify settings: " + key);
     }
     @Override public synchronized String settingsSnapshot() {
         try { return read(DESKTOP) + "," + read(FREEFORM); }
@@ -58,7 +58,7 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
             }, desktop, freeform);
             return "OK";
         } catch (Exception e) {
-            String rollback = e.getSuppressed().length == 0 ? "" : " / 復元できない項目があります。復元ボタンで再試行してください";
+            String rollback = e.getSuppressed().length == 0 ? "" : " / Some settings could not be restored. Use Restore to retry.";
             return "ERROR: " + e.getMessage() + rollback;
         }
     }
@@ -66,12 +66,12 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
     @Override public synchronized String launch(String component, int displayId, int mode) {
         try {
             String[] command = Policy.launchCommand(component, displayId, mode);
-            if (context == null) throw new IllegalStateException("Shizuku API 13 以降が必要です");
+            if (context == null) throw new IllegalStateException("Shizuku API 13 or later is required");
             Display display = context.getSystemService(DisplayManager.class).getDisplay(displayId);
             if (display == null || !display.isValid() || (display.getFlags() & Display.FLAG_PRIVATE) != 0)
-                throw new IllegalStateException("外部ディスプレイが切断されています");
+                throw new IllegalStateException("The external display is disconnected");
             if (mode == 5 && !"1".equals(read(FREEFORM)))
-                throw new IllegalStateException("先にデスクトップ機能を有効にしてください");
+                throw new IllegalStateException("Enable desktop features first");
             return "OK: " + exec(command);
         } catch (Exception e) { return "ERROR: " + e.getMessage(); }
     }

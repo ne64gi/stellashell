@@ -35,13 +35,13 @@ final class AppMenu {
         root=Ui.column(context);root.setBackground(Ui.rounded(context,Ui.PANEL,18));
         root.setPadding(Ui.dp(context,16),Ui.dp(context,14),Ui.dp(context,16),Ui.dp(context,12));
         LinearLayout heading=new LinearLayout(context);heading.setGravity(Gravity.CENTER_VERTICAL);
-        heading.addView(Ui.text(context,"アプリ",21,Ui.TEXT),new LinearLayout.LayoutParams(0,-2,1));
-        heading.addView(Ui.button(context,"閉じる",this::close),new LinearLayout.LayoutParams(-2,Ui.dp(context,42)));
+        heading.addView(Ui.text(context,context.getString(R.string.ui_apps),21,Ui.TEXT),new LinearLayout.LayoutParams(0,-2,1));
+        heading.addView(Ui.button(context,context.getString(R.string.ui_close),this::close),new LinearLayout.LayoutParams(-2,Ui.dp(context,42)));
         root.addView(heading);
         search=new EditText(context);search.setSingleLine();search.setTextColor(Ui.TEXT);search.setHintTextColor(Ui.MUTED);
-        search.setHint("名前で検索");search.setContentDescription("アプリ検索");search.setTextSize(16);
+        search.setHint(context.getString(R.string.ui_search_by_name));search.setContentDescription(context.getString(R.string.ui_search_apps));search.setTextSize(16);
         root.addView(search,new LinearLayout.LayoutParams(-1,Ui.dp(context,48)));
-        status=Ui.text(context,"読み込み中…",12,Ui.MUTED);root.addView(status);
+        status=Ui.text(context,context.getString(R.string.ui_loading),12,Ui.MUTED);root.addView(status);
         ListView list=new ListView(context);list.setDividerHeight(0);
         adapter=new BaseAdapter(){
             public int getCount(){return shown.size();}
@@ -68,7 +68,7 @@ final class AppMenu {
             AppContextMenu.show(context,view,component,displayId,this::close,null,null);return true;
         });
         root.addView(list,new LinearLayout.LayoutParams(-1,0,1));
-        root.addView(Ui.text(context,"右クリック／長押しで起動設定",12,Ui.MUTED));
+        root.addView(Ui.text(context,context.getString(R.string.ui_right_click_or_long_press_for_launch_settings),12,Ui.MUTED));
         dismissOnOutside(root);
         root.setFocusableInTouchMode(true);
         View.OnKeyListener dismiss=(v,key,event)->{
@@ -99,7 +99,7 @@ final class AppMenu {
                     if(root!=generation)return;all.clear();all.addAll(apps);filter();
                 });
             }catch(RuntimeException failure){new Handler(Looper.getMainLooper()).post(()->{
-                if(root==generation)status.setText("一覧を読み込めませんでした");
+                if(root==generation)status.setText(context.getString(R.string.ui_could_not_load_apps));
             });}
         });
     }
@@ -113,6 +113,6 @@ final class AppMenu {
         if(root==null)return;
         String query=search.getText().toString().trim().toLowerCase(Locale.ROOT);shown.clear();
         for(Launches.App app:all)if(app.label.toLowerCase(Locale.ROOT).contains(query)||app.component.toLowerCase(Locale.ROOT).contains(query))shown.add(app);
-        status.setText(shown.isEmpty()?"一致するアプリがありません":shown.size()+" 件のアプリ");adapter.notifyDataSetChanged();
+        status.setText(shown.isEmpty()?context.getString(R.string.ui_no_matching_apps):context.getResources().getQuantityString(R.plurals.app_count,shown.size(),shown.size()));adapter.notifyDataSetChanged();
     }
 }

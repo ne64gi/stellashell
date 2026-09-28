@@ -20,7 +20,7 @@ final class Displays {
     static Display require(Context context,int id) {
         Policy.requireTarget(id,ids(context));
         Display d=context.getSystemService(DisplayManager.class).getDisplay(id);
-        if(d==null || !d.isValid()) throw new IllegalArgumentException("外部ディスプレイが切断されています");
+        if(d==null || !d.isValid()) throw new IllegalArgumentException(context.getString(R.string.ui_the_external_display_is_disconnected));
         return d;
     }
 }

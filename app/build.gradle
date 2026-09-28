@@ -6,8 +6,9 @@ android {
         applicationId 'net.fuyumori.stellashell'
         minSdk 30
         targetSdk 34
-        versionCode 8
-        versionName '0.5.3'
+        testInstrumentationRunner "net.fuyumori.stellashell.WidgetRenderInstrumentation"
+        versionCode 9
+        versionName '0.5.4'
     }
     buildFeatures { aidl true }
     compileOptions {

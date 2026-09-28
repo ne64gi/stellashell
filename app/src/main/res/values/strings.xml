@@ -1,0 +1,192 @@
+<resources>
+    <string name="ui_the_external_display_is_disconnected" formatted="false">"The external display is disconnected"</string>
+    <string name="ui_could_not_load_saved_widgets" formatted="false">"Could not load saved widgets"</string>
+    <string name="ui_widget_update" formatted="false">"Widget update: "</string>
+    <string name="ui_a_widget_is_still_being_added_cancel_it_and_choose_another" formatted="false">"A widget is still being added. Cancel it and choose another?"</string>
+    <string name="ui_back" formatted="false">"Back"</string>
+    <string name="ui_choose_again" formatted="false">"Choose again"</string>
+    <string name="ui_no_widgets_available" formatted="false">"No widgets available"</string>
+    <string name="ui_add_widget" formatted="false">"Add widget"</string>
+    <string name="ui_cancel" formatted="false">"Cancel"</string>
+    <string name="ui_could_not_add_widget" formatted="false">"Could not add widget: "</string>
+    <string name="ui_widget_binding_did_not_complete" formatted="false">"Widget binding did not complete"</string>
+    <string name="ui_could_not_open_configuration" formatted="false">"Could not open configuration: "</string>
+    <string name="ui_drag_the_top_bar_to_move_the_provider_marks_this_widget_as_fixed" formatted="false">"Drag the top bar to move. The provider marks this widget as fixed-size; use ⋮ for display options."</string>
+    <string name="ui_drag_the_top_bar_to_move_or_the_bottom_right_corner_to_resize_fin" formatted="false">"Drag the top bar to move or the bottom-right corner to resize. Finish editing from the desktop menu."</string>
+    <string name="ui_widget_unavailable_remove_it_in_edit_mode" formatted="false">"Widget unavailable\nRemove it in edit mode"</string>
+    <string name="ui_move" formatted="false">"Move "</string>
+    <string name="ui_widget" formatted="false">"Widget"</string>
+    <string name="ui_move_widget" formatted="false">"Move widget"</string>
+    <string name="ui_widget_display_settings" formatted="false">"Widget display settings"</string>
+    <string name="ui_remove_widget" formatted="false">"Remove widget"</string>
+    <string name="ui_remove_this_widget" formatted="false">"Remove this widget?"</string>
+    <string name="ui_remove" formatted="false">"Remove"</string>
+    <string name="ui_resize_widget" formatted="false">"Resize widget"</string>
+    <string name="ui_fixed_size" formatted="false">"Fixed size"</string>
+    <string name="ui_the_provider_does_not_support_resizing" formatted="false">"The provider does not support resizing"</string>
+    <string name="ui_normal_respect_provider_limits" formatted="false">"Normal (respect provider limits)"</string>
+    <string name="ui_force_resize_adjust_width_and_height" formatted="false">"Force resize (adjust width and height)"</string>
+    <string name="ui_scale_proportionally_may_add_margins" formatted="false">"Scale proportionally (may add margins)"</string>
+    <string name="ui_drag_the_bottom_right_corner_to_resize_content_reflow_depends_on" formatted="false">"Drag the bottom-right corner to resize. Content reflow depends on the provider."</string>
+    <string name="ui_drag_the_bottom_right_corner_to_scale_use_render_size_to_adjust_t" formatted="false">"Drag the bottom-right corner to scale. Use ⋮ → Render size to adjust the original layout."</string>
+    <string name="ui_provider_size_limits_are_now_applied" formatted="false">"Provider size limits are now applied"</string>
+    <string name="ui_render_size" formatted="false">"Render size…"</string>
+    <string name="ui_reset_to_recommended_size" formatted="false">"Reset to recommended size"</string>
+    <string name="ui_close" formatted="false">"Close"</string>
+    <string name="ui_size_before_scaling_dp_including_padding_increase_it_if_content_i" formatted="false">"Size before scaling (dp, including padding). Increase it if content is cramped. Applying this enables proportional scaling."</string>
+    <string name="ui_width_dp" formatted="false">"Width (dp)"</string>
+    <string name="ui_height_dp" formatted="false">"Height (dp)"</string>
+    <string name="ui_size_before_scaling" formatted="false">"Size before scaling"</string>
+    <string name="ui_apply" formatted="false">"Apply"</string>
+    <string name="ui_enter_width_80_2048_and_height_60_2048_dp" formatted="false">"Enter width 80–2048 and height 60–2048 dp"</string>
+    <string name="ui_invalid_app_component" formatted="false">"Invalid app component"</string>
+    <string name="ui_unsupported_setting_value" formatted="false">"Unsupported setting value"</string>
+    <string name="ui_will_not_redirect_to_the_phone_display" formatted="false">"Will not redirect to the phone display"</string>
+    <string name="ui_unsupported_windowing_mode" formatted="false">"Unsupported windowing mode"</string>
+    <string name="ui_resize">Resize %1$s</string>
+    <string name="ui_bring_to_front_and_move">Bring %1$s to front and move</string>
+    <string name="ui_snap_left" formatted="false">"Snap left"</string>
+    <string name="ui_snap_right" formatted="false">"Snap right"</string>
+    <string name="ui_minimize" formatted="false">"Minimize"</string>
+    <string name="ui_maximize_restore" formatted="false">"Maximize / restore"</string>
+    <string name="ui_could_not_choose_an_image" formatted="false">"Could not choose an image: "</string>
+    <string name="ui_could_not_save_the_image" formatted="false">"Could not save the image"</string>
+    <string name="ui_could_not_read_the_image_your_previous_wallpaper_is_unchanged" formatted="false">"Could not read the image. Your previous wallpaper is unchanged."</string>
+    <string name="ui_could_not_read_the_saved_wallpaper_choose_an_image_again" formatted="false">"Could not read the saved wallpaper. Choose an image again."</string>
+    <string name="ui_allow_the_taskbar_overlay_first" formatted="false">"Allow the taskbar overlay first"</string>
+    <string name="ui_external_desktop" formatted="false">"External desktop"</string>
+    <string name="ui_waiting_for_a_display" formatted="false">"Waiting for a display"</string>
+    <string name="ui_back_to_desktop" formatted="false">"Back to desktop"</string>
+    <string name="ui_stop" formatted="false">"Stop"</string>
+    <string name="ui_overlay_permission_was_revoked" formatted="false">"Overlay permission was revoked"</string>
+    <string name="ui_could_not_show_the_taskbar_check_permissions" formatted="false">"Could not show the taskbar. Check permissions."</string>
+    <string name="ui_running_on_an_external_display_tap_for_settings" formatted="false">"Running on an external display · Tap for settings"</string>
+    <string name="ui_app_menu" formatted="false">"App menu"</string>
+    <string name="ui_show_desktop" formatted="false">"Show desktop"</string>
+    <string name="ui_desktop_settings" formatted="false">"Desktop settings"</string>
+    <string name="ui_collapse_taskbar" formatted="false">"Collapse taskbar"</string>
+    <string name="ui_could_not_show_the_taskbar" formatted="false">"Could not show the taskbar: "</string>
+    <string name="ui_running" formatted="false">" · running"</string>
+    <string name="ui_pinned" formatted="false">" · pinned"</string>
+    <string name="ui_could_not_open_the_app_menu" formatted="false">"Could not open the app menu: "</string>
+    <string name="ui_turn_usb_c_or_a_separate_scrcpy_display_into_a_desktop_keep_your" formatted="false">"Turn USB-C or a separate scrcpy display into a desktop.\nKeep your phone’s home screen unchanged."</string>
+    <string name="ui_1_allow_taskbar_overlay" formatted="false">"1  Allow taskbar overlay"</string>
+    <string name="ui_2_connect_authorize_shizuku_retry" formatted="false">"2  Connect / authorize Shizuku · Retry"</string>
+    <string name="ui_3_configure_desktop_mode" formatted="false">"3  Configure desktop mode"</string>
+    <string name="ui_enable_desktop_features" formatted="false">"Enable desktop features"</string>
+    <string name="ui_enable_freeform_windows_and_turn_off_android_s_force_desktop_mode" formatted="false">"Enable freeform windows and turn off Android’s force-desktop mode. StellaShell provides the external home and taskbar. Original settings are saved. Reconnect scrcpy or the USB display afterward."</string>
+    <string name="ui_enable" formatted="false">"Enable"</string>
+    <string name="ui_start_external_desktop" formatted="false">"Start external desktop"</string>
+    <string name="ui_connect_to_shizuku_first" formatted="false">"Connect to Shizuku first"</string>
+    <string name="ui_after_starting_display_connections_are_detected_automatically_aft" formatted="false">"After starting, display connections are detected automatically. After rebooting, start Shizuku and this app again. Stopping does not restore device settings; use the restore button below."</string>
+    <string name="ui_launch_in_windows_experimental" formatted="false">"Launch in windows (experimental)"</string>
+    <string name="ui_when_off_apps_open_fullscreen_drag_the_active_window_s_title_bar" formatted="false">"When off, apps open fullscreen. Drag the active window’s title bar to move it or its edges to resize. Android may enforce app minimum sizes."</string>
+    <string name="ui_reopen_external_desktop" formatted="false">"Reopen external desktop"</string>
+    <string name="ui_connect_an_external_display_first" formatted="false">"Connect an external display first"</string>
+    <string name="ui_start_the_external_desktop_first" formatted="false">"Start the external desktop first"</string>
+    <string name="ui_restore_previous_device_settings" formatted="false">"Restore previous device settings"</string>
+    <string name="ui_restore_device_settings" formatted="false">"Restore device settings"</string>
+    <string name="ui_stop_the_external_desktop_and_restore_the_two_device_settings_sav" formatted="false">"Stop the external desktop and restore the two device settings saved by this app."</string>
+    <string name="ui_restore" formatted="false">"Restore"</string>
+    <string name="ui_copy_diagnostics" formatted="false">"Copy diagnostics"</string>
+    <string name="ui_diagnostics_copied" formatted="false">"Diagnostics copied"</string>
+    <string name="ui_connect_to_shizuku" formatted="false">"Connect to Shizuku"</string>
+    <string name="ui_no_settings_to_restore" formatted="false">"No settings to restore"</string>
+    <string name="ui_could_not_save_the_previous_settings" formatted="false">"Could not save the previous settings"</string>
+    <string name="ui_previous_settings_restored" formatted="false">"Previous settings restored"</string>
+    <string name="ui_enabled_reconnect_the_display" formatted="false">"Enabled. Reconnect the display."</string>
+    <string name="ui_model" formatted="false">"\nModel: "</string>
+    <string name="ui_overlay_permission" formatted="false">"\nOverlay permission: "</string>
+    <string name="ui_session" formatted="false">"\nSession: "</string>
+    <string name="ui_restore_record" formatted="false">"\nRestore record: "</string>
+    <string name="ui_display" formatted="false">"\nDisplay "</string>
+    <string name="ui_last_error" formatted="false">"\nLast error: "</string>
+    <string name="ui_window_management" formatted="false">"\nWindow management: "</string>
+    <string name="ui_not_connected" formatted="false">"Not connected"</string>
+    <string name="ui_no_external_display_connected" formatted="false">"No external display connected"</string>
+    <string name="ui_allowed" formatted="false">"Allowed"</string>
+    <string name="ui_permission_required" formatted="false">"Permission required"</string>
+    <string name="ui_stop_external_desktop" formatted="false">"Stop external desktop"</string>
+    <string name="ui_operation_timed_out" formatted="false">"Operation timed out"</string>
+    <string name="ui_operation_was_rejected" formatted="false">"Operation was rejected"</string>
+    <string name="ui_could_not_verify_settings" formatted="false">"Could not verify settings: "</string>
+    <string name="ui_some_settings_could_not_be_restored_use_restore_to_retry" formatted="false">" / Some settings could not be restored. Use Restore to retry."</string>
+    <string name="ui_shizuku_api_13_or_later_is_required" formatted="false">"Shizuku API 13 or later is required"</string>
+    <string name="ui_enable_desktop_features_first" formatted="false">"Enable desktop features first"</string>
+    <string name="ui_shizuku_is_not_running_start_shizuku_for_full_window_management_t" formatted="false">"Shizuku is not running. Start Shizuku for full window management, then retry."</string>
+    <string name="ui_shizuku_permission_is_required" formatted="false">"Shizuku permission is required"</string>
+    <string name="ui_reconnect_to_shizuku" formatted="false">"Reconnect to Shizuku"</string>
+    <string name="ui_shizuku_connected" formatted="false">"Shizuku connected"</string>
+    <string name="ui_waiting_for_shizuku" formatted="false">"Waiting for Shizuku"</string>
+    <string name="ui_retry_the_connection" formatted="false">"Retry the connection"</string>
+    <string name="ui_the_main_display_is_not_supported" formatted="false">"The main display is not supported"</string>
+    <string name="ui_no_external_display" formatted="false">"No external display"</string>
+    <string name="ui_the_window_closed_or_moved_to_another_display" formatted="false">"The window closed or moved to another display"</string>
+    <string name="ui_could_not_find_the_launched_window" formatted="false">"Could not find the launched window"</string>
+    <string name="ui_could_not_close_the_window" formatted="false">"Could not close the window"</string>
+    <string name="ui_unsupported_operation" formatted="false">"Unsupported operation"</string>
+    <string name="ui_desktop_menu" formatted="false">"Desktop menu"</string>
+    <string name="ui_snap_icons_to_grid" formatted="false">"Snap icons to grid"</string>
+    <string name="ui_new_shortcut" formatted="false">"New shortcut"</string>
+    <string name="ui_add_shortcut" formatted="false">"Add shortcut"</string>
+    <string name="ui_wallpaper" formatted="false">"Wallpaper"</string>
+    <string name="ui_choose_image" formatted="false">"Choose image…"</string>
+    <string name="ui_fill_screen_with_image" formatted="false">"Fill screen with image"</string>
+    <string name="ui_fit_entire_image_with_margins" formatted="false">"Fit entire image (with margins)"</string>
+    <string name="ui_deep_ocean" formatted="false">"Deep ocean"</string>
+    <string name="ui_dusk" formatted="false">"Dusk"</string>
+    <string name="ui_graphite" formatted="false">"Graphite"</string>
+    <string name="ui_display_settings" formatted="false">"Display settings"</string>
+    <string name="ui_finish_editing_widgets" formatted="false">"Finish editing widgets"</string>
+    <string name="ui_edit_widgets" formatted="false">"Edit widgets"</string>
+    <string name="ui_move_2" formatted="false">"Move"</string>
+    <string name="ui_open" formatted="false">"Open"</string>
+    <string name="ui_open_in_new_window" formatted="false">"Open in new window"</string>
+    <string name="ui_launch_mode_next_launch" formatted="false">"Launch mode (next launch)"</string>
+    <string name="ui_windowed" formatted="false">"Windowed"</string>
+    <string name="ui_maximized" formatted="false">"Maximized"</string>
+    <string name="ui_fullscreen" formatted="false">"Fullscreen"</string>
+    <string name="ui_last_state" formatted="false">"Last state"</string>
+    <string name="ui_initial_window_size" formatted="false">"Initial window size"</string>
+    <string name="ui_50_of_screen_width_and_height" formatted="false">"50% of screen width and height"</string>
+    <string name="ui_last_size" formatted="false">"Last size"</string>
+    <string name="ui_custom" formatted="false">"Custom…"</string>
+    <string name="ui_initial_position" formatted="false">"Initial position"</string>
+    <string name="ui_automatic" formatted="false">"Automatic"</string>
+    <string name="ui_center" formatted="false">"Center"</string>
+    <string name="ui_last_position" formatted="false">"Last position"</string>
+    <string name="ui_remember_position_and_size" formatted="false">"Remember position and size"</string>
+    <string name="ui_current_window" formatted="false">"Current window"</string>
+    <string name="ui_restore_size" formatted="false">"Restore size"</string>
+    <string name="ui_remove_from_desktop" formatted="false">"Remove from desktop"</string>
+    <string name="ui_add_to_desktop" formatted="false">"Add to desktop"</string>
+    <string name="ui_unpin_from_taskbar" formatted="false">"Unpin from taskbar"</string>
+    <string name="ui_pin_to_taskbar" formatted="false">"Pin to taskbar"</string>
+    <string name="ui_app_info" formatted="false">"App info"</string>
+    <string name="ui_width_px" formatted="false">"Width (px)"</string>
+    <string name="ui_height_px" formatted="false">"Height (px)"</string>
+    <string name="ui_initial_width" formatted="false">"Initial width"</string>
+    <string name="ui_initial_height" formatted="false">"Initial height"</string>
+    <string name="ui_initial_size_display_pixels" formatted="false">"Initial size (display pixels)"</string>
+    <string name="ui_save" formatted="false">"Save"</string>
+    <string name="ui_width_must_be_240_16384_and_height_160_16384" formatted="false">"Width must be 240–16384 and height 160–16384"</string>
+    <string name="ui_drag_this_icon_to_place_it_tap_or_press_back_to_cancel" formatted="false">"Drag this icon to place it. Tap or press Back to cancel."</string>
+    <string name="ui_apps" formatted="false">"Apps"</string>
+    <string name="ui_search_by_name" formatted="false">"Search by name"</string>
+    <string name="ui_search_apps" formatted="false">"Search apps"</string>
+    <string name="ui_loading" formatted="false">"Loading…"</string>
+    <string name="ui_right_click_or_long_press_for_launch_settings" formatted="false">"Right-click or long-press for launch settings"</string>
+    <string name="ui_could_not_load_apps" formatted="false">"Could not load apps"</string>
+    <string name="ui_no_matching_apps" formatted="false">"No matching apps"</string>
+    <string name="ui_the_display_is_too_small" formatted="false">"The display is too small"</string>
+    <string name="ui_you_can_pin_up_to_6_apps" formatted="false">"You can pin up to 6 apps"</string>
+    <string name="ui_unknown_error" formatted="false">"Unknown error"</string>
+    <string name="ui_operation_failed" formatted="false">"Operation failed"</string>
+    <string name="ui_launch_profiles_require_a_shizuku_connection" formatted="false">"Launch profiles require a Shizuku connection"</string>
+    <string name="ui_this_app_reused_its_existing_window" formatted="false">"This app reused its existing window"</string>
+    <string name="ui_reconnect_to_shizuku_to_launch_a_window" formatted="false">"Reconnect to Shizuku to launch a window"</string>
+    <string name="start_menu_label">▦ Start</string>
+    <plurals name="app_count"><item quantity="one">%d app</item><item quantity="other">%d apps</item></plurals>
+    <string name="display_connected">%1$s connected</string>
+    <string name="setup_status">%1$s\n%2$s\nTaskbar overlay: %3$s</string>
+</resources>

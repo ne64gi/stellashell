@@ -1,0 +1,38 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Optional daily helper. Pair once using setup-self-adb.sh; does not start Shizuku.
+set -u
+if [[ "${1:-}" == --help ]]; then
+    echo "Usage: adb5555 [wireless-debugging connection port]"
+    exit 0
+fi
+for dependency in adb timeout; do
+    command -v "$dependency" >/dev/null || { echo "Missing: $dependency" >&2; exit 1; }
+done
+ready() { [[ "$(timeout 4 adb -s "$1" get-state 2>/dev/null)" == device ]]; }
+connect() { timeout 4 adb connect "$1" >/dev/null 2>&1 || true; }
+connect 127.0.0.1:5555
+ready 127.0.0.1:5555 && exit 0
+if [[ -n "${1:-}" ]]; then
+    [[ "$1" =~ ^[0-9]{1,5}$ ]] && (( 10#$1 > 0 && 10#$1 <= 65535 )) || { echo 'Invalid connection port' >&2; exit 1; }
+    ports="$1"
+else
+    command -v nmap >/dev/null || { echo 'Install nmap, or pass the connection port.' >&2; exit 1; }
+    ports=$(timeout 45 nmap -sT -p 30000-50000 127.0.0.1 --open 2>/dev/null |
+        awk '/^[0-9]+\/tcp/ {split($1,a,"/"); print a[1]}')
+fi
+for port in $ports; do
+    endpoint="127.0.0.1:$port"
+    connect "$endpoint"
+    if ready "$endpoint"; then
+        timeout 8 adb -s "$endpoint" tcpip 5555 || exit 1
+        for attempt in {1..8}; do
+            sleep 1
+            connect 127.0.0.1:5555
+            ready 127.0.0.1:5555 && exit 0
+        done
+        echo 'ADB port 5555 did not become ready.' >&2
+        exit 1
+    fi
+done
+echo 'No authorized wireless ADB found. Enable Wireless debugging; pair if needed, or pass its connection port.' >&2
+exit 1

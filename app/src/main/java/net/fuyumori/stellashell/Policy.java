@@ -11,20 +11,20 @@ public final class Policy {
     }
     public static void requireTarget(int displayId, Collection<Integer> available) {
         if (displayId <= 0 || !available.contains(displayId))
-            throw new IllegalArgumentException("外部ディスプレイが切断されています");
+            throw new IllegalArgumentException("The external display is disconnected");
     }
     public static void component(String value) {
         if (value == null || !value.matches("[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)+/[A-Za-z_.$][A-Za-z0-9_.$]*"))
-            throw new IllegalArgumentException("起動するアプリの指定が不正です");
+            throw new IllegalArgumentException("Invalid app component");
     }
     public static void setting(String value) {
         if (!Arrays.asList("0", "1", "null").contains(value))
-            throw new IllegalArgumentException("未対応の設定値です");
+            throw new IllegalArgumentException("Unsupported setting value");
     }
     public static String[] launchCommand(String component, int displayId, int mode) {
         component(component);
-        if (displayId <= 0) throw new IllegalArgumentException("スマホ画面への転送は行いません");
-        if (mode != 1 && mode != 5) throw new IllegalArgumentException("未対応のウィンドウモードです");
+        if (displayId <= 0) throw new IllegalArgumentException("Will not redirect to the phone display");
+        if (mode != 1 && mode != 5) throw new IllegalArgumentException("Unsupported windowing mode");
         return new String[]{"/system/bin/am", "start", "--user", "current", "--display", Integer.toString(displayId),
                 "--windowingMode", Integer.toString(mode), "-a", "android.intent.action.MAIN", "-n", component,
                 "-f", "0x10200000"};

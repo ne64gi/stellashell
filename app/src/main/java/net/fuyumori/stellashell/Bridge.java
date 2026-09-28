@@ -14,6 +14,7 @@ public final class Bridge {
         if (instance == null) instance = new Bridge(context.getApplicationContext());
         return instance;
     }
+    private final Context context;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final CopyOnWriteArrayList<Runnable> listeners = new CopyOnWriteArrayList<>();
@@ -28,8 +29,9 @@ public final class Bridge {
         @Override public void onServiceDisconnected(ComponentName name) { service = null; binding = false; changed(); }
     };
     private Bridge(Context context) {
+        this.context=context;
         args = new Shizuku.UserServiceArgs(new ComponentName(context, DesktopBridgeService.class))
-                .daemon(false).processNameSuffix("desktop_bridge").debuggable(false).version(6);
+                .daemon(false).processNameSuffix("desktop_bridge").debuggable(false).version(7);
         Shizuku.addBinderReceivedListenerSticky(this::connect);
         Shizuku.addBinderDeadListener(() -> { service = null; binding = false; changed(); });
         Shizuku.addRequestPermissionResultListener((code, result) -> { if (result == PackageManager.PERMISSION_GRANTED) connect(); changed(); });
@@ -39,12 +41,12 @@ public final class Bridge {
     private void changed() { main.post(() -> { for (Runnable r : listeners) r.run(); }); }
     public boolean ready() { return service != null && service.asBinder().isBinderAlive(); }
     public String status() {
-        if (!Shizuku.pingBinder()) return "Shizuku を起動してください";
+        if (!Shizuku.pingBinder()) return context.getString(R.string.ui_shizuku_is_not_running_start_shizuku_for_full_window_management_t);
         try {
-            if (Shizuku.getVersion() < 13) return "Shizuku API 13 以降が必要です";
-            if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) return "Shizuku の利用許可が必要です";
-        } catch (RuntimeException e) { return "Shizuku に再接続してください"; }
-        return ready() ? "Shizuku 接続済み" : error.isEmpty() ? "Shizuku 接続待ち" : error;
+            if (Shizuku.getVersion() < 13) return context.getString(R.string.ui_shizuku_api_13_or_later_is_required);
+            if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) return context.getString(R.string.ui_shizuku_permission_is_required);
+        } catch (RuntimeException e) { return context.getString(R.string.ui_reconnect_to_shizuku); }
+        return ready() ? context.getString(R.string.ui_shizuku_connected) : error.isEmpty() ? context.getString(R.string.ui_waiting_for_shizuku) : error;
     }
     public void request() {
         if (!Shizuku.pingBinder()) { changed(); return; }
@@ -58,7 +60,7 @@ public final class Bridge {
         try {
             if (Shizuku.getVersion() < 13 || Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) return;
             binding = true; Shizuku.bindUserService(args, connection);
-            main.postDelayed(() -> { if (binding && !ready()) { binding = false; error = "接続を再試行してください"; changed(); } }, 6000);
+            main.postDelayed(() -> { if (binding && !ready()) { binding = false; error = context.getString(R.string.ui_retry_the_connection); changed(); } }, 6000);
         } catch (RuntimeException e) { binding = false; error = e.getMessage(); changed(); }
     }
     public void call(Work work, Reply reply) {
@@ -71,7 +73,7 @@ public final class Bridge {
                 if (value == null || value.startsWith("ERROR:")) throw new IllegalStateException(value);
             } catch (Exception e) { failure = e.getMessage() == null ? e.toString() : e.getMessage(); }
             String result = value, problem = failure;
-            main.post(() -> reply.done(result, problem));
+            main.post(() -> reply.done(result, problem==null?null:ErrorText.localize(context,problem)));
         });
     }
 }

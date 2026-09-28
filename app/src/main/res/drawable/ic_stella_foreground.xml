@@ -1,5 +1,4 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-<path android:fillColor="#111B30" android:pathData="M0,0H108V108H0Z"/>
     <group android:scaleX="0.8" android:scaleY="0.8" android:translateX="8" android:translateY="11">
     <!-- S L L / S L L rhythm: six strokes, one constellation. -->
     <path android:fillColor="#00000000" android:strokeColor="#73E8D5" android:strokeWidth="3.2" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M33,46H28C24,46 24,54 28,54H30C34,54 34,64 30,64H25" />

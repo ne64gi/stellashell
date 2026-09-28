@@ -37,7 +37,7 @@ final class Launches {
     static void togglePin(Context c,String component) {
         Policy.component(component);List<String> pins=pins(c);
         if(!pins.remove(component)) {
-            if(pins.size()>=6){Ui.message(c,"ピン留めは6件までです");return;}
+            if(pins.size()>=6){Ui.message(c,c.getString(R.string.ui_you_can_pin_up_to_6_apps));return;}
             pins.add(component);
         }
         prefs(c).edit().putString("pinned",String.join("\n",pins)).apply();
@@ -60,8 +60,9 @@ final class Launches {
         launch(c,new ComponentName(c,SetupActivity.class).flattenToString(),displayId,1,false);
     }
     static void problem(Context c,String message) {
-        prefs(c).edit().putString("last_error",message==null?"不明なエラー":message).apply();
-        Ui.message(c,message==null?"操作に失敗しました":message);
+        message=ErrorText.localize(c,message);
+        prefs(c).edit().putString("last_error",message==null?c.getString(R.string.ui_unknown_error):message).apply();
+        Ui.message(c,message==null?c.getString(R.string.ui_operation_failed):message);
     }
     static void home(Context c,int displayId) {
         launch(c,new ComponentName(c,DesktopActivity.class).flattenToString(),displayId,1,false);
@@ -73,7 +74,7 @@ final class Launches {
         try{
             AppLaunchProfile profile=Profiles.get(c,component);AppLaunchProfile.Plan plan=Profiles.plan(c,component,displayId);
             if(!Bridge.get(c).ready()){
-                if(newWindow||plan.windowingMode!=1)throw new IllegalStateException("起動プロファイルには Shizuku の接続が必要です");
+                if(newWindow||plan.windowingMode!=1)throw new IllegalStateException(c.getString(R.string.ui_launch_profiles_require_a_shizuku_connection));
                 launch(c,component,displayId,1,true);return;
             }
             Profiles.begin(component);
@@ -81,7 +82,7 @@ final class Launches {
                 Profiles.end(component);
                 if(error!=null){problem(c,error);return;}
                 try{org.json.JSONObject data=new org.json.JSONObject(result);Profiles.launched(c,component,data,displayId);remember(c,component);
-                    if(newWindow&&!data.optBoolean("created"))Ui.message(c,"このアプリは既存のウィンドウを使用しました");
+                    if(newWindow&&!data.optBoolean("created"))Ui.message(c,c.getString(R.string.ui_this_app_reused_its_existing_window));
                 }catch(Exception e){problem(c,e.getMessage());}
             });
         }catch(RuntimeException e){Profiles.end(component);problem(c,e.getMessage());}
@@ -95,7 +96,7 @@ final class Launches {
                     else if(remember)remember(c,component);
                 });return;
             }
-            if(mode==5)throw new IllegalStateException("ウィンドウ起動には Shizuku の再接続が必要です");
+            if(mode==5)throw new IllegalStateException(c.getString(R.string.ui_reconnect_to_shizuku_to_launch_a_window));
             Intent intent=new Intent(Intent.ACTION_MAIN).setComponent(ComponentName.unflattenFromString(component))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
             c.startActivity(intent,ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle());
