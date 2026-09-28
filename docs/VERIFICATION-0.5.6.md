@@ -46,3 +46,9 @@ Local raw evidence: `/home/fuyumori/android-dev/verification/stellashell-0.5.6/`
 - Primary/external simultaneous desktops are not supported. Per-OEM freeform limitations still apply.
 - Rotation, all window operations, all apps and widget behavior on the primary display are not exhaustively tested.
 - Standard HOME and global freeform/desktop settings were not changed during these checks.
+
+## Start-button UX follow-up
+
+The mode switch plus shared start button was replaced with separate **Start on device screen** and **Start on external screen (USB / scrcpy)** buttons, plus a dedicated Stop button. With no external screen, the latter reads **Wait for external screen**. Help text explicitly says that the button does not create a virtual display; the PC must create it with `scrcpy --new-display`. Switching targets requires stopping the current session first. This supersedes the mode-switch UI described above; the underlying routing/backend checks are unchanged.
+
+Follow-up checks: `lintDebug assembleDebug` passed; APK successfully reinstalled on both devices. REDMAGIC setup UI hierarchy confirms separate primary-start and external-wait buttons. Updated APK SHA-256: `4d50108af1b3bcbee932c049676f38b7d6f2bce13d78ba825dce55863dbb19a9`. Prior backend/policy test evidence is unchanged and reused.

@@ -13,7 +13,7 @@ import android.widget.*;
 import java.util.*;
 
 public final class SetupActivity extends Activity implements DisplayManager.DisplayListener,SharedPreferences.OnSharedPreferenceChangeListener {
-    private TextView status,detail;private Button start,enable,restore;private Bridge bridge;private DisplayManager displays;
+    private TextView status,detail;private Button startPrimary,startExternal,stop,enable,restore;private Bridge bridge;private DisplayManager displays;
     private boolean busy;private final Runnable refreshListener=this::refresh;
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
@@ -40,19 +40,14 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
                 .setMessage(this.getString(R.string.ui_enable_freeform_windows_and_turn_off_android_s_force_desktop_mode))
                 .setNegativeButton(this.getString(R.string.ui_cancel),null).setPositiveButton(this.getString(R.string.ui_enable),(d,w)->apply(false)).show());
         root.addView(enable);
-        Switch primary=new Switch(this);primary.setText(R.string.primary_mode);primary.setTextColor(Ui.TEXT);
-        primary.setChecked(Displays.primary(this));primary.setOnCheckedChangeListener((button,checked)->{
-            if(Launches.prefs(this).getBoolean("enabled",false))DockService.stop(this,false);
-            Launches.prefs(this).edit().putBoolean("primary_mode",checked).apply();refresh();
-        });root.addView(primary);Ui.note(root,getString(R.string.primary_note));
-        start=Ui.button(this,this.getString(R.string.ui_start_external_desktop),()->{
-            if(Launches.prefs(this).getBoolean("enabled",false)){DockService.stop(this);refresh();return;}
-            if(!bridge.ready()){Ui.message(this,this.getString(R.string.ui_connect_to_shizuku_first));return;}
-            if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
-                requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},42);
-            DockService.start(this);refresh();
-        });start.setTextColor(Ui.ACCENT);root.addView(start);
-        Ui.note(root,this.getString(R.string.ui_after_starting_display_connections_are_detected_automatically_aft));
+        startPrimary=Ui.button(this,getString(R.string.primary_start),()->startDesktop(true));
+        startPrimary.setTextColor(Ui.ACCENT);root.addView(startPrimary);
+        Ui.note(root,getString(R.string.primary_note));
+        startExternal=Ui.button(this,getString(R.string.external_start_explicit),()->startDesktop(false));
+        startExternal.setTextColor(Ui.ACCENT);root.addView(startExternal);
+        Ui.note(root,getString(R.string.external_start_note));
+        stop=Ui.button(this,getString(R.string.exit_desktop),()->{DockService.stop(this);refresh();});root.addView(stop);
+        Ui.note(root,getString(R.string.mode_stop_first));
         Switch mode=new Switch(this);mode.setText(this.getString(R.string.ui_launch_in_windows_experimental));mode.setTextColor(Ui.TEXT);mode.setTextSize(15);mode.setPadding(0,Ui.dp(this,8),0,Ui.dp(this,8));
         mode.setChecked(Launches.prefs(this).getBoolean("freeform",false));mode.setOnCheckedChangeListener((button,checked)->Launches.prefs(this).edit().putBoolean("freeform",checked).apply());root.addView(mode);
         Ui.note(root,this.getString(R.string.ui_when_off_apps_open_fullscreen_drag_the_active_window_s_title_bar));
@@ -70,6 +65,15 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
             getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("StellaShell diagnostics",diagnostics()));Ui.message(this,this.getString(R.string.ui_diagnostics_copied));
         }));
         setContentView(scroll);refresh();
+    }
+    private void startDesktop(boolean primary){
+        if(busy || Launches.prefs(this).getBoolean("enabled",false))return;
+        if(!bridge.ready()){Ui.message(this,getString(R.string.ui_connect_to_shizuku_first));return;}
+        if(!Settings.canDrawOverlays(this)){Ui.message(this,getString(R.string.ui_allow_the_taskbar_overlay_first));return;}
+        Launches.prefs(this).edit().putBoolean("primary_mode",primary).apply();
+        if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},42);
+        DockService.start(this);refresh();
     }
     private void apply(boolean restoring){
         if(busy)return;
@@ -118,7 +122,9 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         String display=monitors.isEmpty()?getString(R.string.ui_no_external_display_connected):getString(R.string.display_connected,monitors.get(0).getName());
         if(Displays.primary(this))display=getString(R.string.primary_mode);
         status.setText(getString(R.string.setup_status,display,bridge.status(),getString(Settings.canDrawOverlays(this)?R.string.ui_allowed:R.string.ui_permission_required)));
-        start.setText(Launches.prefs(this).getBoolean("enabled",false)?getString(R.string.exit_desktop):getString(Displays.primary(this)?R.string.primary_start:R.string.ui_start_external_desktop));
+        boolean running=Launches.prefs(this).getBoolean("enabled",false);
+        startPrimary.setEnabled(!running&&!busy);startExternal.setEnabled(!running&&!busy);stop.setEnabled(running&&!busy);
+        startExternal.setText(monitors.isEmpty()?R.string.external_wait_explicit:R.string.external_start_explicit);
         enable.setEnabled(!busy && bridge.ready());restore.setEnabled(!busy && bridge.ready() && Launches.prefs(this).contains("before_desktop"));
         detail.setText(diagnostics());
     }
