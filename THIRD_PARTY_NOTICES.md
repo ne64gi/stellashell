@@ -7,3 +7,8 @@ Design references (source not incorporated):
 - Dextop, NarYuki, GPL-3.0-or-later: https://github.com/NarYuki/Dextop/tree/b3ecbbd04ba89ebf5774a609f299e16ca3486458
 
 The external-home/overlay architecture and capability/restore concerns were reviewed. No Taskbar/Dextop source, resources, Flutter runtime, virtual-display backend, or OEM-specific code is included in this implementation.
+
+External development and verification tool:
+- scrcpy, Genymobile and contributors: https://github.com/Genymobile/scrcpy. Used for independent virtual displays and device display/control during development. scrcpy is not bundled in the StellaShell APK.
+
+See the README's **Special Thanks / 参考プロジェクト** section for acknowledgements to Taskbar, Dextop, and scrcpy. Acknowledgement of a design reference or external tool does not imply source incorporation or endorsement.

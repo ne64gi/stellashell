@@ -126,3 +126,15 @@ JDK 17、Android SDK Platform 35 / Build Tools 35.0.0 が必要です。`ANDROID
 APK: `app/build/outputs/apk/debug/app-debug.apk`（開発用署名）
 
 [0.5 の検証](docs/VERIFICATION-0.5.md) / [0.4 の検証](docs/VERIFICATION-0.4.md) / [0.3 の検証とAPI調査](docs/VERIFICATION-0.3.md) / [0.2 の記録](docs/VERIFICATION-2026-09-28.md)
+
+## Special Thanks / 参考プロジェクト
+
+StellaShellの設計・調査・実機検証を支えてくれた、先行プロジェクトとその開発者の皆さんに感謝します。
+
+- **[Taskbar](https://github.com/farmerbb/Taskbar)** — Braden Farmer / contributors。Androidの外部ディスプレイ、freeform window、Startメニュー・タスクバー構成の参考に。
+- **[Dextop](https://github.com/NarYuki/Dextop)** — NarYuki / contributors。Androidデスクトップ環境の着想と、framework・端末ごとの互換性を調べる際の参考に。
+- **[scrcpy](https://github.com/Genymobile/scrcpy)** — Genymobile / contributors。独立した仮想ディスプレイとPCからの表示・操作を通じて、StellaShellの開発・検証を支えるツールとして。
+
+These projects inspired our design and made device testing possible. Thank you to their maintainers and contributors.
+
+参考・謝辞と、APKに含まれる依存ライブラリの表記は区別しています。依存関係・ライセンスと調査時の参照コミットは [Third-party notices](THIRD_PARTY_NOTICES.md) を参照してください。各プロジェクトによるStellaShellの公式な推奨・提携を示すものではありません。
