@@ -27,9 +27,10 @@ final class DesktopWidgets {
         AppWidgetHostView view;
         AppWidgetProviderInfo info;
     }
-    DesktopWidgets(Activity a,FrameLayout c){
-        activity=a;canvas=c;manager=AppWidgetManager.getInstance(a);host=new AppWidgetHost(a,HOST);
-        prefs=a.getSharedPreferences("desktop_widgets",0);pending=prefs.getInt("pending",-1);
+    DesktopWidgets(Activity a,FrameLayout c){this(a,c,false);}
+    DesktopWidgets(Activity a,FrameLayout c,boolean panel){
+        activity=a;canvas=c;manager=AppWidgetManager.getInstance(a);host=new AppWidgetHost(a,panel?HOST+1:HOST);
+        prefs=a.getSharedPreferences(panel?"panel_widgets":"desktop_widgets",0);pending=prefs.getInt("pending",-1);
         try{
             JSONArray array=new JSONArray(prefs.getString("items","[]"));
             for(int i=0;i<array.length();i++){

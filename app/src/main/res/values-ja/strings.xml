@@ -237,4 +237,15 @@
     <string name="hide_virtual_keyboard">仮想画面のスクリーンキーボードを非表示</string>
     <string name="hide_virtual_keyboard_note">仮想デスクトップのみ・Shizukuが必要です。日本語変換などIMEの入力処理も無効になります。Android側で変換する場合はOFFにしてください。チェック解除・デスクトップ終了で元の画面設定に戻します。</string>
     <string name="virtual_keyboard_unavailable">仮想画面のキーボード設定を変更できませんでした。Shizukuと診断欄を確認してください。</string>
+    <string name="hub_title">ウィジェットと通知</string>
+    <string name="hub_widgets">ウィジェット</string>
+    <string name="hub_notifications">通知</string>
+    <string name="hub_widgets_note">好きなAndroidウィジェットを配置できます。デスクトップとは別に保存されます。編集で移動・サイズ変更。</string>
+    <string name="hub_notification_access_label">StellaShell 通知パネル</string>
+    <string name="hub_access">通知へのアクセス設定</string>
+    <string name="hub_access_note">Android設定でStellaShellの通知へのアクセスを許可すると、現在の通知を表示します。通知履歴は保存しません。許可済みで接続しない場合は設定で再接続してください。</string>
+    <string name="hub_locked">通知を表示するには端末のロックを解除してください。</string>
+    <string name="hub_no_notifications">通知はありません</string>
+    <string name="hub_dismiss">通知を消す</string>
+    <string name="hub_notification_gone">この通知は削除されたか、開くことができません。</string>
 </resources>
