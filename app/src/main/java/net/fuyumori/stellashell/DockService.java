@@ -14,6 +14,8 @@ import java.util.concurrent.*;
 
 public final class DockService extends Service implements DisplayManager.DisplayListener,SharedPreferences.OnSharedPreferenceChangeListener {
     private static final String STOP="net.fuyumori.stellashell.STOP";
+    private static final String RESET="net.fuyumori.stellashell.RESET_CONNECTION";
+    private boolean resetting,destroyed;
     private String displayGeometry="";
     private DisplayManager displays; private WindowManager windows; private View dock; private int displayId=-1;
     private AppMenu menu;private boolean collapsed;
@@ -33,7 +35,7 @@ public final class DockService extends Service implements DisplayManager.Display
     }
     private View batteryView(Context c){batteryText=Ui.text(c,"",13,Ui.TEXT);batteryText.setGravity(Gravity.CENTER);updateBattery();return batteryText;}
     private void back(){
-        if(menu!=null&&menu.isOpen()){menu.close();return;}
+        if(menu!=null&&menu.isOpen()){menu.back();return;}
         if(backPending)return;
         Bridge bridge=Bridge.get(this);if(!bridge.ready()){Ui.message(this,bridge.status());return;}
         int target=displayId;backPending=true;
@@ -54,10 +56,18 @@ public final class DockService extends Service implements DisplayManager.Display
         try {c.startForegroundService(new Intent(c,DockService.class));}
         catch(RuntimeException e){Launches.prefs(c).edit().putBoolean("enabled",false).apply();enableHome(c,false);Launches.problem(c,e.getMessage());}
     }
+    static void resetConnection(Context c){
+        if(!Launches.prefs(c).getBoolean("enabled",false)){
+            Launches.prefs(c).edit().remove("preferred_display").apply();return;
+        }
+        try{c.startService(new Intent(c,DockService.class).setAction(RESET));}
+        catch(RuntimeException e){Launches.problem(c,e.getMessage());}
+    }
     static void stop(Context c) { stop(c,true); }
     static void stop(Context c,boolean showHome) {
         boolean returnHome=showHome && Displays.primaryActive(c);
         Launches.prefs(c).edit().putBoolean("enabled",false).apply();
+        Bridge.get(c).mouseDisplay(-1);
         Bridge.get(c).call(s->{s.setPrimaryMode(false);return "OK";},(result,error)->{});
         if(returnHome)try {
             android.app.ActivityOptions options=android.app.ActivityOptions.makeBasic().setLaunchDisplayId(0);
@@ -90,6 +100,20 @@ public final class DockService extends Service implements DisplayManager.Display
         if((intent!=null && STOP.equals(intent.getAction())) || !Launches.prefs(this).getBoolean("enabled",false)) {
             stop(this);return START_NOT_STICKY;
         }
+        if(intent!=null && RESET.equals(intent.getAction())){
+            if(!resetting){
+                resetting=true;removeDock();if(tasks!=null)tasks.close();tasks=null;taskSignature="";displayId=-1;
+                Launches.prefs(this).edit().remove("preferred_display").apply();
+                Bridge.get(this).resetMouseRouting((result,error)->{
+                    if(destroyed)return;
+                    resetting=false;
+                    if(!Launches.prefs(this).getBoolean("enabled",false))return;
+                    if(error!=null){Launches.problem(this,error);stop(this,false);return;}
+                    update(true);
+                });
+            }
+            return START_STICKY;
+        }
         update(true);return START_STICKY;
     }
     private void removeDock() {
@@ -102,8 +126,10 @@ public final class DockService extends Service implements DisplayManager.Display
         dock=null;batteryText=null;if(!keepChrome)windows=null;
     }
     private void update(boolean openHome) {
+        if(resetting || destroyed)return;
         int preferred=displayId>0?displayId:Launches.prefs(this).getInt("preferred_display",-1);
         int next=Displays.target(this,preferred);
+        Bridge.get(this).mouseDisplay(next);
         boolean changed=next!=displayId;
         if(changed){removeDock();if(tasks!=null)tasks.close();tasks=null;taskSignature="";displayId=next;}
         if(next<0){getSystemService(NotificationManager.class).notify(41,notification(this.getString(R.string.ui_waiting_for_a_display)));return;}
@@ -124,12 +150,11 @@ public final class DockService extends Service implements DisplayManager.Display
             LinearLayout row=new LinearLayout(c);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(Ui.dp(c,6),Ui.dp(c,4),Ui.dp(c,6),Ui.dp(c,4));
             row.setBackground(Ui.rounded(c,Ui.PANEL,18));
             int widthDp=Math.round(c.getResources().getDisplayMetrics().widthPixels/c.getResources().getDisplayMetrics().density);
-            boolean compact=widthDp<500;
-            Button apps=Ui.button(c,(collapsed||compact)?"▦":getString(R.string.start_menu_label),()->{
-                if(collapsed){collapsed=false;removeDock();update(false);}
-                toggleMenu();
-            });apps.setContentDescription(this.getString(R.string.ui_app_menu));apps.setTextColor(Ui.ACCENT);
-            row.addView(apps,new LinearLayout.LayoutParams(Ui.dp(c,(collapsed||compact)?56:106),Ui.dp(c,44)));
+            ImageButton apps=new ImageButton(c);apps.setImageResource(R.mipmap.ic_launcher);apps.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            apps.setBackground(Ui.rounded(c,Ui.PANEL,12));apps.setPadding(Ui.dp(c,7),Ui.dp(c,4),Ui.dp(c,7),Ui.dp(c,4));
+            apps.setOnClickListener(v->{if(collapsed){collapsed=false;removeDock();update(false);}toggleMenu();});
+            apps.setContentDescription(getString(R.string.ui_app_menu));apps.setTooltipText(getString(R.string.start_menu_label));
+            row.addView(apps,new LinearLayout.LayoutParams(Ui.dp(c,56),Ui.dp(c,44)));
             if(!collapsed){
             Button back=Ui.button(c,"‹",this::back);back.setContentDescription(getString(R.string.external_back));back.setTooltipText(getString(R.string.external_back));
             row.addView(back,new LinearLayout.LayoutParams(Ui.dp(c,44),Ui.dp(c,44)));
@@ -206,6 +231,7 @@ public final class DockService extends Service implements DisplayManager.Display
         if("pinned".equals(key)){removeDock();if(displayId>=0)attachDock();}
     }
     @Override public void onDestroy(){
+        destroyed=true;Bridge.get(this).mouseDisplay(-1);
         if(batteryRegistered){unregisterReceiver(batteryReceiver);batteryRegistered=false;}
         if(displays!=null)displays.unregisterDisplayListener(this);
         Launches.prefs(this).unregisterOnSharedPreferenceChangeListener(this);if(tasks!=null)tasks.close();removeDock();menuLoader.shutdownNow();super.onDestroy();

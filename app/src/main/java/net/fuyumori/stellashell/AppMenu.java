@@ -1,177 +1,226 @@
 package net.fuyumori.stellashell;
 
 import android.content.Context;
+import android.content.SharedPreferences;
+import android.content.res.ColorStateList;
 import android.graphics.PixelFormat;
+import android.graphics.Typeface;
+import android.graphics.drawable.RippleDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.*;
 import android.view.*;
 import android.widget.*;
+import java.text.Collator;
+import java.text.Normalizer;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 
-/** Display-scoped, focusable app menu. Primary display requires explicit opt-in. */
-final class AppMenu implements android.content.SharedPreferences.OnSharedPreferenceChangeListener {
+/** One display-scoped Start surface, with an in-surface modal folder panel. */
+final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListener {
     private final Context context;
     private final WindowManager windows;
     private final int displayId;
-    private final List<Launches.App> all=new ArrayList<>(),shown=new ArrayList<>();
-    private LinearLayout root;
-    private TextView status;
+    private final List<Launches.App> all=new ArrayList<>();
+    private final Set<android.app.AlertDialog> dialogs=new HashSet<>();
+    private FrameLayout root,folderLayer;
+    private LinearLayout main,content;
+    private ScrollView scroll;
     private EditText search;
-    private BaseAdapter adapter;
-    private Spinner groups;private ArrayAdapter<String> groupAdapter;private final List<String> groupNames=new ArrayList<>();
-    private int groupMode;private String selectedGroup="";private boolean updatingGroups;
+    private String openGroup;
+    private View folderAnchor;
+    private boolean hiddenMode,loaded,renderQueued;
+    private int menuWidth,menuHeight;
+    private PopupMenu activePopup;
 
-
-    AppMenu(Context context,WindowManager windows,int displayId) {
-        this.context=context;this.windows=windows;this.displayId=displayId;
-    }
+    AppMenu(Context context,WindowManager windows,int displayId){this.context=context;this.windows=windows;this.displayId=displayId;}
     boolean isOpen(){return root!=null;}
+    void back(){if(openGroup!=null)closeFolder();else close();}
     void close(){
         AppOrganization.prefs(context).unregisterOnSharedPreferenceChangeListener(this);
+        Launches.prefs(context).unregisterOnSharedPreferenceChangeListener(this);
+        if(activePopup!=null)activePopup.dismiss();activePopup=null;
+        for(android.app.AlertDialog dialog:new HashSet<>(dialogs))dialog.dismiss();dialogs.clear();
         if(root!=null)try{windows.removeViewImmediate(root);}catch(RuntimeException ignored){}
-        root=null;
+        root=null;folderLayer=null;openGroup=null;folderAnchor=null;renderQueued=false;
     }
     void open(ExecutorService loader){
         if(isOpen()){close();return;}
-        Displays.require(context,displayId);adapter=null;
+        Displays.require(context,displayId);StartPins.initialize(context);
         AppOrganization.prefs(context).registerOnSharedPreferenceChangeListener(this);
-        root=Ui.column(context);root.setBackground(Ui.rounded(context,Ui.PANEL,18));
-        root.setPadding(Ui.dp(context,16),Ui.dp(context,14),Ui.dp(context,16),Ui.dp(context,12));
+        Launches.prefs(context).registerOnSharedPreferenceChangeListener(this);
+        hiddenMode=false;loaded=false;all.clear();
+        menuWidth=Math.min(dp(640),context.getResources().getDisplayMetrics().widthPixels-dp(24));
+        menuHeight=Math.min(dp(720),context.getResources().getDisplayMetrics().heightPixels-dp(140));
+        root=new FrameLayout(context);root.setBackground(Ui.rounded(context,Ui.PANEL,22));root.setClipToOutline(true);
+        main=Ui.column(context);main.setPadding(dp(20),dp(18),dp(20),dp(12));root.addView(main,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout heading=new LinearLayout(context);heading.setGravity(Gravity.CENTER_VERTICAL);
-        heading.addView(Ui.text(context,context.getString(R.string.ui_apps),21,Ui.TEXT),new LinearLayout.LayoutParams(0,-2,1));
-        Button settings=Ui.button(context,"⚙",()->{});settings.setContentDescription(context.getString(R.string.launcher_tools));settings.setOnClickListener(v->tools(settings));heading.addView(settings,new LinearLayout.LayoutParams(Ui.dp(context,52),Ui.dp(context,42)));
-        heading.addView(Ui.button(context,context.getString(R.string.ui_close),this::close),new LinearLayout.LayoutParams(-2,Ui.dp(context,42)));
-        root.addView(heading);
-        search=new EditText(context);search.setSingleLine();search.setTextColor(Ui.TEXT);search.setHintTextColor(Ui.MUTED);
-        search.setHint(context.getString(R.string.ui_search_by_name));search.setContentDescription(context.getString(R.string.ui_search_apps));search.setTextSize(16);
-        root.addView(search,new LinearLayout.LayoutParams(-1,Ui.dp(context,48)));
-        groups=new Spinner(context);groupAdapter=new ArrayAdapter<>(context,android.R.layout.simple_spinner_item,new ArrayList<>());groupAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);groups.setAdapter(groupAdapter);groups.setContentDescription(context.getString(R.string.launcher_filter));root.addView(groups,new LinearLayout.LayoutParams(-1,Ui.dp(context,44)));
-        groups.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
-            public void onNothingSelected(AdapterView<?> parent){}
-            public void onItemSelected(AdapterView<?> parent,View view,int position,long id){if(updatingGroups)return;groupMode=Math.min(position,3);selectedGroup=position>=3&&position-3<groupNames.size()?groupNames.get(position-3):"";filter();}
-        });refreshGroups();
-        status=Ui.text(context,context.getString(R.string.ui_loading),12,Ui.MUTED);root.addView(status);
-        ListView list=new ListView(context);list.setDividerHeight(0);
-        adapter=new BaseAdapter(){
-            public int getCount(){return shown.size();}
-            public Object getItem(int position){return shown.get(position);}
-            public long getItemId(int position){return position;}
-            public View getView(int position,View recycled,android.view.ViewGroup parent){
-                Launches.App app=shown.get(position);
-                LinearLayout row=new LinearLayout(context);row.setGravity(Gravity.CENTER_VERTICAL);
-                row.setPadding(Ui.dp(context,6),Ui.dp(context,8),Ui.dp(context,8),Ui.dp(context,8));
-                ImageView icon=new ImageView(context);icon.setImageDrawable(app.icon);
-                row.addView(icon,new LinearLayout.LayoutParams(Ui.dp(context,32),Ui.dp(context,32)));
-                TextView label=Ui.text(context,(Launches.pins(context).contains(app.component)?"★  ":"")+app.label,15,Ui.TEXT);
-                label.setPadding(Ui.dp(context,12),0,0,0);label.setMaxLines(2);
-                row.addView(label,new LinearLayout.LayoutParams(0,-2,1));row.setContentDescription(app.label);row.setOnClickListener(v->{if(groupMode==2)AppContextMenu.show(context,v,app.component,displayId,AppMenu.this::close,null,null);else{close();Launches.app(context,app.component,displayId);}});row.setOnLongClickListener(v->{AppContextMenu.show(context,v,app.component,displayId,AppMenu.this::close,null,null);return true;});row.setOnContextClickListener(v->{AppContextMenu.show(context,v,app.component,displayId,AppMenu.this::close,null,null);return true;});
-                return row;
-            }
+        search=new EditText(context);search.setSingleLine();search.setTextSize(16);search.setTextColor(Ui.TEXT);search.setHintTextColor(Ui.MUTED);
+        search.setHint(R.string.ui_search_by_name);search.setContentDescription(context.getString(R.string.ui_search_apps));
+        search.setPadding(dp(14),0,dp(14),0);search.setBackground(Ui.rounded(context,0xff121e2c,12));
+        heading.addView(search,new LinearLayout.LayoutParams(0,dp(48),1));
+        Button settings=smallButton("⚙",context.getString(R.string.launcher_tools));settings.setOnClickListener(v->tools(settings));heading.addView(settings,new LinearLayout.LayoutParams(dp(48),dp(48)));
+        Button close=smallButton("×",context.getString(R.string.ui_close));close.setOnClickListener(v->close());heading.addView(close,new LinearLayout.LayoutParams(dp(44),dp(48)));main.addView(heading);
+        scroll=new ScrollView(context);scroll.setFillViewport(false);scroll.setClipToPadding(false);scroll.setPadding(0,dp(8),0,0);
+        content=Ui.column(context);scroll.addView(content);main.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        TextView hint=Ui.text(context,context.getString(R.string.ui_right_click_or_long_press_for_launch_settings),12,Ui.MUTED);hint.setPadding(0,dp(8),0,0);main.addView(hint);
+        View.OnKeyListener back=(v,key,event)->{
+            if((key==KeyEvent.KEYCODE_ESCAPE||key==KeyEvent.KEYCODE_BACK)&&event.getAction()==KeyEvent.ACTION_UP){back();return true;}return false;
         };
-        list.setAdapter(adapter);
-        list.setOnItemClickListener((parent,view,position,id)->{
-            String component=shown.get(position).component;if(groupMode==2)AppContextMenu.show(context,view,component,displayId,this::close,null,null);else{close();Launches.app(context,component,displayId);}
-        });
-        list.setOnItemLongClickListener((parent,view,position,id)->{
-            String component=shown.get(position).component;
-            AppContextMenu.show(context,view,component,displayId,this::close,null,null);return true;
-        });
-        root.addView(list,new LinearLayout.LayoutParams(-1,0,1));
-        root.addView(Ui.text(context,context.getString(R.string.ui_right_click_or_long_press_for_launch_settings),12,Ui.MUTED));
-        dismissOnOutside(root);
-        root.setFocusableInTouchMode(true);
-        View.OnKeyListener dismiss=(v,key,event)->{
-            if((key==KeyEvent.KEYCODE_ESCAPE||key==KeyEvent.KEYCODE_BACK)&&event.getAction()==KeyEvent.ACTION_UP){close();return true;}
-            return false;
-        };
-        root.setOnKeyListener(dismiss);search.setOnKeyListener(dismiss);list.setOnKeyListener(dismiss);
+        root.setFocusableInTouchMode(true);root.setOnKeyListener(back);search.setOnKeyListener(back);dismissOnOutside(root);
         search.addTextChangedListener(new TextWatcher(){
             public void beforeTextChanged(CharSequence s,int start,int count,int after){}
-            public void onTextChanged(CharSequence s,int start,int before,int count){filter();}
-            public void afterTextChanged(Editable value){}
+            public void onTextChanged(CharSequence s,int start,int before,int count){closeFolder();render();scroll.scrollTo(0,0);}
+            public void afterTextChanged(Editable text){}
         });
-        int width=Math.min(Ui.dp(context,400),context.getResources().getDisplayMetrics().widthPixels-Ui.dp(context,16));
-        int height=Math.min(Ui.dp(context,530),context.getResources().getDisplayMetrics().heightPixels-Ui.dp(context,130));
-        WindowManager.LayoutParams params=new WindowManager.LayoutParams(width,Math.max(Ui.dp(context,180),height),
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+        WindowManager.LayoutParams params=new WindowManager.LayoutParams(menuWidth,menuHeight,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL|WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,PixelFormat.TRANSLUCENT);
-        params.gravity=Gravity.BOTTOM|Gravity.LEFT;params.x=Ui.dp(context,8);params.y=Ui.dp(context,68);
+        params.gravity=Gravity.BOTTOM|Gravity.LEFT;params.x=dp(12);params.y=dp(72);
         params.softInputMode=WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN|WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
         params.setTitle("StellaShell app menu");
-        try{windows.addView(root,params);root.requestFocus();}
-        catch(RuntimeException failure){root=null;AppOrganization.prefs(context).unregisterOnSharedPreferenceChangeListener(this);throw failure;}
-        View generation=root;
+        try{windows.addView(root,params);root.requestFocus();render();}catch(RuntimeException error){close();throw error;}
+        FrameLayout generation=root;
         loader.execute(()->{
             try{
                 List<Launches.App> apps=Launches.catalog(context);
-                new Handler(Looper.getMainLooper()).post(()->{
-                    if(root!=generation)return;all.clear();all.addAll(apps);filter();
-                });
-            }catch(RuntimeException failure){new Handler(Looper.getMainLooper()).post(()->{
-                if(root==generation)status.setText(context.getString(R.string.ui_could_not_load_apps));
+                new Handler(Looper.getMainLooper()).post(()->{if(root==generation){all.clear();all.addAll(apps);loaded=true;render();}});
+            }catch(RuntimeException error){new Handler(Looper.getMainLooper()).post(()->{
+                if(root==generation){content.removeAllViews();note(content,R.string.ui_could_not_load_apps);}
             });}
         });
     }
-    @Override public void onSharedPreferenceChanged(android.content.SharedPreferences prefs,String key){if(root!=null){if("groups".equals(key))refreshGroups();filter();}}
-    private void refreshGroups(){
-        updatingGroups=true;groupNames.clear();groupNames.addAll(AppOrganization.groups(context));
-        groupAdapter.clear();groupAdapter.add(context.getString(R.string.launcher_all));groupAdapter.add(context.getString(R.string.launcher_ungrouped));groupAdapter.add(context.getString(R.string.launcher_hidden));groupAdapter.addAll(groupNames);
-        int position=groupMode<3?groupMode:groupNames.indexOf(selectedGroup)+3;
-        if(groupMode==3&&!groupNames.contains(selectedGroup)){groupMode=0;selectedGroup="";position=0;}
-        groups.setSelection(position);updatingGroups=false;
+    private int dp(int value){return Ui.dp(context,value);}
+    private Button smallButton(String text,String description){Button b=Ui.button(context,text,()->{});b.setPadding(0,0,0,0);b.setMinWidth(0);b.setMinimumWidth(0);b.setContentDescription(description);b.setTooltipText(description);return b;}
+    private void note(LinearLayout parent,int text){TextView view=Ui.text(context,context.getString(text),14,Ui.MUTED);view.setPadding(dp(6),dp(12),dp(6),dp(16));parent.addView(view);}
+    private void heading(LinearLayout parent,String text){TextView view=Ui.text(context,text,16,Ui.TEXT);view.setTypeface(null,Typeface.BOLD);view.setPadding(dp(6),dp(18),0,dp(12));parent.addView(view);}
+    private static String normalized(String text){return Normalizer.normalize(text,Normalizer.Form.NFKC).toLowerCase(Locale.ROOT);}
+    private boolean matches(String label,String component,String query){String value=normalized(label+" "+component);for(String term:normalized(query).trim().split("\\s+"))if(!value.contains(term))return false;return true;}
+    private List<Launches.App> members(String group){List<Launches.App> apps=new ArrayList<>();for(Launches.App app:all)if(!AppOrganization.hidden(context,app.component)&&group.equals(AppOrganization.group(context,app.component)))apps.add(app);return apps;}
+    private void render(){
+        if(root==null)return;
+        int y=scroll.getScrollY();content.removeAllViews();
+        if(!loaded){note(content,R.string.ui_loading);return;}
+        String query=search.getText().toString().trim();
+        int columns=Math.max(2,Math.min(6,(menuWidth-dp(40))/dp(96)));
+        if(!hiddenMode&&query.isEmpty()){
+            heading(content,context.getString(R.string.start_pinned_heading));
+            List<View> pins=new ArrayList<>();
+            for(String component:StartPins.get(context))for(Launches.App app:all)if(component.equals(app.component)&&!AppOrganization.hidden(context,component)){pins.add(appTile(app));break;}
+            if(pins.isEmpty())note(content,R.string.start_pins_empty);else content.addView(grid(pins,columns));
+        }
+        heading(content,context.getString(hiddenMode?R.string.launcher_hidden:query.isEmpty()?R.string.launcher_all:R.string.start_search_results));
+        List<Launches.App> apps=new ArrayList<>();List<String> groups=new ArrayList<>();
+        if(!hiddenMode)for(String group:AppOrganization.groups(context))if(query.isEmpty()||matches(group,"",query))groups.add(group);
+        for(Launches.App app:all){
+            if(AppOrganization.hidden(context,app.component)!=hiddenMode)continue;
+            if(!matches(app.label,app.component,query))continue;
+            String group=AppOrganization.group(context,app.component);
+            if(!hiddenMode&&query.isEmpty()&&!group.isEmpty()&&groups.contains(group))continue;
+            apps.add(app);
+        }
+        // Mix folders and ungrouped applications alphabetically; searches reach inside folders.
+        List<Object> items=new ArrayList<>();items.addAll(apps);items.addAll(groups);Collator sort=Collator.getInstance();
+        items.sort((a,b)->sort.compare(a instanceof String?(String)a:((Launches.App)a).label,b instanceof String?(String)b:((Launches.App)b).label));
+        List<View> tiles=new ArrayList<>();for(Object item:items)tiles.add(item instanceof String?groupTile((String)item):appTile((Launches.App)item));
+        if(tiles.isEmpty())note(content,R.string.ui_no_matching_apps);else content.addView(grid(tiles,columns));
+        scroll.post(()->{if(root!=null)scroll.scrollTo(0,y);});
+        if(openGroup!=null){if(!AppOrganization.groups(context).contains(openGroup))closeFolder();else buildFolder();}
+    }
+    private View grid(List<View> tiles,int columns){
+        LinearLayout rows=Ui.column(context);
+        for(int start=0;start<tiles.size();start+=columns){
+            LinearLayout row=new LinearLayout(context);
+            for(int col=0;col<columns;col++){View tile=start+col<tiles.size()?tiles.get(start+col):new View(context);row.addView(tile,new LinearLayout.LayoutParams(0,dp(102),1));}
+            rows.addView(row);
+        }
+        return rows;
+    }
+    private LinearLayout tile(String label){
+        LinearLayout tile=Ui.column(context);tile.setGravity(Gravity.TOP|Gravity.CENTER_HORIZONTAL);tile.setPadding(dp(6),dp(8),dp(6),dp(4));
+        tile.setBackground(new RippleDrawable(ColorStateList.valueOf(0x446ee7c8),Ui.rounded(context,0x00000000,12),Ui.rounded(context,0xffffffff,12)));
+        tile.setFocusable(true);tile.setTooltipText(label);tile.setContentDescription(label);
+        tile.setOnHoverListener((v,event)->{v.setAlpha(event.getAction()==MotionEvent.ACTION_HOVER_EXIT?1f:.78f);return false;});
+        tile.setOnKeyListener((v,key,event)->{if((key==KeyEvent.KEYCODE_ESCAPE||key==KeyEvent.KEYCODE_BACK)&&event.getAction()==KeyEvent.ACTION_UP){back();return true;}return false;});
+        return tile;
+    }
+    private void label(LinearLayout tile,String name){TextView label=Ui.text(context,name,12,Ui.TEXT);label.setGravity(Gravity.TOP|Gravity.CENTER_HORIZONTAL);label.setMaxLines(2);label.setEllipsize(TextUtils.TruncateAt.END);label.setPadding(0,dp(6),0,0);label.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);tile.addView(label,new LinearLayout.LayoutParams(-1,-2));}
+    private View appTile(Launches.App app){
+        LinearLayout tile=tile(app.label);ImageView icon=new ImageView(context);icon.setImageDrawable(app.icon);icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);tile.addView(icon,new LinearLayout.LayoutParams(dp(42),dp(42)));label(tile,app.label);
+        Runnable options=()->AppContextMenu.show(context,tile,app.component,displayId,this::close,null,null);
+        tile.setOnClickListener(v->{if(hiddenMode)options.run();else{close();Launches.app(context,app.component,displayId);}});
+        tile.setOnLongClickListener(v->{options.run();return true;});tile.setOnContextClickListener(v->{options.run();return true;});return tile;
+    }
+    private View groupTile(String group){
+        LinearLayout tile=tile(group);FrameLayout preview=new FrameLayout(context);preview.setBackgroundResource(R.drawable.ic_start_folder);
+        List<Launches.App> apps=members(group);
+        for(int i=0;i<Math.min(4,apps.size());i++){ImageView icon=new ImageView(context);icon.setImageDrawable(apps.get(i).icon);FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(dp(13),dp(13));p.leftMargin=dp(7+(i%2)*15);p.topMargin=dp(12+(i/2)*14);preview.addView(icon,p);}
+        preview.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);tile.addView(preview,new LinearLayout.LayoutParams(dp(44),dp(44)));label(tile,group);
+        tile.setContentDescription(context.getString(R.string.start_group_accessibility,group,apps.size()));
+        tile.setOnClickListener(v->{folderAnchor=tile;openGroup=group;buildFolder();});
+        tile.setOnLongClickListener(v->{groupTools(tile,group);return true;});tile.setOnContextClickListener(v->{groupTools(tile,group);return true;});return tile;
+    }
+    private void closeFolder(){
+        // Search changes also call this. With no folder open, leave the editor's
+        // focus and composing span alone instead of focusing the menu root.
+        if(folderLayer==null&&openGroup==null)return;
+        if(root!=null&&folderLayer!=null)root.removeView(folderLayer);folderLayer=null;openGroup=null;
+        if(main!=null)main.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+        if(folderAnchor!=null&&folderAnchor.isAttachedToWindow())folderAnchor.requestFocus();else if(root!=null)root.requestFocus();folderAnchor=null;
+    }
+    private void buildFolder(){
+        if(root==null||openGroup==null)return;
+        if(folderLayer!=null)root.removeView(folderLayer);
+        main.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        folderLayer=new FrameLayout(context);folderLayer.setBackgroundColor(0x8808121c);folderLayer.setOnClickListener(v->closeFolder());root.addView(folderLayer,new FrameLayout.LayoutParams(-1,-1));
+        LinearLayout panel=Ui.column(context);panel.setPadding(dp(18),dp(16),dp(18),dp(18));panel.setBackground(Ui.rounded(context,0xff263445,18));panel.setElevation(dp(16));panel.setOnClickListener(v->{});
+        int width=Math.min(dp(480),menuWidth-dp(40));int height=Math.min(dp(450),Math.max(dp(160),(root.getHeight()>0?root.getHeight():menuHeight)-dp(64)));
+        FrameLayout.LayoutParams box=new FrameLayout.LayoutParams(width,height,Gravity.CENTER);folderLayer.addView(panel,box);
+        String group=openGroup;LinearLayout header=new LinearLayout(context);header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title=Ui.text(context,group,20,Ui.TEXT);title.setTypeface(null,Typeface.BOLD);title.setMaxLines(2);title.setEllipsize(TextUtils.TruncateAt.END);header.addView(title,new LinearLayout.LayoutParams(0,-2,1));
+        Button tools=smallButton("⋯",context.getString(R.string.start_group_options));tools.setOnClickListener(v->groupTools(tools,group));header.addView(tools,new LinearLayout.LayoutParams(dp(44),dp(44)));
+        Button close=smallButton("×",context.getString(R.string.ui_close));close.setOnClickListener(v->closeFolder());header.addView(close,new LinearLayout.LayoutParams(dp(44),dp(44)));panel.addView(header);
+        ScrollView scroller=new ScrollView(context);LinearLayout children=Ui.column(context);List<View> tiles=new ArrayList<>();for(Launches.App app:members(group))tiles.add(appTile(app));
+        if(tiles.isEmpty())note(children,R.string.start_group_empty);else children.addView(grid(tiles,Math.max(2,Math.min(4,(width-dp(36))/dp(96)))));
+        scroller.addView(children);panel.addView(scroller,new LinearLayout.LayoutParams(-1,0,1));
+        panel.setFocusableInTouchMode(true);panel.requestFocus();panel.setOnKeyListener((v,key,event)->{if((key==KeyEvent.KEYCODE_ESCAPE||key==KeyEvent.KEYCODE_BACK)&&event.getAction()==KeyEvent.ACTION_UP){closeFolder();return true;}return false;});
+    }
+    @Override public void onSharedPreferenceChanged(SharedPreferences prefs,String key){
+        if(root==null || prefs==Launches.prefs(context)&&!"start_pinned".equals(key))return;
+        if(renderQueued)return;renderQueued=true;FrameLayout generation=root;
+        root.post(()->{renderQueued=false;if(root==generation)render();});
+    }
+    private void groupTools(View anchor,String group){
+        PopupMenu popup=new PopupMenu(context,anchor);activePopup=popup;
+        popup.getMenu().add(R.string.launcher_rename_group).setOnMenuItemClickListener(item->{groupDialog(group);return true;});
+        popup.getMenu().add(R.string.launcher_delete_group).setOnMenuItemClickListener(item->{
+            android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(context).setTitle(R.string.launcher_delete_group).setMessage(R.string.launcher_delete_group_note).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_remove,(d,w)->AppOrganization.renameGroup(context,group,"")).create();showDialog(dialog);return true;
+        });popup.show();
     }
     private void tools(View anchor){
-        PopupMenu popup=new PopupMenu(context,anchor);Menu menu=popup.getMenu();
-        int[] labels={R.string.ui_wallpaper,R.string.ui_add_widget,R.string.widget_edit_toggle,R.string.ui_new_shortcut,R.string.ui_snap_icons_to_grid,R.string.ui_display_settings,R.string.ui_desktop_settings};
-        int[] actions={3,6,7,2,1,4,5};
+        PopupMenu popup=new PopupMenu(context,anchor);activePopup=popup;Menu menu=popup.getMenu();
+        int[] labels={R.string.ui_wallpaper,R.string.ui_add_widget,R.string.widget_edit_toggle,R.string.ui_new_shortcut,R.string.ui_snap_icons_to_grid,R.string.ui_display_settings,R.string.ui_desktop_settings};int[] actions={3,6,7,2,1,4,5};
         SubMenu desktop=menu.addSubMenu(context.getString(R.string.launcher_desktop_tools));
         for(int i=0;i<labels.length;i++){int action=actions[i];desktop.add(context.getString(labels[i])).setOnMenuItemClickListener(item->{close();Launches.desktopAction(context,displayId,action);return true;});}
-        menu.add(context.getString(R.string.launcher_new_group)).setOnMenuItemClickListener(item->{groupDialog(null);return true;});
-        if(groupMode==3){
-            String group=selectedGroup;
-            menu.add(context.getString(R.string.launcher_rename_group)).setOnMenuItemClickListener(item->{groupDialog(group);return true;});
-            menu.add(context.getString(R.string.launcher_delete_group)).setOnMenuItemClickListener(item->{
-                android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(context).setTitle(R.string.launcher_delete_group).setMessage(R.string.launcher_delete_group_note).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_remove,(d,w)->AppOrganization.renameGroup(context,group,"")).create();showDialog(dialog);return true;
-            });
-        }
-        menu.add(context.getString(R.string.launcher_hidden)).setOnMenuItemClickListener(item->{groups.setSelection(2);return true;});
-        menu.add(context.getString(R.string.launcher_hide_homes)).setOnMenuItemClickListener(item->{
-            Set<String> packages=new HashSet<>();
-            for(android.content.pm.ResolveInfo info:context.getPackageManager().queryIntentActivities(new android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_HOME),0))if(info.activityInfo!=null)packages.add(info.activityInfo.packageName);
+        menu.add(R.string.launcher_new_group).setOnMenuItemClickListener(item->{groupDialog(null);return true;});
+        menu.add(hiddenMode?R.string.launcher_all:R.string.launcher_hidden).setOnMenuItemClickListener(item->{hiddenMode=!hiddenMode;closeFolder();render();return true;});
+        menu.add(R.string.launcher_hide_homes).setOnMenuItemClickListener(item->{
+            Set<String> packages=new HashSet<>();for(android.content.pm.ResolveInfo info:context.getPackageManager().queryIntentActivities(new android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_HOME),0))if(info.activityInfo!=null)packages.add(info.activityInfo.packageName);
             for(Launches.App app:all)if(packages.contains(android.content.ComponentName.unflattenFromString(app.component).getPackageName()))AppOrganization.hide(context,app.component,true);
-            groups.setSelection(2);return true;
+            hiddenMode=true;closeFolder();render();return true;
         });
-        menu.add(context.getString(R.string.exit_desktop)).setOnMenuItemClickListener(item->{close();DockService.stop(context);return true;});
-        popup.show();
+        menu.add(R.string.reset_connection).setOnMenuItemClickListener(item->{close();DockService.resetConnection(context);return true;});
+        menu.add(R.string.exit_desktop).setOnMenuItemClickListener(item->{close();DockService.stop(context);return true;});popup.show();
     }
-    private void showDialog(android.app.AlertDialog dialog){dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);dialog.show();}
+    private void showDialog(android.app.AlertDialog dialog){dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);dialogs.add(dialog);dialog.setOnDismissListener(d->dialogs.remove(dialog));dialog.show();}
     private void groupDialog(String old){
-        EditText input=new EditText(context);input.setSingleLine(true);input.setHint(R.string.launcher_group_name);input.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(40)});if(old!=null)input.setText(old);
-        android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(context).setTitle(old==null?R.string.launcher_new_group:R.string.launcher_rename_group).setView(input).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_save,null).create();
-        showDialog(dialog);dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
-            String name=input.getText().toString().trim();
-            if(name.isEmpty()||AppOrganization.groups(context).contains(name)&&!name.equals(old)){input.setError(context.getString(R.string.launcher_group_invalid));return;}
+        EditText input=new EditText(context);input.setSingleLine();input.setHint(R.string.launcher_group_name);input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(40)});if(old!=null)input.setText(old);
+        android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(context).setTitle(old==null?R.string.launcher_new_group:R.string.launcher_rename_group).setView(input).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_save,null).create();showDialog(dialog);
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            String name=input.getText().toString().trim();if(name.isEmpty()||AppOrganization.groups(context).contains(name)&&!name.equals(old)){input.setError(context.getString(R.string.launcher_group_invalid));return;}
             if(old==null)AppOrganization.addGroup(context,name);else AppOrganization.renameGroup(context,old,name);
-            selectedGroup=name;groupMode=3;refreshGroups();filter();dialog.dismiss();
+            openGroup=name;hiddenMode=false;render();dialog.dismiss();
         });
     }
-    // ACTION_OUTSIDE is not a click on this view; all visible controls retain
-    // their normal accessibility click actions.
     @android.annotation.SuppressLint("ClickableViewAccessibility")
-    private void dismissOnOutside(View view){
-        view.setOnTouchListener((v,event)->{if(event.getAction()==MotionEvent.ACTION_OUTSIDE){close();return true;}return false;});
-    }
-    private void filter(){
-        if(root==null||adapter==null)return;
-        String query=search.getText().toString().trim().toLowerCase(Locale.ROOT);shown.clear();
-        for(Launches.App app:all){
-            boolean hidden=AppOrganization.hidden(context,app.component);String group=AppOrganization.group(context,app.component);
-            if(groupMode==2?!hidden:hidden)continue;
-            if(groupMode==1&&!group.isEmpty()||groupMode==3&&!selectedGroup.equals(group))continue;
-            if(app.label.toLowerCase(Locale.ROOT).contains(query)||app.component.toLowerCase(Locale.ROOT).contains(query))shown.add(app);
-        }
-        status.setText(shown.isEmpty()?context.getString(R.string.ui_no_matching_apps):context.getResources().getQuantityString(R.plurals.app_count,shown.size(),shown.size()));adapter.notifyDataSetChanged();
-    }
+    private void dismissOnOutside(View view){view.setOnTouchListener((v,event)->{if(event.getAction()==MotionEvent.ACTION_OUTSIDE){close();return true;}return false;});}
 }

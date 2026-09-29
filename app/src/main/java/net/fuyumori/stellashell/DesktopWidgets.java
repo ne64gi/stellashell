@@ -113,7 +113,15 @@ final class DesktopWidgets {
         AppWidgetProviderInfo info=manager.getAppWidgetInfo(pending);
         if(info==null){cancel();Ui.message(activity,activity.getString(R.string.ui_widget_binding_did_not_complete));return;}
         if(info.configure!=null){
-            try{host.startAppWidgetConfigureActivityForResult(activity,pending,0,CONFIGURE,null);}
+            try{
+                ActivityOptions options=ActivityOptions.makeBasic();
+                if(activity.getDisplay()!=null)options.setLaunchDisplayId(activity.getDisplay().getDisplayId());
+                // User initiated widget setup sends a system-owned PendingIntent.
+                // Android 14 requires the sender to opt in to passing its launch privilege.
+                if(android.os.Build.VERSION.SDK_INT>=34)
+                    options.setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
+                host.startAppWidgetConfigureActivityForResult(activity,pending,0,CONFIGURE,options.toBundle());
+            }
             catch(RuntimeException e){cancel();Ui.message(activity,activity.getString(R.string.ui_could_not_open_configuration)+e.getMessage());}
         }else finishAdd();
     }

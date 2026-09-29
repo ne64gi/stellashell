@@ -224,4 +224,17 @@
     <string name="external_wait_explicit">外部画面の接続を待つ（USB / scrcpy）</string>
     <string name="external_start_note">USBディスプレイを接続するか、PCの scrcpy --new-display で仮想画面を作成してください。このボタンでは仮想画面を作成しません。未接続の場合は接続を待機します。</string>
     <string name="mode_stop_first">表示先を変えるときは、デスクトップを終了してから開始ボタンを選んでください。</string>
+    <string name="reset_connection">画面・マウスの接続をリセット</string>
+    <string name="reset_connection_note">現在の画面とマウスを再検出します。アプリやウィジェットは削除しません。Androidの画面番号は変更しません。</string>
+    <string name="start_pinned_heading">ピン留め済み</string>
+    <string name="start_pins_empty">アプリを右クリック・長押しして、ここにピン留めできます。</string>
+    <string name="start_pin">スタートにピン留め</string>
+    <string name="start_unpin">スタートからピン留めを外す</string>
+    <string name="start_search_results">検索結果</string>
+    <string name="start_group_empty">このグループは空です。アプリの右クリック・長押しメニューから追加できます。</string>
+    <string name="start_group_options">グループの設定</string>
+    <string name="start_group_accessibility">%1$s、グループ、%2$d 件のアプリ</string>
+    <string name="hide_virtual_keyboard">仮想画面のスクリーンキーボードを非表示</string>
+    <string name="hide_virtual_keyboard_note">仮想デスクトップのみ・Shizukuが必要です。日本語変換などIMEの入力処理も無効になります。Android側で変換する場合はOFFにしてください。チェック解除・デスクトップ終了で元の画面設定に戻します。</string>
+    <string name="virtual_keyboard_unavailable">仮想画面のキーボード設定を変更できませんでした。Shizukuと診断欄を確認してください。</string>
 </resources>

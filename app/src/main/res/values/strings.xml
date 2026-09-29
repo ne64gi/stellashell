@@ -224,4 +224,17 @@
     <string name="external_wait_explicit">Wait for external screen (USB / scrcpy)</string>
     <string name="external_start_note">Connect a USB display, or create a virtual display with scrcpy --new-display on your PC. This button does not create a virtual display. If no screen is connected, StellaShell waits for one.</string>
     <string name="mode_stop_first">To change screens, stop the current desktop first, then choose a start button.</string>
+    <string name="reset_connection">Reset display and mouse connection</string>
+    <string name="reset_connection_note">Re-detect the current screen and mouse without deleting apps or widgets. Android display numbers are not renumbered.</string>
+    <string name="start_pinned_heading">Pinned</string>
+    <string name="start_pins_empty">Right-click or long-press an app to pin it here.</string>
+    <string name="start_pin">Pin to Start</string>
+    <string name="start_unpin">Unpin from Start</string>
+    <string name="start_search_results">Search results</string>
+    <string name="start_group_empty">This group is empty. Assign apps from their right-click or long-press menu.</string>
+    <string name="start_group_options">Group options</string>
+    <string name="start_group_accessibility">%1$s, group, %2$d apps</string>
+    <string name="hide_virtual_keyboard">Hide on-screen keyboard on virtual displays</string>
+    <string name="hide_virtual_keyboard_note">Virtual desktop only; requires Shizuku. This disables IME composition too, including Japanese conversion. Leave OFF when using an Android IME. Turning this off or stopping the desktop restores the previous display policy.</string>
+    <string name="virtual_keyboard_unavailable">Could not change the virtual keyboard policy. Check Shizuku and diagnostics.</string>
 </resources>

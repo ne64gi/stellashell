@@ -20,6 +20,22 @@ public final class Bridge {
     private final CopyOnWriteArrayList<Runnable> listeners = new CopyOnWriteArrayList<>();
     private final Shizuku.UserServiceArgs args;
     private volatile IDesktopBridge service;
+    private final IBinder mouseOwner=new Binder();
+    private volatile int mouseDisplay=-1;
+    private String mouseStatus="",imeStatus="";
+    public void mouseDisplay(int displayId){
+        int next=displayId>0?displayId:-1;
+        if(mouseDisplay==next)return;
+        mouseDisplay=next;call(s->"OK",(result,error)->{});
+    }
+    public void resetMouseRouting(Reply reply){
+        mouseDisplay=-1;
+        call(s->{
+            String result=s.syncMouseRouting(-1,mouseOwner);
+            if(!"inactive".equals(result))throw new IllegalStateException(result);
+            return "OK";
+        },reply);
+    }
     private boolean binding;
     private String error = "";
     private final ServiceConnection connection = new ServiceConnection() {
@@ -31,7 +47,7 @@ public final class Bridge {
     private Bridge(Context context) {
         this.context=context;
         args = new Shizuku.UserServiceArgs(new ComponentName(context, DesktopBridgeService.class))
-                .daemon(false).processNameSuffix("desktop_bridge").debuggable(false).version(9);
+                .daemon(false).processNameSuffix("desktop_bridge").debuggable(false).version(12);
         Shizuku.addBinderReceivedListenerSticky(this::connect);
         Shizuku.addBinderDeadListener(() -> { service = null; binding = false; changed(); });
         Shizuku.addRequestPermissionResultListener((code, result) -> { if (result == PackageManager.PERMISSION_GRANTED) connect(); changed(); });
@@ -70,6 +86,21 @@ public final class Bridge {
                 IDesktopBridge current = service;
                 if (current == null || !current.asBinder().isBinderAlive()) throw new IllegalStateException(status());
                 current.setPrimaryMode(Displays.primaryActive(context));
+                String routing;
+                try{routing=current.syncMouseRouting(Launches.prefs(context).getBoolean("enabled",false)&&!Displays.primary(context)?mouseDisplay:-1,mouseOwner);}
+                catch(Exception e){routing="unavailable: "+e.getClass().getSimpleName();}
+                if(!java.util.Objects.equals(mouseStatus,routing)){
+                    mouseStatus=routing;String diagnostic=routing;
+                    main.post(()->Launches.prefs(context).edit().putString("mouse_diagnostics",diagnostic).apply());
+                }
+                String ime;
+                try{ime=current.syncVirtualKeyboard(Launches.prefs(context).getBoolean("enabled",false)&&!Displays.primary(context)?mouseDisplay:-1,
+                        Launches.prefs(context).getBoolean("hide_virtual_ime",false),mouseOwner);}
+                catch(Exception e){ime="unavailable: "+e.getClass().getSimpleName();}
+                if(!java.util.Objects.equals(imeStatus,ime)){
+                    imeStatus=ime;String diagnostic=ime;
+                    main.post(()->Launches.prefs(context).edit().putString("ime_diagnostics",diagnostic).apply());
+                }
                 value = work.run(current);
                 if (value == null || value.startsWith("ERROR:")) throw new IllegalStateException(value);
             } catch (Exception e) { failure = e.getMessage() == null ? e.toString() : e.getMessage(); }

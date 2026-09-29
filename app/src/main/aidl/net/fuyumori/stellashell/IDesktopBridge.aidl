@@ -9,4 +9,6 @@ interface IDesktopBridge {
     String launchProfile(String component, String resolved, int displayId, int mode, int left, int top, int right, int bottom, boolean newWindow) = 6;
     String back(int displayId) = 7;
     void setPrimaryMode(boolean enabled) = 8;
+    String syncMouseRouting(int displayId, IBinder owner) = 9;
+    String syncVirtualKeyboard(int displayId, boolean hide, IBinder owner) = 10;
 }
