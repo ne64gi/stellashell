@@ -231,7 +231,7 @@
     <string name="start_pin">スタートにピン留め</string>
     <string name="start_unpin">スタートからピン留めを外す</string>
     <string name="start_search_results">検索結果</string>
-    <string name="start_group_empty">このグループは空です。アプリの右クリック・長押しメニューから追加できます。</string>
+    <string name="start_group_empty">このグループは空です。⚙から含めるアプリを選べます。</string>
     <string name="start_group_options">グループの設定</string>
     <string name="start_group_accessibility">%1$s、グループ、%2$d 件のアプリ</string>
     <string name="hide_virtual_keyboard">仮想画面のスクリーンキーボードを非表示</string>
@@ -248,4 +248,28 @@
     <string name="hub_no_notifications">通知はありません</string>
     <string name="hub_dismiss">通知を消す</string>
     <string name="hub_notification_gone">この通知は削除されたか、開くことができません。</string>
+    <string name="apps_visible_title">表示するアプリ</string>
+    <string name="apps_visible_note">チェックしたアプリをStartに表示します。ピン留め・デスクトップのショートカット・アプリ本体は削除しません。保存するまで反映されません。</string>
+    <string name="apps_group_title">%1$s に含めるアプリ</string>
+    <string name="apps_group_manage">含めるアプリを選ぶ</string>
+    <string name="apps_group_note">1アプリにつき1グループです。他のグループのアプリを選ぶと移動します。非表示設定はそのまま保持します。保存するまで反映されません。</string>
+    <string name="apps_search">選択するアプリを検索</string>
+    <string name="apps_selected_count">%2$d 件中 %1$d 件を選択</string>
+    <string name="apps_select_results">検索結果を全選択</string>
+    <string name="apps_clear_results">検索結果を全解除</string>
+    <string name="apps_hidden_badge">Startで非表示</string>
+    <string name="apps_group_missing">グループが削除・改名されました。選択画面を開き直してください。</string>
+    <string name="hub_widget_settings">ウィジェットの設定</string>
+    <string name="widget_launch_primary">ウィジェットのアプリを本体画面で開く</string>
+    <string name="screenshot_take">デスクトップをスクリーンショット</string>
+    <string name="screenshot_saved">Pictures/StellaShell にスクリーンショットを保存しました</string>
+    <string name="screenshot_failed">この画面を撮影できませんでした。</string>
+    <string name="quick_settings">クイック設定</string>
+    <string name="quick_wifi_settings">本体のWi-Fi設定を開く</string>
+    <string name="quick_media_volume">メディア音量</string>
+    <string name="quick_volume_note">現在の音声出力先のメディア音量を調整します（端末全体共通）。</string>
+    <string name="quick_wifi_connected">Wi-Fi · 接続中</string>
+    <string name="quick_wifi_disconnected">Wi-Fi · 未接続</string>
+    <string name="quick_wifi_off">Wi-Fi · オフ</string>
+    <string name="quick_wifi_unknown">Wi-Fi · 状態を取得できません</string>
 </resources>

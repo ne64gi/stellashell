@@ -33,7 +33,7 @@ public final class DockService extends Service implements DisplayManager.Display
         String description=batteryPercent<0?label:getString(batteryCharging?R.string.battery_charging:R.string.battery_remaining,batteryPercent);
         batteryText.setContentDescription(description);batteryText.setTooltipText(description);
     }
-    private View batteryView(Context c){batteryText=Ui.text(c,"",13,Ui.TEXT);batteryText.setGravity(Gravity.CENTER);updateBattery();return batteryText;}
+    private View batteryView(Context c){batteryText=Ui.text(c,"",13,Ui.TEXT);batteryText.setGravity(Gravity.CENTER);updateBattery();batteryText.setOnClickListener(v->{if(menu!=null)menu.close();QuickSettingsActivity.open(this,displayId);});return batteryText;}
     private void back(){
         if(menu!=null&&menu.isOpen()){menu.back();return;}
         if(backPending)return;
@@ -172,6 +172,7 @@ public final class DockService extends Service implements DisplayManager.Display
             for(TaskSession.Task t:running)if(!represented.contains(t.id))addEntry(c,entries,t.component,t,false);
             row.addView(strip,new LinearLayout.LayoutParams(0,Ui.dp(c,44),1));
 
+            Button shot=Ui.button(c,"▣",()->{if(menu!=null)menu.close();DesktopScreenshot.take(this,displayId);});shot.setContentDescription(getString(R.string.screenshot_take));shot.setTooltipText(getString(R.string.screenshot_take));row.addView(shot,new LinearLayout.LayoutParams(Ui.dp(c,44),Ui.dp(c,44)));
             row.addView(batteryView(c),new LinearLayout.LayoutParams(Ui.dp(c,76),Ui.dp(c,44)));
             TextView connection=Ui.text(c,Bridge.get(this).ready()?"●":"○",12,Bridge.get(this).ready()?Ui.ACCENT:Ui.MUTED);
             connection.setGravity(Gravity.CENTER);connection.setContentDescription(Bridge.get(this).status());connection.setTooltipText(Bridge.get(this).status());

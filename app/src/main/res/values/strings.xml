@@ -231,7 +231,7 @@
     <string name="start_pin">Pin to Start</string>
     <string name="start_unpin">Unpin from Start</string>
     <string name="start_search_results">Search results</string>
-    <string name="start_group_empty">This group is empty. Assign apps from their right-click or long-press menu.</string>
+    <string name="start_group_empty">This group is empty. Use ⚙ to choose apps for this group.</string>
     <string name="start_group_options">Group options</string>
     <string name="start_group_accessibility">%1$s, group, %2$d apps</string>
     <string name="hide_virtual_keyboard">Hide on-screen keyboard on virtual displays</string>
@@ -248,4 +248,28 @@
     <string name="hub_no_notifications">No notifications</string>
     <string name="hub_dismiss">Dismiss notification</string>
     <string name="hub_notification_gone">This notification is no longer available or cannot be opened.</string>
+    <string name="apps_visible_title">Apps shown in Start</string>
+    <string name="apps_visible_note">Checked apps appear in Start. Pins, desktop shortcuts and installed apps are not removed. Changes apply only when saved.</string>
+    <string name="apps_group_title">Apps in %1$s</string>
+    <string name="apps_group_manage">Choose apps in this group</string>
+    <string name="apps_group_note">Each app belongs to one group. Checking an app in another group moves it here. Hidden apps stay hidden. Changes apply only when saved.</string>
+    <string name="apps_search">Search app selection</string>
+    <string name="apps_selected_count">%1$d / %2$d selected</string>
+    <string name="apps_select_results">Select search results</string>
+    <string name="apps_clear_results">Clear search results</string>
+    <string name="apps_hidden_badge">Hidden in Start</string>
+    <string name="apps_group_missing">This group was removed or renamed. Reopen the selector.</string>
+    <string name="hub_widget_settings">Widget settings</string>
+    <string name="widget_launch_primary">Open widget apps on the phone screen</string>
+    <string name="screenshot_take">Capture desktop screen</string>
+    <string name="screenshot_saved">Screenshot saved to Pictures/StellaShell</string>
+    <string name="screenshot_failed">Could not capture this display.</string>
+    <string name="quick_settings">Quick settings</string>
+    <string name="quick_wifi_settings">Wi-Fi settings on phone</string>
+    <string name="quick_media_volume">Media volume</string>
+    <string name="quick_volume_note">Controls device-wide media volume for the current audio output.</string>
+    <string name="quick_wifi_connected">Wi-Fi · Connected</string>
+    <string name="quick_wifi_disconnected">Wi-Fi · Not connected</string>
+    <string name="quick_wifi_off">Wi-Fi · Off</string>
+    <string name="quick_wifi_unknown">Wi-Fi · Status unavailable</string>
 </resources>

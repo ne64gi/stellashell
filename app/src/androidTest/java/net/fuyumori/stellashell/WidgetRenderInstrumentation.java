@@ -10,16 +10,38 @@ import android.view.View;
 
 /** Device checks against real Android drawing and inverse input transforms; no desktop changes. */
 public final class WidgetRenderInstrumentation extends Instrumentation {
-    @Override public void onCreate(Bundle arguments){super.onCreate(arguments);start();}
+    private boolean organizationOnly;
+    @Override public void onCreate(Bundle arguments){super.onCreate(arguments);organizationOnly=arguments!=null&&"true".equals(arguments.getString("organization_only"));start();}
     @Override public void onStart(){
         Bundle result=new Bundle();
         try{
             Throwable[] failure={null};
-            runOnMainSync(()->{try{check(400,300,200,100);check(100,120,200,100);check(200,100,200,100);iconPreview();locales();organization();}catch(Throwable error){failure[0]=error;}});
+            runOnMainSync(()->{try{if(organizationOnly){organization();widgetRouting();return;}check(400,300,200,100);check(100,120,200,100);check(200,100,200,100);iconPreview();locales();organization();widgetRouting();}catch(Throwable error){failure[0]=error;}});
             if(failure[0]!=null)throw failure[0];
-            wallpaperDecode();
-            result.putString("stream","WidgetViewport: 3 rendering/input scenarios + bounded wallpaper decoding + locale + app organization checks passed\n");finish(-1,result);
+            if(!organizationOnly)wallpaperDecode();
+            result.putString("stream",organizationOnly?"App organization bulk selection + RemoteViews routing passed\n":"WidgetViewport: 3 rendering/input scenarios + bounded wallpaper decoding + locale + app organization checks passed\n");finish(-1,result);
         }catch(Throwable error){result.putString("stream","FAILED: "+error+"\n");finish(0,result);}
+    }
+    private void widgetRouting(){
+        final Bundle[] sent={null};
+        android.content.Context base=new android.content.ContextWrapper(getTargetContext()){
+            @Override public android.content.SharedPreferences getSharedPreferences(String name,int mode){return super.getSharedPreferences("instrumentation_widget_routing",mode);}
+            @Override public android.view.Display getDisplay(){return getSystemService(android.hardware.display.DisplayManager.class).getDisplay(0);}
+            @Override public void startIntentSender(android.content.IntentSender sender,android.content.Intent fill,int mask,int values,int extra,Bundle options){sent[0]=options;}
+        };
+        try{
+            Launches.prefs(base).edit().clear().commit();
+            android.widget.RemoteViews remote=new android.widget.RemoteViews("android",android.R.layout.simple_list_item_1);
+            android.app.PendingIntent pending=android.app.PendingIntent.getActivity(getTargetContext(),981,new android.content.Intent(getTargetContext(),SetupActivity.class),android.app.PendingIntent.FLAG_IMMUTABLE|android.app.PendingIntent.FLAG_UPDATE_CURRENT);
+            remote.setOnClickPendingIntent(android.R.id.text1,pending);
+            View view=remote.apply(new WidgetLaunchContext(base),new android.widget.FrameLayout(base));
+            require(view.findViewById(android.R.id.text1).performClick(),"RemoteViews click missing");
+            require(sent[0]!=null&&sent[0].getInt("android.activity.launchDisplayId",-1)==0,"RemoteViews did not route to primary");
+            sent[0]=null;Launches.prefs(base).edit().putBoolean(WidgetLaunchContext.PRIMARY,false).commit();
+            view.findViewById(android.R.id.text1).performClick();
+            require(sent[0]!=null&&sent[0].getInt("android.activity.launchDisplayId",-1)==0,"current-display route failed");
+            pending.cancel();
+        }finally{Launches.prefs(base).edit().clear().commit();}
     }
     private void check(int width,int height,int logicalWidth,int logicalHeight){
         WidgetViewport viewport=new WidgetViewport(getTargetContext());
@@ -54,6 +76,24 @@ public final class WidgetRenderInstrumentation extends Instrumentation {
             require(AppOrganization.group(isolated,"test.package/.Main").isEmpty(),"deleted group retained membership");
             require(AppOrganization.hidden(isolated,"test.package/.Main"),"group edit changed visibility");
             AppOrganization.hide(isolated,"test.package/.Main",false);require(!AppOrganization.hidden(isolated,"test.package/.Main"),"unhide failed");
+            AppOrganization.addGroup(isolated,"First");AppOrganization.addGroup(isolated,"Second");
+            AppOrganization.assign(isolated,"test.one/.Main","First");AppOrganization.assign(isolated,"test.two/.Main","Second");AppOrganization.assign(isolated,"test.untouched/.Main","Second");
+            AppOrganization.hide(isolated,"test.one/.Main",true);AppOrganization.hide(isolated,"test.uninstalled/.Main",true);
+            java.util.Map<String,Boolean> changes=new java.util.HashMap<>();changes.put("test.one/.Main",true);changes.put("test.two/.Main",false);
+            require(AppOrganization.applySelection(isolated,null,changes),"visibility save failed");
+            require(!AppOrganization.hidden(isolated,"test.one/.Main")&&AppOrganization.hidden(isolated,"test.two/.Main"),"visibility edits not applied");
+            require(AppOrganization.hidden(isolated,"test.uninstalled/.Main"),"unknown hidden app lost");
+            require("First".equals(AppOrganization.group(isolated,"test.one/.Main")),"visibility modified group");
+            changes.clear();changes.put("test.one/.Main",false);changes.put("test.two/.Main",true);
+            require(AppOrganization.applySelection(isolated,"First",changes),"membership save failed");
+            require(AppOrganization.group(isolated,"test.one/.Main").isEmpty(),"unchecked member retained");
+            require("First".equals(AppOrganization.group(isolated,"test.two/.Main")),"checked app not moved between groups");
+            require("Second".equals(AppOrganization.group(isolated,"test.untouched/.Main")),"unedited membership changed");
+            require(AppOrganization.hidden(isolated,"test.two/.Main"),"membership unhid app");
+            AppOrganization.assign(isolated,"test.two/.Main","Second");changes.clear();changes.put("test.two/.Main",false);
+            AppOrganization.applySelection(isolated,"First",changes);
+            require("Second".equals(AppOrganization.group(isolated,"test.two/.Main")),"stale uncheck removed other group");
+            require(!AppOrganization.applySelection(isolated,"Deleted",changes),"missing group resurrected");
         }finally{getTargetContext().deleteSharedPreferences("instrumentation_app_organization");}
     }
     private void locales(){
