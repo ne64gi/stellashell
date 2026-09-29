@@ -144,7 +144,7 @@ final class DesktopWidgets {
         canvas.removeAllViews();for(Entry e:entries){
             e.info=manager.getAppWidgetInfo(e.id);e.frame=new FrameLayout(activity);
             if(e.info!=null){
-                e.view=host.createView(activity,e.id,e.info);e.viewport=new WidgetViewport(activity);e.viewport.addView(e.view);e.frame.addView(e.viewport,new FrameLayout.LayoutParams(-1,-1));
+                e.view=host.createView(new WidgetLaunchContext(activity),e.id,e.info);e.viewport=new WidgetViewport(activity);e.viewport.addView(e.view);e.frame.addView(e.viewport,new FrameLayout.LayoutParams(-1,-1));
             }else{e.view=null;TextView missing=Ui.text(activity,activity.getString(R.string.ui_widget_unavailable_remove_it_in_edit_mode),14,Ui.MUTED);e.frame.addView(missing);}
             if(editing){
                 e.frame.setBackground(Ui.rounded(activity,Ui.PANEL,8));

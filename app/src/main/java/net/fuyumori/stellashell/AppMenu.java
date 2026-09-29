@@ -177,6 +177,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         FrameLayout.LayoutParams box=new FrameLayout.LayoutParams(width,height,Gravity.CENTER);folderLayer.addView(panel,box);
         String group=openGroup;LinearLayout header=new LinearLayout(context);header.setGravity(Gravity.CENTER_VERTICAL);
         TextView title=Ui.text(context,group,20,Ui.TEXT);title.setTypeface(null,Typeface.BOLD);title.setMaxLines(2);title.setEllipsize(TextUtils.TruncateAt.END);header.addView(title,new LinearLayout.LayoutParams(0,-2,1));
+        Button membership=smallButton("⚙",context.getString(R.string.apps_group_manage));membership.setOnClickListener(v->selectApps(group));header.addView(membership,new LinearLayout.LayoutParams(dp(44),dp(44)));
         Button tools=smallButton("⋯",context.getString(R.string.start_group_options));tools.setOnClickListener(v->groupTools(tools,group));header.addView(tools,new LinearLayout.LayoutParams(dp(44),dp(44)));
         Button close=smallButton("×",context.getString(R.string.ui_close));close.setOnClickListener(v->closeFolder());header.addView(close,new LinearLayout.LayoutParams(dp(44),dp(44)));panel.addView(header);
         ScrollView scroller=new ScrollView(context);LinearLayout children=Ui.column(context);List<View> tiles=new ArrayList<>();for(Launches.App app:members(group))tiles.add(appTile(app));
@@ -189,8 +190,14 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         if(renderQueued)return;renderQueued=true;FrameLayout generation=root;
         root.post(()->{renderQueued=false;if(root==generation)render();});
     }
+    private void selectApps(String group){
+        if(!loaded){Ui.message(context,context.getString(R.string.ui_loading));return;}
+        android.app.AlertDialog dialog=AppChecklist.create(context,all,group);showDialog(dialog);
+        dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN|WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+    }
     private void groupTools(View anchor,String group){
         PopupMenu popup=new PopupMenu(context,anchor);activePopup=popup;
+        popup.getMenu().add(R.string.apps_group_manage).setOnMenuItemClickListener(item->{selectApps(group);return true;});
         popup.getMenu().add(R.string.launcher_rename_group).setOnMenuItemClickListener(item->{groupDialog(group);return true;});
         popup.getMenu().add(R.string.launcher_delete_group).setOnMenuItemClickListener(item->{
             android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(context).setTitle(R.string.launcher_delete_group).setMessage(R.string.launcher_delete_group_note).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_remove,(d,w)->AppOrganization.renameGroup(context,group,"")).create();showDialog(dialog);return true;
@@ -201,6 +208,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         int[] labels={R.string.ui_wallpaper,R.string.ui_add_widget,R.string.widget_edit_toggle,R.string.ui_new_shortcut,R.string.ui_snap_icons_to_grid,R.string.ui_display_settings,R.string.ui_desktop_settings};int[] actions={3,6,7,2,1,4,5};
         SubMenu desktop=menu.addSubMenu(context.getString(R.string.launcher_desktop_tools));
         for(int i=0;i<labels.length;i++){int action=actions[i];desktop.add(context.getString(labels[i])).setOnMenuItemClickListener(item->{close();Launches.desktopAction(context,displayId,action);return true;});}
+        menu.add(R.string.apps_visible_title).setOnMenuItemClickListener(item->{selectApps(null);return true;});
         menu.add(R.string.launcher_new_group).setOnMenuItemClickListener(item->{groupDialog(null);return true;});
         menu.add(hiddenMode?R.string.launcher_all:R.string.launcher_hidden).setOnMenuItemClickListener(item->{hiddenMode=!hiddenMode;closeFolder();render();return true;});
         menu.add(R.string.launcher_hide_homes).setOnMenuItemClickListener(item->{
@@ -218,7 +226,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
             String name=input.getText().toString().trim();if(name.isEmpty()||AppOrganization.groups(context).contains(name)&&!name.equals(old)){input.setError(context.getString(R.string.launcher_group_invalid));return;}
             if(old==null)AppOrganization.addGroup(context,name);else AppOrganization.renameGroup(context,old,name);
-            openGroup=name;hiddenMode=false;render();dialog.dismiss();
+            openGroup=name;hiddenMode=false;render();dialog.dismiss();if(old==null)selectApps(name);
         });
     }
     @android.annotation.SuppressLint("ClickableViewAccessibility")

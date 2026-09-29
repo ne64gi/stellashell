@@ -112,4 +112,13 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
         if(virtualKeyboard==null)virtualKeyboard=new VirtualKeyboardPolicy(context);
         return virtualKeyboard.sync(primaryMode?-1:displayId,hide,owner);
     }
+    @Override public synchronized String captureDisplay(int displayId,android.os.ParcelFileDescriptor output){
+        try(android.os.ParcelFileDescriptor owned=output){
+            if(context==null||output==null)throw new IllegalStateException("Capture unavailable");
+            if(displayId<0||(displayId==0&&!primaryMode))throw new IllegalArgumentException("Invalid desktop display");
+            if(context.getSystemService(DisplayManager.class).getDisplay(displayId)==null)throw new IllegalStateException("Display disconnected");
+            if(context.getSystemService(android.app.KeyguardManager.class).isDeviceLocked())throw new IllegalStateException("Unlock the device first");
+            return DesktopCapture.write(displayId,output);
+        }catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}
+    }
 }

@@ -1,4 +1,5 @@
 package net.fuyumori.stellashell;
+import android.os.ParcelFileDescriptor;
 interface IDesktopBridge {
     void destroy() = 16777114;
     String settingsSnapshot() = 1;
@@ -11,4 +12,5 @@ interface IDesktopBridge {
     void setPrimaryMode(boolean enabled) = 8;
     String syncMouseRouting(int displayId, IBinder owner) = 9;
     String syncVirtualKeyboard(int displayId, boolean hide, IBinder owner) = 10;
+    String captureDisplay(int displayId, in ParcelFileDescriptor output) = 11;
 }

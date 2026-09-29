@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <queries>
         <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.HOME" /></intent>
         <intent><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent>
@@ -27,6 +30,9 @@
         <activity android:name=".HubActivity" android:exported="false" android:resizeableActivity="true"
             android:theme="@style/HubTheme" android:launchMode="singleTask"
             android:taskAffinity="net.fuyumori.stellashell.hub" android:excludeFromRecents="true" />
+        <activity android:name=".QuickSettingsActivity" android:exported="false" android:resizeableActivity="true"
+            android:theme="@style/HubTheme" android:launchMode="singleTask"
+            android:taskAffinity="net.fuyumori.stellashell.quick" android:excludeFromRecents="true" />
         <service android:name=".ShellNotifications" android:exported="true"
             android:label="@string/hub_notification_access_label"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
