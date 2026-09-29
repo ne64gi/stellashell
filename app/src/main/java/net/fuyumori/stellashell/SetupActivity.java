@@ -13,7 +13,7 @@ import android.widget.*;
 import java.util.*;
 
 public final class SetupActivity extends Activity implements DisplayManager.DisplayListener,SharedPreferences.OnSharedPreferenceChangeListener {
-    private TextView status,detail;private Button startPrimary,startExternal,stop,enable,restore;private Bridge bridge;private DisplayManager displays;
+    private TextView status,detail;private Button startPrimary,startExternal,stop,reset,enable,restore;private Bridge bridge;private DisplayManager displays;
     private boolean busy;private final Runnable refreshListener=this::refresh;
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
@@ -46,8 +46,18 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         startExternal=Ui.button(this,getString(R.string.external_start_explicit),()->startDesktop(false));
         startExternal.setTextColor(Ui.ACCENT);root.addView(startExternal);
         Ui.note(root,getString(R.string.external_start_note));
+        CheckBox hideKeyboard=new CheckBox(this);hideKeyboard.setText(R.string.hide_virtual_keyboard);hideKeyboard.setTextColor(Ui.TEXT);
+        hideKeyboard.setChecked(Launches.prefs(this).getBoolean("hide_virtual_ime",false));
+        hideKeyboard.setOnCheckedChangeListener((button,checked)->{
+            Launches.prefs(this).edit().putBoolean("hide_virtual_ime",checked).apply();
+            bridge.call(s->"OK",(result,error)->{
+                if(checked && (error!=null || Launches.prefs(this).getString("ime_diagnostics","").startsWith("unavailable")))Ui.message(this,getString(R.string.virtual_keyboard_unavailable));
+            });
+        });root.addView(hideKeyboard);Ui.note(root,getString(R.string.hide_virtual_keyboard_note));
         stop=Ui.button(this,getString(R.string.exit_desktop),()->{DockService.stop(this);refresh();});root.addView(stop);
         Ui.note(root,getString(R.string.mode_stop_first));
+        reset=Ui.button(this,getString(R.string.reset_connection),()->DockService.resetConnection(this));root.addView(reset);
+        Ui.note(root,getString(R.string.reset_connection_note));
         Switch mode=new Switch(this);mode.setText(this.getString(R.string.ui_launch_in_windows_experimental));mode.setTextColor(Ui.TEXT);mode.setTextSize(15);mode.setPadding(0,Ui.dp(this,8),0,Ui.dp(this,8));
         mode.setChecked(Launches.prefs(this).getBoolean("freeform",false));mode.setOnCheckedChangeListener((button,checked)->Launches.prefs(this).edit().putBoolean("freeform",checked).apply());root.addView(mode);
         Ui.note(root,this.getString(R.string.ui_when_off_apps_open_fullscreen_drag_the_active_window_s_title_bar));
@@ -114,6 +124,8 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         for(Display d:Displays.available(this))s.append(this.getString(R.string.ui_display)).append(d.getDisplayId()).append(": ").append(d.getName())
                 .append(" / ").append(d.getMode().getPhysicalWidth()).append("×").append(d.getMode().getPhysicalHeight());
         String error=Launches.prefs(this).getString("last_error","");if(!error.isEmpty())s.append(this.getString(R.string.ui_last_error)).append(error);
+        s.append("\nVirtual keyboard: ").append(Launches.prefs(this).getString("ime_diagnostics","inactive"));
+        s.append("\nMouse routing: ").append(Launches.prefs(this).getString("mouse_diagnostics","inactive"));
         return s.append(this.getString(R.string.ui_window_management)).append(Launches.prefs(this).getString("task_diagnostics",this.getString(R.string.ui_not_connected))).toString();
     }
     private void refresh(){
@@ -124,6 +136,7 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         status.setText(getString(R.string.setup_status,display,bridge.status(),getString(Settings.canDrawOverlays(this)?R.string.ui_allowed:R.string.ui_permission_required)));
         boolean running=Launches.prefs(this).getBoolean("enabled",false);
         startPrimary.setEnabled(!running&&!busy);startExternal.setEnabled(!running&&!busy);stop.setEnabled(running&&!busy);
+        reset.setEnabled(running&&!busy&&bridge.ready());
         startExternal.setText(monitors.isEmpty()?R.string.external_wait_explicit:R.string.external_start_explicit);
         enable.setEnabled(!busy && bridge.ready());restore.setEnabled(!busy && bridge.ready() && Launches.prefs(this).contains("before_desktop"));
         detail.setText(diagnostics());

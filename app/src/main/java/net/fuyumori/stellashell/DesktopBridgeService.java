@@ -14,7 +14,7 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
     private static final String FREEFORM = "enable_freeform_support";
     public DesktopBridgeService() { context = null; }
     public DesktopBridgeService(Context context) { this.context = context; }
-    @Override public void destroy() { System.exit(0); }
+    @Override public synchronized void destroy() { if(mouseRouting!=null)mouseRouting.release();if(virtualKeyboard!=null)virtualKeyboard.release();System.exit(0); }
     private static String exec(String... args) throws Exception {
         Process process = new ProcessBuilder(args).redirectErrorStream(true).start();
         ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -100,4 +100,16 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
         try{return tasks().launchProfile(component,resolved,displayId,mode,l,t,r,b,newWindow);}catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}
     }
 
+    private MouseRouting mouseRouting;
+    @Override public synchronized String syncMouseRouting(int displayId,android.os.IBinder owner){
+        if(context==null)return "unavailable: Shizuku context";
+        if(mouseRouting==null)mouseRouting=new MouseRouting(context);
+        return mouseRouting.sync(primaryMode?-1:displayId,owner);
+    }
+    private VirtualKeyboardPolicy virtualKeyboard;
+    @Override public synchronized String syncVirtualKeyboard(int displayId,boolean hide,android.os.IBinder owner){
+        if(context==null)return "unavailable: Shizuku context";
+        if(virtualKeyboard==null)virtualKeyboard=new VirtualKeyboardPolicy(context);
+        return virtualKeyboard.sync(primaryMode?-1:displayId,hide,owner);
+    }
 }
