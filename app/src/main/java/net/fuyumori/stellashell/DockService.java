@@ -176,7 +176,7 @@ public final class DockService extends Service implements DisplayManager.Display
             TextView connection=Ui.text(c,Bridge.get(this).ready()?"●":"○",12,Bridge.get(this).ready()?Ui.ACCENT:Ui.MUTED);
             connection.setGravity(Gravity.CENTER);connection.setContentDescription(Bridge.get(this).status());connection.setTooltipText(Bridge.get(this).status());
             connection.setOnClickListener(v->Launches.settings(this,displayId));row.addView(connection,new LinearLayout.LayoutParams(Ui.dp(c,28),-1));
-            if(widthDp>=500){TextClock clock=new TextClock(c);clock.setFormat24Hour("HH:mm");clock.setFormat12Hour("HH:mm");clock.setTextColor(Ui.TEXT);clock.setTextSize(16);row.addView(clock,new LinearLayout.LayoutParams(Ui.dp(c,58),-2));}
+            {TextClock clock=new TextClock(c);clock.setFormat24Hour("HH:mm");clock.setFormat12Hour("HH:mm");clock.setTextColor(Ui.TEXT);clock.setTextSize(16);clock.setContentDescription(getString(R.string.hub_title));clock.setTooltipText(getString(R.string.hub_title));clock.setOnClickListener(v->{if(menu!=null)menu.close();HubActivity.open(this,displayId);});row.addView(clock,new LinearLayout.LayoutParams(Ui.dp(c,58),-2));}
             Button hide=Ui.button(c,"−",()->{collapsed=true;removeDock();update(false);});hide.setContentDescription(this.getString(R.string.ui_collapse_taskbar));
             row.addView(hide,new LinearLayout.LayoutParams(Ui.dp(c,44),Ui.dp(c,44)));
             }

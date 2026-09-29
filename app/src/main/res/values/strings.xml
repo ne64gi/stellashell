@@ -237,4 +237,15 @@
     <string name="hide_virtual_keyboard">Hide on-screen keyboard on virtual displays</string>
     <string name="hide_virtual_keyboard_note">Virtual desktop only; requires Shizuku. This disables IME composition too, including Japanese conversion. Leave OFF when using an Android IME. Turning this off or stopping the desktop restores the previous display policy.</string>
     <string name="virtual_keyboard_unavailable">Could not change the virtual keyboard policy. Check Shizuku and diagnostics.</string>
+    <string name="hub_title">Widgets &amp; notifications</string>
+    <string name="hub_widgets">Widgets</string>
+    <string name="hub_notifications">Notifications</string>
+    <string name="hub_widgets_note">Add any Android widget here. Layout is saved separately from your desktop. Use Edit to move or resize.</string>
+    <string name="hub_notification_access_label">StellaShell notification panel</string>
+    <string name="hub_access">Notification access settings</string>
+    <string name="hub_access_note">Allow StellaShell notification access in Android settings to show live notifications. No notification history is stored. If already allowed, reconnect access in settings.</string>
+    <string name="hub_locked">Unlock your device to view notifications.</string>
+    <string name="hub_no_notifications">No notifications</string>
+    <string name="hub_dismiss">Dismiss notification</string>
+    <string name="hub_notification_gone">This notification is no longer available or cannot be opened.</string>
 </resources>
