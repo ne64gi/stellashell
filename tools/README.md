@@ -1,3 +1,8 @@
+# Optional desktop/session tools
+
+- [Windows session launcher](windows/README.md): scrcpy virtual display, selectable device profiles.
+- Termux self-ADB helpers below are separate, optional setup tools.
+
 # Optional Termux self-ADB helpers
 
 These tools are **not required by StellaShell**. Normal setup is Shizuku → StellaShell.

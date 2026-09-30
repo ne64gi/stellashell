@@ -16,20 +16,23 @@ final class TaskSession {
         }
         String packageName(){return component.substring(0,component.indexOf('/'));}
     }
-    private final Context context;private final int displayId;private final Runnable changed;
+    private final Context context;private final int displayId;private final Runnable changed;private final java.util.function.BooleanSupplier shellInput;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final List<Task> tasks=new ArrayList<>();
     private final List<Task> stack=new ArrayList<>();private boolean stackReliable;
     private boolean closed,busy,canArrange;private String lastDiagnostic="";
+    private WorkArea previousArea;
+    private final Map<Integer,Rect> reflow=new HashMap<>();
+    private final Map<Integer,Rect> beforeIme=new HashMap<>(),imeAdjusted=new HashMap<>();
     private Task dragTask;private Rect pendingBounds;private final Set<Integer> normalized=new HashSet<>();
-    TaskSession(Context c,int id,Runnable changed){context=c;displayId=id;this.changed=changed;handler.post(poll);}
+    TaskSession(Context c,int id,Runnable changed,java.util.function.BooleanSupplier shellInput){this.shellInput=shellInput;context=c;displayId=id;this.changed=changed;previousArea=WorkArea.get(c,id);handler.post(poll);}
     List<Task> tasks(){return new ArrayList<>(tasks);}
     List<Task> stack(){return new ArrayList<>(stack);}
     boolean stackReliable(){return stackReliable;}
     boolean canArrange(){return canArrange && Bridge.get(context).ready();}
     private final Runnable poll=new Runnable(){public void run(){refresh();int visible=0;for(Task t:tasks)if(t.visible)visible++;if(!closed)handler.postDelayed(this,stackReliable&&visible>1?300:1100);}};
     void refresh(){
-        if(closed||busy)return;
+        if(closed||busy||Workspace.isBusy())return;
         if(!Bridge.get(context).ready()){
             if(!tasks.isEmpty()||canArrange){tasks.clear();stack.clear();stackReliable=false;canArrange=false;changed.run();}return;
         }
@@ -40,6 +43,8 @@ final class TaskSession {
                 if(error!=null)throw new IllegalStateException(error);
                 JSONObject data=new JSONObject(result),caps=data.getJSONObject("capabilities");
                 tasks.clear();JSONArray rows=data.getJSONArray("tasks");for(int i=0;i<rows.length();i++)tasks.add(new Task(rows.getJSONObject(i)));
+                Set<Integer> live=new HashSet<>();for(Task task:tasks)live.add(task.id);
+                normalized.retainAll(live);reflow.keySet().retainAll(live);beforeIme.keySet().retainAll(live);imeAdjusted.keySet().retainAll(live);
                 stack.clear();JSONArray layers=data.optJSONArray("stack");if(layers!=null)for(int i=0;i<layers.length();i++)stack.add(new Task(layers.getJSONObject(i)));
                 stackReliable=caps.optBoolean("stackOrder");
                 canArrange=caps.optBoolean("bounds")&&caps.optBoolean("windowingMode")&&caps.optBoolean("reorder");
@@ -47,20 +52,36 @@ final class TaskSession {
             }catch(Exception e){tasks.clear();stack.clear();stackReliable=false;canArrange=false;diagnostic(e.toString());}
             for(Task task:tasks)if(task.focused&&task.visible){Profiles.observe(context,task,displayId);break;}
             changed.run();
-            try {if(canArrange)for(Task task:tasks)if(task.focused&&task.visible&&task.mode==5&&normalized.add(task.id)){
-                android.util.DisplayMetrics metrics=new android.util.DisplayMetrics();android.graphics.Point size=new android.graphics.Point();
-                android.view.Display display=Displays.require(context,displayId);display.getRealMetrics(metrics);display.getRealSize(size);
-                if(task.bounds.top<Math.round(32*metrics.density)||task.bounds.bottom>size.y-Math.round(60*metrics.density))resize(task,task.bounds);
-                break;
-            }
-            }catch(RuntimeException e){diagnostic(e.toString());}
+            try {if(canArrange&&!shellInput.getAsBoolean())for(Task task:tasks)if(task.focused&&task.visible&&task.mode==5&&normalized.add(task.id)){
+                Rect requested=reflow.remove(task.id);Rect safe=WorkArea.get(context,displayId).clamp(requested==null?task.bounds:requested);
+                if(!safe.equals(task.bounds)){resize(task,safe);break;}
+            }}catch(RuntimeException e){diagnostic(e.toString());}
             flushDrag();
         });
     }
     private void diagnostic(String value){if(!value.equals(lastDiagnostic)){lastDiagnostic=value;Launches.prefs(context).edit().putString("task_diagnostics",value).apply();}}
+    void areaChanged(){
+        WorkArea next=WorkArea.get(context,displayId),old=previousArea;previousArea=next;
+        for(Task task:tasks)if(task.mode==5){
+            Rect wanted=new Rect(task.bounds);
+            if(next.imeVisible&&!old.imeVisible)beforeIme.put(task.id,new Rect(task.bounds));
+            if(!next.imeVisible&&old.imeVisible){
+                Rect adjusted=imeAdjusted.remove(task.id),original=beforeIme.remove(task.id);
+                if(adjusted!=null&&original!=null&&adjusted.equals(task.bounds))wanted=original;
+                else if(old.maximized(task.bounds))wanted=new Rect(next.content);
+            }else if(old.maximized(task.bounds))wanted=new Rect(next.content);
+            else if(task.bounds.top==old.content.top&&task.bounds.bottom==old.content.bottom){
+                if(task.bounds.left==old.content.left&&task.bounds.right==old.content.centerX())wanted=new Rect(next.content.left,next.content.top,next.content.centerX(),next.content.bottom);
+                else if(task.bounds.left==old.content.centerX()&&task.bounds.right==old.content.right)wanted=new Rect(next.content.centerX(),next.content.top,next.content.right,next.content.bottom);
+            }
+            wanted=next.clamp(wanted);reflow.put(task.id,wanted);
+            if(next.imeVisible)imeAdjusted.put(task.id,new Rect(wanted));
+        }
+        normalized.clear();refresh();
+    }
     void action(Task task,String action){
         if(closed)return;
-        Bridge.get(context).call(s->{String before=s.taskSnapshot(displayId);String answer=s.taskOperation(displayId,task.id,action,0,0,0,0);return answer.startsWith("ERROR:")?answer:before;},(result,error)->{
+        Bridge.get(context).call(s->{WorkArea.get(context,displayId).sync(s,displayId);String before=s.taskSnapshot(displayId);String answer=s.taskOperation(displayId,task.id,action,0,0,0,0);return answer.startsWith("ERROR:")?answer:before;},(result,error)->{
             if(error==null)Profiles.rememberSnapshot(context,result,task.id,displayId);if(closed)return;if(error!=null)Launches.problem(context,error);refresh();
         });
     }
@@ -76,7 +97,7 @@ final class TaskSession {
     private void flushDrag(){
         if(closed||busy||pendingBounds==null)return;
         Rect b=pendingBounds;Task t=dragTask;pendingBounds=null;busy=true;
-        Bridge.get(context).call(s->s.taskOperation(displayId,t.id,"bounds",b.left,b.top,b.right,b.bottom),(result,error)->{
+        Bridge.get(context).call(s->{WorkArea.get(context,displayId).sync(s,displayId);return s.taskOperation(displayId,t.id,"bounds",b.left,b.top,b.right,b.bottom);},(result,error)->{
             busy=false;if(closed)return;
             if(error!=null){pendingBounds=null;Launches.problem(context,error);}else if(pendingBounds!=null)flushDrag();else refresh();
         });

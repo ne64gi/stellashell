@@ -1,0 +1,24 @@
+{
+  "default": "xperia",
+  "devices": {
+    "xperia": {
+      "address": "192.168.1.10:5555",
+      "resolution": "1920x1080",
+      "dpi": 160
+    },
+    "redmagic": {
+      "address": "192.168.1.11:5555",
+      "resolution": "1920x1080",
+      "dpi": 160
+    }
+  },
+  "scrcpy": {
+    "keyboard": "uhid",
+    "imePolicy": "local",
+    "systemDecorations": false,
+    "fullscreen": true
+  },
+  "stella": {
+    "package": "net.fuyumori.stellashell"
+  }
+}

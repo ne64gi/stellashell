@@ -1,0 +1,16 @@
+scrcpy-derived code in StellaShell
+
+Copyright (C) 2018 Genymobile
+Copyright (C) 2018-2025 Romain Vimont
+Licensed under the Apache License, Version 2.0; see scrcpy-Apache-2.0.txt.
+
+PrimaryScreenPower.sync contains a modified DisplayControl bootstrap from:
+https://github.com/Genymobile/scrcpy/blob/f01231dff8294fe2c99045a4f9a14b233a71bb86/server/src/main/java/com/genymobile/scrcpy/wrappers/DisplayControl.java
+
+StellaShell modifications (2026-09-29): System.getenv, lazy initialization,
+primary-display selection, external-session validation and ownership/recovery
+via a Binder lease, watchdog and wake lock.
+
+This notice was written by StellaShell to describe the incorporation; it is
+not an upstream NOTICE file. The complete scrcpy application/server is not
+bundled in the APK. No endorsement or affiliation is implied.

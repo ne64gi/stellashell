@@ -1,11 +1,16 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <group android:scaleX="0.8" android:scaleY="0.8" android:translateX="8" android:translateY="11">
-    <!-- S L L / S L L rhythm: six strokes, one constellation. -->
-    <path android:fillColor="#00000000" android:strokeColor="#73E8D5" android:strokeWidth="3.2" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M33,46H28C24,46 24,54 28,54H30C34,54 34,64 30,64H25" />
-    <path android:fillColor="#00000000" android:strokeColor="#EEF5FF" android:strokeWidth="3.2" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M40,40V64H45 M51,46V64H56" />
-    <path android:fillColor="#00000000" android:strokeColor="#73E8D5" android:strokeWidth="3.2" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M67,46H63C59,46 59,54 63,54H65C69,54 69,64 65,64H61" />
-    <path android:fillColor="#00000000" android:strokeColor="#EEF5FF" android:strokeWidth="3.2" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M75,46V64H80 M85,52V64H90" />
-    <path android:fillColor="#B6A6FF" android:pathData="M75,27L77.6,34.4L85,37L77.6,39.6L75,47L72.4,39.6L65,37L72.4,34.4Z" />
-    <path android:fillColor="#355065" android:pathData="M27,73H82V75H27Z" />
-    </group>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Original StellaShell star: kept inside the adaptive-icon safe region. -->
+    <path android:pathData="M54,24 C58,43 65,50 84,54 C65,58 58,65 54,84 C50,65 43,58 24,54 C43,50 50,43 54,24 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="35" android:startY="28" android:endX="73" android:endY="82">
+                <item android:offset="0" android:color="#D8FFF5" />
+                <item android:offset="0.5" android:color="#73E8D5" />
+                <item android:offset="1" android:color="#72AEF5" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#EEF5FF" android:pathData="M74,30 L75.5,34.5 L80,36 L75.5,37.5 L74,42 L72.5,37.5 L68,36 L72.5,34.5 Z" />
 </vector>

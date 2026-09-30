@@ -78,17 +78,23 @@ final class Launches {
         app(c,component,displayId,false);
     }
     static void app(Context c,String component,int displayId,boolean newWindow){
+        app(c,component,displayId,newWindow,false);
+    }
+    static void app(Context c,String component,int displayId,boolean newWindow,boolean floating){
+        if(Workspace.isBusy())return;
         try{
-            AppLaunchProfile profile=Profiles.get(c,component);AppLaunchProfile.Plan plan=Profiles.plan(c,component,displayId);
+            AppLaunchProfile profile=Profiles.get(c,component);AppLaunchProfile.Plan planned=Profiles.plan(c,component,displayId);
+            android.graphics.Rect area=WorkArea.get(c,displayId).content;
+            final AppLaunchProfile.Plan plan=Workspace.compact(c,displayId)&&!floating?new AppLaunchProfile.Plan(AppLaunchProfile.Mode.MAXIMIZED,area.left,area.top,area.right,area.bottom):Workspace.compact(c,displayId)&&floating?new AppLaunchProfile.Plan(AppLaunchProfile.Mode.WINDOWED,area.left+area.width()/6,area.top+area.height()/6,area.right-area.width()/6,area.bottom-area.height()/6):planned;
             if(!Bridge.get(c).ready()){
                 if(newWindow||plan.windowingMode!=1)throw new IllegalStateException(c.getString(R.string.ui_launch_profiles_require_a_shizuku_connection));
                 launch(c,component,displayId,1,true);return;
             }
             Profiles.begin(component);
-            Bridge.get(c).call(s->s.launchProfile(component,profile.resolvedComponent,displayId,plan.windowingMode,plan.left,plan.top,plan.right,plan.bottom,newWindow),(result,error)->{
+            Bridge.get(c).call(s->{WorkArea.get(c,displayId).sync(s,displayId);return s.launchProfile(component,profile.resolvedComponent,displayId,plan.windowingMode,plan.left,plan.top,plan.right,plan.bottom,newWindow);},(result,error)->{
                 Profiles.end(component);
                 if(error!=null){problem(c,error);return;}
-                try{org.json.JSONObject data=new org.json.JSONObject(result);Profiles.launched(c,component,data,displayId);remember(c,component);
+                try{org.json.JSONObject data=new org.json.JSONObject(result);Profiles.launched(c,component,data,displayId);Workspace.launched(c,data,displayId,floating);remember(c,component);
                     if(newWindow&&!data.optBoolean("created"))Ui.message(c,c.getString(R.string.ui_this_app_reused_its_existing_window));
                 }catch(Exception e){problem(c,e.getMessage());}
             });

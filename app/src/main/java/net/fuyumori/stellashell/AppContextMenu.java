@@ -16,6 +16,10 @@ final class AppContextMenu {
         if(move!=null)menu.add(c.getString(R.string.ui_move_2)).setOnMenuItemClickListener(m->{move.run();return true;});
         menu.add(c.getString(R.string.ui_open)).setOnMenuItemClickListener(m->{dismiss.run();if(task!=null)session.action(task,"focus");else Launches.app(c,component,display);return true;});
         menu.add(c.getString(R.string.ui_open_in_new_window)).setOnMenuItemClickListener(m->{dismiss.run();Launches.app(c,component,display,true);return true;});
+        if(Workspace.compact(c,display)){
+            menu.add(R.string.workspace_primary).setOnMenuItemClickListener(m->{dismiss.run();if(task!=null)Workspace.role(c,task.id,display,true);else Launches.app(c,component,display);return true;});
+            menu.add(R.string.workspace_floating).setOnMenuItemClickListener(m->{dismiss.run();if(task!=null)Workspace.role(c,task.id,display,false);else Launches.app(c,component,display,false,true);return true;});
+        }
         SubMenu mode=menu.addSubMenu(c.getString(R.string.ui_launch_mode_next_launch));String[] modes={c.getString(R.string.ui_windowed),c.getString(R.string.ui_maximized),c.getString(R.string.ui_fullscreen),c.getString(R.string.ui_last_state)};
         for(AppLaunchProfile.Mode value:AppLaunchProfile.Mode.values())mode.add(1,value.ordinal(),value.ordinal(),modes[value.ordinal()]).setCheckable(true).setChecked(p.launchMode==value).setOnMenuItemClickListener(m->{p.launchMode=value;Profiles.save(c,component,p);return true;});mode.setGroupCheckable(1,true,true);
         SubMenu size=menu.addSubMenu(c.getString(R.string.ui_initial_window_size));String[] sizes={"800 × 600","1280 × 720",c.getString(R.string.ui_50_of_screen_width_and_height),c.getString(R.string.ui_last_size),c.getString(R.string.ui_custom)};

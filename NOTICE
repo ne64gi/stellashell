@@ -1,0 +1,16 @@
+StellaShell
+SPDX-License-Identifier: GPL-3.0-or-later
+
+StellaShell original code, documentation and bundled helper scripts are licensed
+under the GNU General Public License, version 3 or (at your option) any later
+version, except where a file or third-party notice states otherwise.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See LICENSE (StellaShell-GPL-3.0.txt in the APK).
+
+Third-party copyright and license notices remain applicable. In particular,
+the identified scrcpy-derived code retains its Apache-2.0 attribution and
+modification notice. See THIRD_PARTY_NOTICES.md and the APK licenses directory.
+This license selection does not resolve or reclassify historical provenance
+findings. See docs/LICENSE-AUDIT-2026-09-29.md and the remediation record.

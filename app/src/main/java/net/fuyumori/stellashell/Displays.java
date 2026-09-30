@@ -25,9 +25,9 @@ final class Displays {
         if(main!=null && main.isValid() && (main.getFlags()&Display.FLAG_PRIVATE)==0)out.add(0);
         return out;
     }
-    static int target(Context context,int preferred) { return Policy.selectDisplay(preferred,allIds(context),primary(context)); }
+    static int target(Context context,int preferred) { return Workspace.enabled(context)?(allIds(context).contains(Workspace.target(context))?Workspace.target(context):0):Policy.selectDisplay(preferred,allIds(context),primary(context)); }
     static Display require(Context context,int id) {
-        if(primary(context) && id!=0)throw new IllegalArgumentException("Primary display mode is selected");
+        if(primary(context) && !Workspace.enabled(context) && id!=0)throw new IllegalArgumentException("Primary display mode is selected");
         Policy.requireTarget(id,allIds(context),primaryActive(context));
         Display d=context.getSystemService(DisplayManager.class).getDisplay(id);
         if(d==null || !d.isValid()) throw new IllegalArgumentException(context.getString(R.string.ui_the_external_display_is_disconnected));

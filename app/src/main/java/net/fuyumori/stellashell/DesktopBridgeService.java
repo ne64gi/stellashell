@@ -14,7 +14,7 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
     private static final String FREEFORM = "enable_freeform_support";
     public DesktopBridgeService() { context = null; }
     public DesktopBridgeService(Context context) { this.context = context; }
-    @Override public synchronized void destroy() { if(mouseRouting!=null)mouseRouting.release();if(virtualKeyboard!=null)virtualKeyboard.release();System.exit(0); }
+    @Override public synchronized void destroy() { if(primaryScreen!=null)primaryScreen.release();if(mouseRouting!=null)mouseRouting.release();if(virtualKeyboard!=null)virtualKeyboard.release();System.exit(0); }
     private static String exec(String... args) throws Exception {
         Process process = new ProcessBuilder(args).redirectErrorStream(true).start();
         ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -93,6 +93,9 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
     @Override public synchronized String taskSnapshot(int displayId) {
         try{return tasks().snapshot(displayId);}catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}
     }
+    @Override public synchronized void setWorkArea(int displayId,int l,int t,int r,int b) {
+        try{tasks().setWorkArea(displayId,new android.graphics.Rect(l,t,r,b));}catch(Exception e){throw new IllegalArgumentException(e);}
+    }
     @Override public synchronized String taskOperation(int displayId,int taskId,String action,int l,int t,int r,int b) {
         try{return tasks().operate(displayId,taskId,action,l,t,r,b);}catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}
     }
@@ -100,6 +103,9 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
         try{return tasks().launchProfile(component,resolved,displayId,mode,l,t,r,b,newWindow);}catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}
     }
 
+    @Override public synchronized String moveWorkspaceTask(int source,int destination,int taskId,String component){
+        try{return tasks().moveWorkspaceTask(source,destination,taskId,component);}catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}
+    }
     private MouseRouting mouseRouting;
     @Override public synchronized String syncMouseRouting(int displayId,android.os.IBinder owner){
         if(context==null)return "unavailable: Shizuku context";
@@ -120,5 +126,11 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
             if(context.getSystemService(android.app.KeyguardManager.class).isDeviceLocked())throw new IllegalStateException("Unlock the device first");
             return DesktopCapture.write(displayId,output);
         }catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}
+    }
+    private PrimaryScreenPower primaryScreen;
+    @Override public synchronized String syncPrimaryScreen(int displayId,boolean off,android.os.IBinder owner){
+        if(context==null)return "ERROR: Service context unavailable";
+        if(primaryScreen==null)primaryScreen=new PrimaryScreenPower(context);
+        return primaryScreen.sync(displayId,off&&!primaryMode,owner);
     }
 }

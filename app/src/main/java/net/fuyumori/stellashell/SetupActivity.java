@@ -13,7 +13,8 @@ import android.widget.*;
 import java.util.*;
 
 public final class SetupActivity extends Activity implements DisplayManager.DisplayListener,SharedPreferences.OnSharedPreferenceChangeListener {
-    private TextView status,detail;private Button startPrimary,startExternal,stop,reset,enable,restore;private Bridge bridge;private DisplayManager displays;
+    private TextView status,detail;private Button startPrimary,startExternal,stop,reset,enable,restore,reopen,transfer;
+    private final LinearLayout[] pages=new LinearLayout[3];private final Button[] tabs=new Button[3];private int selectedPage;private ScrollView pageScroll;private Bridge bridge;private DisplayManager displays;
     private boolean busy;private final Runnable refreshListener=this::refresh;
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
@@ -26,10 +27,37 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         bridge=Bridge.get(this);bridge.observe(refreshListener);
         displays=getSystemService(DisplayManager.class);displays.registerDisplayListener(this,new Handler(Looper.getMainLooper()));
         Launches.prefs(this).registerOnSharedPreferenceChangeListener(this);
-        ScrollView scroll=new ScrollView(this);scroll.setBackgroundColor(Ui.BG);scroll.setFillViewport(true);
-        LinearLayout root=Ui.column(this);root.setPadding(Ui.dp(this,24),Ui.dp(this,30),Ui.dp(this,24),Ui.dp(this,30));root.setFitsSystemWindows(true);scroll.addView(root);
-        Ui.heading(root,"StellaShell");Ui.note(root,this.getString(R.string.ui_turn_usb_c_or_a_separate_scrcpy_display_into_a_desktop_keep_your));
-        status=Ui.text(this,"",17,Ui.ACCENT);status.setPadding(0,Ui.dp(this,8),0,Ui.dp(this,12));root.addView(status);
+        LinearLayout shell=Ui.column(this);shell.setBackgroundColor(Ui.BG);shell.setFitsSystemWindows(true);
+        FrameLayout centered=new FrameLayout(this);shell.addView(centered,new LinearLayout.LayoutParams(-1,-1));
+        LinearLayout content=Ui.column(this);content.setPadding(Ui.dp(this,20),Ui.dp(this,20),Ui.dp(this,20),0);
+        FrameLayout.LayoutParams contentParams=new FrameLayout.LayoutParams(Math.min(getResources().getDisplayMetrics().widthPixels,Ui.dp(this,720)),-1,Gravity.TOP|Gravity.CENTER_HORIZONTAL);centered.addView(content,contentParams);
+        LinearLayout brand=new LinearLayout(this);brand.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView icon=new ImageView(this);icon.setImageResource(R.drawable.ic_desktop);icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);brand.addView(icon,new LinearLayout.LayoutParams(Ui.dp(this,40),Ui.dp(this,40)));
+        TextView title=Ui.text(this,"StellaShell",26,Ui.TEXT);title.setPadding(Ui.dp(this,12),0,0,0);brand.addView(title);content.addView(brand);
+        LinearLayout navigation=new LinearLayout(this);navigation.setPadding(0,Ui.dp(this,16),0,Ui.dp(this,12));content.addView(navigation);
+        int[] labels={R.string.setup_home_tab,R.string.setup_settings_tab,R.string.setup_diagnostics_tab};
+        for(int i=0;i<3;i++){
+            final int page=i;tabs[i]=Ui.toolbarButton(this,getString(labels[i]),()->showPage(page));
+            navigation.addView(tabs[i],new LinearLayout.LayoutParams(0,Ui.dp(this,48),1));
+        }
+        pageScroll=new ScrollView(this);content.addView(pageScroll,new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout body=Ui.column(this);body.setPadding(0,0,0,Ui.dp(this,24));pageScroll.addView(body);
+        for(int i=0;i<3;i++){pages[i]=Ui.column(this);body.addView(pages[i]);}
+        LinearLayout root=pages[0];
+        status=Ui.text(this,"",15,Ui.MUTED);status.setPadding(Ui.dp(this,16),Ui.dp(this,16),Ui.dp(this,16),Ui.dp(this,16));status.setBackground(Ui.rounded(this,Ui.PANEL,16));root.addView(status);
+        startPrimary=Ui.button(this,getString(R.string.primary_start),()->startDesktop(true));
+        startPrimary.setTextColor(Ui.ACCENT);root.addView(startPrimary);
+        startExternal=Ui.button(this,getString(R.string.external_start_explicit),()->startDesktop(false));
+        startExternal.setTextColor(Ui.ACCENT);root.addView(startExternal);
+        reopen=Ui.button(this,this.getString(R.string.reopen_desktop),()->{
+            int id=Displays.target(this,Launches.prefs(this).getInt("preferred_display",-1));
+            if(id<0){Ui.message(this,this.getString(R.string.ui_connect_an_external_display_first));return;}
+            if(!Launches.prefs(this).getBoolean("enabled",false)){Ui.message(this,this.getString(R.string.ui_start_the_external_desktop_first));return;}
+            Launches.home(this,id);
+        });root.addView(reopen);
+        stop=Ui.button(this,getString(R.string.exit_desktop),()->{DockService.stop(this);refresh();});root.addView(stop);
+        root=pages[1];
+        Ui.note(root,getString(R.string.setup_permissions_section));
         root.addView(Ui.button(this,this.getString(R.string.ui_1_allow_taskbar_overlay),()->{
             try{startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())));}
             catch(RuntimeException e){Launches.problem(this,e.getMessage());}
@@ -40,12 +68,22 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
                 .setMessage(this.getString(R.string.ui_enable_freeform_windows_and_turn_off_android_s_force_desktop_mode))
                 .setNegativeButton(this.getString(R.string.ui_cancel),null).setPositiveButton(this.getString(R.string.ui_enable),(d,w)->apply(false)).show());
         root.addView(enable);
-        startPrimary=Ui.button(this,getString(R.string.primary_start),()->startDesktop(true));
-        startPrimary.setTextColor(Ui.ACCENT);root.addView(startPrimary);
-        Ui.note(root,getString(R.string.primary_note));
-        startExternal=Ui.button(this,getString(R.string.external_start_explicit),()->startDesktop(false));
-        startExternal.setTextColor(Ui.ACCENT);root.addView(startExternal);
-        Ui.note(root,getString(R.string.external_start_note));
+        Ui.note(root,getString(R.string.setup_display_section));
+        root.addView(Ui.button(this,getString(R.string.appearance_title),()->AppearanceActivity.open(this,getDisplay()==null?0:getDisplay().getDisplayId())));
+        root.addView(Ui.button(this,getString(R.string.shell_layout),()->{
+            String[] values={"auto","desktop","compact"};String value=Launches.prefs(this).getString("shell_layout","auto");int selected=java.util.Arrays.asList(values).indexOf(value);
+            new android.app.AlertDialog.Builder(this).setTitle(R.string.shell_layout).setSingleChoiceItems(new String[]{getString(R.string.shell_layout_auto),getString(R.string.shell_layout_desktop),getString(R.string.shell_layout_compact)},Math.max(0,selected),(dialog,which)->{Launches.prefs(this).edit().putString("shell_layout",values[which]).apply();dialog.dismiss();}).setNegativeButton(R.string.ui_cancel,null).show();
+        }));
+        CheckBox workspace=new CheckBox(this);workspace.setText(R.string.workspace_enable);workspace.setTextColor(Ui.TEXT);
+        workspace.setChecked(Launches.prefs(this).getBoolean("compact_workspace",false));
+        workspace.setOnCheckedChangeListener((v,checked)->{if(checked==Launches.prefs(this).getBoolean("compact_workspace",false))return;if(Launches.prefs(this).getBoolean("enabled",false)){workspace.post(()->workspace.setChecked(Launches.prefs(this).getBoolean("compact_workspace",false)));Ui.message(this,getString(R.string.workspace_stop_first));return;}Workspace.reset(this);Launches.prefs(this).edit().putBoolean("compact_workspace",checked).apply();});root.addView(workspace);
+        transfer=Ui.button(this,getString(R.string.workspace_transfer),()->{
+            java.util.List<Integer> ids=Displays.ids(this);int target=Workspace.target(this)>0?0:ids.isEmpty()?-1:ids.get(0);
+            if(target<0){Ui.message(this,getString(R.string.ui_waiting_for_a_display));return;}
+            DockService.handoff(this,target);
+        });pages[0].addView(transfer);
+        CheckBox autoWorkspace=new CheckBox(this);autoWorkspace.setText(R.string.workspace_auto);autoWorkspace.setTextColor(Ui.TEXT);
+        autoWorkspace.setChecked(Launches.prefs(this).getBoolean("workspace_auto",false));autoWorkspace.setOnCheckedChangeListener((v,checked)->Launches.prefs(this).edit().putBoolean("workspace_auto",checked).apply());root.addView(autoWorkspace);
         CheckBox hideKeyboard=new CheckBox(this);hideKeyboard.setText(R.string.hide_virtual_keyboard);hideKeyboard.setTextColor(Ui.TEXT);
         hideKeyboard.setChecked(Launches.prefs(this).getBoolean("hide_virtual_ime",false));
         hideKeyboard.setOnCheckedChangeListener((button,checked)->{
@@ -54,19 +92,12 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
                 if(checked && (error!=null || Launches.prefs(this).getString("ime_diagnostics","").startsWith("unavailable")))Ui.message(this,getString(R.string.virtual_keyboard_unavailable));
             });
         });root.addView(hideKeyboard);Ui.note(root,getString(R.string.hide_virtual_keyboard_note));
-        stop=Ui.button(this,getString(R.string.exit_desktop),()->{DockService.stop(this);refresh();});root.addView(stop);
-        Ui.note(root,getString(R.string.mode_stop_first));
-        reset=Ui.button(this,getString(R.string.reset_connection),()->DockService.resetConnection(this));root.addView(reset);
-        Ui.note(root,getString(R.string.reset_connection_note));
         Switch mode=new Switch(this);mode.setText(this.getString(R.string.ui_launch_in_windows_experimental));mode.setTextColor(Ui.TEXT);mode.setTextSize(15);mode.setPadding(0,Ui.dp(this,8),0,Ui.dp(this,8));
         mode.setChecked(Launches.prefs(this).getBoolean("freeform",false));mode.setOnCheckedChangeListener((button,checked)->Launches.prefs(this).edit().putBoolean("freeform",checked).apply());root.addView(mode);
         Ui.note(root,this.getString(R.string.ui_when_off_apps_open_fullscreen_drag_the_active_window_s_title_bar));
-        root.addView(Ui.button(this,this.getString(R.string.reopen_desktop),()->{
-            int id=Displays.target(this,Launches.prefs(this).getInt("preferred_display",-1));
-            if(id<0){Ui.message(this,this.getString(R.string.ui_connect_an_external_display_first));return;}
-            if(!Launches.prefs(this).getBoolean("enabled",false)){Ui.message(this,this.getString(R.string.ui_start_the_external_desktop_first));return;}
-            Launches.home(this,id);
-        }));
+        root=pages[2];
+        Ui.note(root,getString(R.string.setup_tools_section));
+        reset=Ui.button(this,getString(R.string.reset_connection),()->DockService.resetConnection(this));root.addView(reset);
         restore=Ui.button(this,this.getString(R.string.ui_restore_previous_device_settings),()->new AlertDialog.Builder(this).setTitle(this.getString(R.string.ui_restore_device_settings))
                 .setMessage(this.getString(R.string.ui_stop_the_external_desktop_and_restore_the_two_device_settings_sav))
                 .setNegativeButton(this.getString(R.string.ui_cancel),null).setPositiveButton(this.getString(R.string.ui_restore),(d,w)->apply(true)).show());root.addView(restore);
@@ -74,8 +105,14 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         root.addView(Ui.button(this,this.getString(R.string.ui_copy_diagnostics),()->{
             getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("StellaShell diagnostics",diagnostics()));Ui.message(this,this.getString(R.string.ui_diagnostics_copied));
         }));
-        setContentView(scroll);refresh();
+        setContentView(shell);showPage(state==null?0:state.getInt("setup_page",0));refresh();
     }
+    private void showPage(int page){
+        selectedPage=Math.max(0,Math.min(2,page));
+        for(int i=0;i<3;i++){pages[i].setVisibility(i==selectedPage?View.VISIBLE:View.GONE);tabs[i].setSelected(i==selectedPage);tabs[i].setTextColor(i==selectedPage?Ui.ACCENT:Ui.MUTED);}
+        pageScroll.scrollTo(0,0);refresh();
+    }
+    @Override public void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);state.putInt("setup_page",selectedPage);}
     private void startDesktop(boolean primary){
         if(busy || Launches.prefs(this).getBoolean("enabled",false))return;
         if(!bridge.ready()){Ui.message(this,getString(R.string.ui_connect_to_shizuku_first));return;}
@@ -132,14 +169,18 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         if(status==null || isDestroyed())return;
         List<Display> monitors=Displays.available(this);
         String display=monitors.isEmpty()?getString(R.string.ui_no_external_display_connected):getString(R.string.display_connected,monitors.get(0).getName());
-        if(Displays.primary(this))display=getString(R.string.primary_mode);
+        if(Displays.primaryActive(this)&&Workspace.target(this)==0)display=getString(R.string.primary_mode);
         status.setText(getString(R.string.setup_status,display,bridge.status(),getString(Settings.canDrawOverlays(this)?R.string.ui_allowed:R.string.ui_permission_required)));
         boolean running=Launches.prefs(this).getBoolean("enabled",false);
         startPrimary.setEnabled(!running&&!busy);startExternal.setEnabled(!running&&!busy);stop.setEnabled(running&&!busy);
         reset.setEnabled(running&&!busy&&bridge.ready());
         startExternal.setText(monitors.isEmpty()?R.string.external_wait_explicit:R.string.external_start_explicit);
         enable.setEnabled(!busy && bridge.ready());restore.setEnabled(!busy && bridge.ready() && Launches.prefs(this).contains("before_desktop"));
-        detail.setText(diagnostics());
+        reopen.setVisibility(running?View.VISIBLE:View.GONE);stop.setVisibility(running?View.VISIBLE:View.GONE);
+        startPrimary.setVisibility(running?View.GONE:View.VISIBLE);startExternal.setVisibility(running?View.GONE:View.VISIBLE);
+        transfer.setVisibility(running&&Workspace.enabled(this)?View.VISIBLE:View.GONE);
+        transfer.setEnabled(!busy&&!Workspace.isBusy()&&(Workspace.target(this)>0||!monitors.isEmpty()));
+        if(selectedPage==2)detail.setText(diagnostics());
     }
     @Override public void onResume(){super.onResume();if(bridge!=null){bridge.connect();refresh();}}
     @Override public void onDisplayAdded(int id){refresh();}

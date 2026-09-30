@@ -17,6 +17,8 @@ public final class QuickSettingsActivity extends Activity {
     private final Handler handler=new Handler(Looper.getMainLooper());
     private TextView network,volumeLabel;
     private SeekBar volume;
+    private CheckBox screen;
+    private boolean screenBusy;
     private AudioManager audio;
     private boolean dragging;
     private int displayId;
@@ -30,10 +32,12 @@ public final class QuickSettingsActivity extends Activity {
     @Override public void onCreate(Bundle state){
         super.onCreate(state);visible=new WeakReference<>(this);displayId=getDisplay().getDisplayId();audio=getSystemService(AudioManager.class);
         FrameLayout root=new FrameLayout(this);root.setBackgroundColor(0x11101725);root.setOnClickListener(v->finish());
-        LinearLayout panel=Ui.column(this);panel.setPadding(dp(20),dp(16),dp(20),dp(16));panel.setBackground(Ui.rounded(this,Ui.PANEL,20));panel.setElevation(dp(16));panel.setOnClickListener(v->{});
+        LinearLayout panel=Ui.column(this);panel.setPadding(dp(20),dp(16),dp(20),dp(16));panel.setBackground(Appearance.surface(this,20));panel.setElevation(dp(16));panel.setOnClickListener(v->{});
         FrameLayout.LayoutParams box=new FrameLayout.LayoutParams(Math.min(dp(420),getResources().getDisplayMetrics().widthPixels-dp(24)),-2,Gravity.RIGHT|Gravity.BOTTOM);box.setMargins(dp(12),dp(12),dp(12),dp(68));root.addView(panel,box);
         LinearLayout heading=new LinearLayout(this);heading.setGravity(Gravity.CENTER_VERTICAL);heading.addView(Ui.text(this,getString(R.string.quick_settings),20,Ui.TEXT),new LinearLayout.LayoutParams(0,-2,1));
         Button close=Ui.button(this,"×",this::finish);close.setContentDescription(getString(R.string.ui_close));heading.addView(close,new LinearLayout.LayoutParams(dp(44),dp(44)));panel.addView(heading);
+        screen=new CheckBox(this);screen.setText(R.string.quick_primary_screen_off);screen.setTextColor(Ui.TEXT);screen.setChecked(Bridge.get(this).screenOff());screen.setEnabled(displayId>0&&Bridge.get(this).ready());
+        screen.setOnClickListener(v->{screenBusy=true;screen.setEnabled(false);Bridge.get(this).screenOff(screen.isChecked(),(result,error)->{screenBusy=false;screen.setChecked(Bridge.get(this).screenOff());screen.setEnabled(displayId>0&&Bridge.get(this).ready());if(error!=null)Ui.message(this,error);});});panel.addView(screen);
         network=Ui.text(this,"",15,Ui.TEXT);network.setPadding(0,dp(12),0,dp(12));panel.addView(network);
         panel.addView(Ui.button(this,getString(R.string.quick_wifi_settings),()->{
             try{startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),ActivityOptions.makeBasic().setLaunchDisplayId(0).toBundle());finish();}
@@ -52,6 +56,7 @@ public final class QuickSettingsActivity extends Activity {
     private void update(){
         if(network==null)return;
         if(getSystemService(android.hardware.display.DisplayManager.class).getDisplay(displayId)==null||!Launches.prefs(this).getBoolean("enabled",false)){finish();return;}
+        if(!screenBusy){screen.setChecked(Bridge.get(this).screenOff());screen.setEnabled(displayId>0&&Bridge.get(this).ready());}
         if(!dragging){int value=audio.getStreamVolume(AudioManager.STREAM_MUSIC);volume.setProgress(value);label(value);}
         try{
             ConnectivityManager cm=getSystemService(ConnectivityManager.class);boolean wifi=false;

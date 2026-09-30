@@ -14,8 +14,10 @@
         <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent>
         <package android:name="moe.shizuku.privileged.api" />
     </queries>
-    <application android:label="StellaShell" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:theme="@style/AppTheme"
+    <application android:name=".ShellApplication" android:label="StellaShell" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:theme="@style/AppTheme"
         android:localeConfig="@xml/locales_config" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true">
+        <activity android:name=".AppearanceActivity" android:exported="false" android:resizeableActivity="true"
+            android:launchMode="singleTask" android:taskAffinity="net.fuyumori.stellashell.appearance" android:excludeFromRecents="true" />
         <activity android:name=".SetupActivity" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>

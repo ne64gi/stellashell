@@ -14,6 +14,7 @@
 @rem limitations under the License.
 @rem
 @rem SPDX-License-Identifier: Apache-2.0
+@rem Modified for StellaShell: line endings normalized; notice added 2026-09-29.
 @rem
 
 @if "%DEBUG%"=="" @echo off

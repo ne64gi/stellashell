@@ -22,15 +22,20 @@ public final class Bridge {
     private volatile IDesktopBridge service;
     private final IBinder mouseOwner=new Binder();
     private volatile int mouseDisplay=-1;
+    private volatile boolean screenOff;
+    public boolean screenOff(){return screenOff&&ready();}
+    public void screenOff(boolean off,Reply reply){call(s->{String result=s.syncPrimaryScreen(mouseDisplay,off,mouseOwner);if(!result.equals(off?"off":"on"))throw new IllegalStateException(result);return result;},(result,error)->{if(error==null)screenOff=off&&mouseDisplay>0;reply.done(result,error);});}
+
     private String mouseStatus="",imeStatus="";
     public void mouseDisplay(int displayId){
         int next=displayId>0?displayId:-1;
         if(mouseDisplay==next)return;
-        mouseDisplay=next;call(s->"OK",(result,error)->{});
+        mouseDisplay=next;if(next<0)screenOff=false;call(s->{if(next<0)s.syncPrimaryScreen(-1,false,mouseOwner);return "OK";},(result,error)->{});
     }
     public void resetMouseRouting(Reply reply){
-        mouseDisplay=-1;
+        mouseDisplay=-1;screenOff=false;
         call(s->{
+            s.syncPrimaryScreen(-1,false,mouseOwner);
             String result=s.syncMouseRouting(-1,mouseOwner);
             if(!"inactive".equals(result))throw new IllegalStateException(result);
             return "OK";
@@ -42,14 +47,14 @@ public final class Bridge {
         @Override public void onServiceConnected(ComponentName name, IBinder binder) {
             service = IDesktopBridge.Stub.asInterface(binder); binding = false; error = ""; changed();
         }
-        @Override public void onServiceDisconnected(ComponentName name) { service = null; binding = false; changed(); }
+        @Override public void onServiceDisconnected(ComponentName name) { service = null; screenOff=false; binding = false; changed(); }
     };
     private Bridge(Context context) {
         this.context=context;
         args = new Shizuku.UserServiceArgs(new ComponentName(context, DesktopBridgeService.class))
-                .daemon(false).processNameSuffix("desktop_bridge").debuggable(false).version(13);
+                .daemon(false).processNameSuffix("desktop_bridge").debuggable(false).version(18);
         Shizuku.addBinderReceivedListenerSticky(this::connect);
-        Shizuku.addBinderDeadListener(() -> { service = null; binding = false; changed(); });
+        Shizuku.addBinderDeadListener(() -> { service = null; screenOff=false; binding = false; changed(); });
         Shizuku.addRequestPermissionResultListener((code, result) -> { if (result == PackageManager.PERMISSION_GRANTED) connect(); changed(); });
     }
     public void observe(Runnable listener) { listeners.add(listener); }
@@ -87,14 +92,14 @@ public final class Bridge {
                 if (current == null || !current.asBinder().isBinderAlive()) throw new IllegalStateException(status());
                 current.setPrimaryMode(Displays.primaryActive(context));
                 String routing;
-                try{routing=current.syncMouseRouting(Launches.prefs(context).getBoolean("enabled",false)&&!Displays.primary(context)?mouseDisplay:-1,mouseOwner);}
+                try{routing=current.syncMouseRouting(Launches.prefs(context).getBoolean("enabled",false)&&(!Displays.primary(context)||Workspace.target(context)>0)?mouseDisplay:-1,mouseOwner);}
                 catch(Exception e){routing="unavailable: "+e.getClass().getSimpleName();}
                 if(!java.util.Objects.equals(mouseStatus,routing)){
                     mouseStatus=routing;String diagnostic=routing;
                     main.post(()->Launches.prefs(context).edit().putString("mouse_diagnostics",diagnostic).apply());
                 }
                 String ime;
-                try{ime=current.syncVirtualKeyboard(Launches.prefs(context).getBoolean("enabled",false)&&!Displays.primary(context)?mouseDisplay:-1,
+                try{ime=current.syncVirtualKeyboard(Launches.prefs(context).getBoolean("enabled",false)&&(!Displays.primary(context)||Workspace.target(context)>0)?mouseDisplay:-1,
                         Launches.prefs(context).getBoolean("hide_virtual_ime",false),mouseOwner);}
                 catch(Exception e){ime="unavailable: "+e.getClass().getSimpleName();}
                 if(!java.util.Objects.equals(imeStatus,ime)){
