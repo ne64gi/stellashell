@@ -19,7 +19,14 @@ final class TaskBackend {
     private final Object manager, organizer;
     private final Class<?> organizerApi;
     private final Method boundsTransition;
+    private final FrameworkTaskAccess taskAccess;
     private String lastBoundsDispatch="none";
+    private final Map<Integer,Rect> workAreas=new HashMap<>();
+    void setWorkArea(int id,Rect area)throws Exception {
+        Point size=new Point();display(id).getRealSize(size);
+        if(area.isEmpty()||area.left<0||area.top<0||area.right>size.x||area.bottom>size.y)throw new IllegalArgumentException("Invalid work area");
+        workAreas.put(id,new Rect(area));
+    }
     private final Map<Integer,Rect> restoreBounds=new HashMap<>();
     private final ArrayDeque<String> log=new ArrayDeque<>();
     TaskBackend(Context context) throws Exception {
@@ -27,6 +34,7 @@ final class TaskBackend {
         api=Class.forName("android.app.IActivityTaskManager");
         IBinder binder=(IBinder)Class.forName("android.os.ServiceManager").getMethod("getService",String.class).invoke(null,"activity_task");
         manager=Class.forName("android.app.IActivityTaskManager$Stub").getMethod("asInterface",IBinder.class).invoke(null,binder);
+        taskAccess=new FrameworkTaskAccess(api,manager);
         transaction=Class.forName("android.window.WindowContainerTransaction");
         token=Class.forName("android.window.WindowContainerToken");
         organizerApi=Class.forName("android.window.IWindowOrganizerController");
@@ -40,47 +48,35 @@ final class TaskBackend {
         }catch(NoSuchMethodException ignored){}
         boundsTransition=transitionMethod;
     }
-    private static Object field(Object object,String name) throws Exception {return object.getClass().getField(name).get(object);}
-    private static int number(Object object,String name) throws Exception {return ((Number)field(object,name)).intValue();}
-    private static Object configuration(Object task) throws Exception {
-        Object configuration=field(task,"configuration");return field(configuration,"windowConfiguration");
-    }
-    private static int mode(Object task) throws Exception {Object c=configuration(task);return (Integer)c.getClass().getMethod("getWindowingMode").invoke(c);}
-    private static Rect bounds(Object task) throws Exception {Object c=configuration(task);return new Rect((Rect)c.getClass().getMethod("getBounds").invoke(c));}
-    private static int type(Object task) throws Exception {Object c=configuration(task);return (Integer)c.getClass().getMethod("getActivityType").invoke(c);}
-    private static ComponentName component(Object task) throws Exception {
-        ComponentName c=(ComponentName)field(task,"baseActivity");
-        return c!=null?c:(ComponentName)field(task,"topActivity");
-    }
     private Display display(int id) {
         if(id<0 || (id==0 && !primaryMode))throw new IllegalArgumentException("The main display is not supported");
         Display d=context.getSystemService(DisplayManager.class).getDisplay(id);
         if(d==null||!d.isValid()||(d.getFlags()&Display.FLAG_PRIVATE)!=0)throw new IllegalArgumentException("No external display");
         return d;
     }
-    private List<?> tasks(int id) throws Exception {
+    private List<FrameworkTaskAccess.Entry> tasks(int id) throws Exception {
         display(id);
-        return (List<?>)api.getMethod("getTasks",int.class,boolean.class,boolean.class,int.class).invoke(manager,100,false,false,id);
+        return taskAccess.query(id);
     }
-    private boolean eligible(Object task,int id) throws Exception {
-        ComponentName c=component(task);
-        return number(task,"displayId")==id && number(task,"userId")==android.os.Process.myUid()/100000
-                && type(task)==1 && c!=null && !c.getPackageName().equals("net.fuyumori.stellashell");
+    private boolean eligible(FrameworkTaskAccess.Entry task,int id) throws Exception {
+        ComponentName c=task.component;
+        return task.displayId==id && task.userId==android.os.Process.myUid()/100000
+                && task.activityType==1 && c!=null && !c.getPackageName().equals("net.fuyumori.stellashell");
     }
-    private Object requireTask(int id,int taskId) throws Exception {
-        for(Object t:tasks(id))if(number(t,"taskId")==taskId && eligible(t,id))return t;
+    private FrameworkTaskAccess.Entry requireTask(int id,int taskId) throws Exception {
+        for(FrameworkTaskAccess.Entry t:tasks(id))if(t.id==taskId && eligible(t,id))return t;
         throw new IllegalArgumentException("The window closed or moved to another display");
     }
     private boolean method(Class<?> cls,String name,Class<?>... types){try{cls.getMethod(name,types);return true;}catch(NoSuchMethodException e){return false;}}
     String snapshot(int id) throws Exception {
-        List<?> currentTasks=tasks(id);
+        List<FrameworkTaskAccess.Entry> currentTasks=tasks(id);
         JSONArray list=new JSONArray();
-        for(Object t:currentTasks) {
+        for(FrameworkTaskAccess.Entry t:currentTasks) {
             if(!eligible(t,id))continue;
-            Rect b=bounds(t);ComponentName c=component(t);
-            JSONObject row=new JSONObject().put("id",number(t,"taskId")).put("component",c.flattenToString())
-                    .put("mode",mode(t)).put("left",b.left).put("top",b.top).put("right",b.right).put("bottom",b.bottom)
-                    .put("visible",field(t,"isVisible")).put("focused",field(t,"isFocused"));
+            Rect b=new Rect(t.bounds);ComponentName c=t.component;
+            JSONObject row=new JSONObject().put("id",t.id).put("component",c.flattenToString())
+                    .put("mode",t.windowMode).put("left",b.left).put("top",b.top).put("right",b.right).put("bottom",b.bottom)
+                    .put("visible",t.visible).put("focused",t.focused);
             list.put(row);
         }
         JSONObject caps=new JSONObject().put("tasks",true)
@@ -94,16 +90,16 @@ final class TaskBackend {
         try {
             // RootTaskInfo is top-to-bottom; its leaf childTaskIds are bottom-to-top.
             // getTasks alone is recency ordered and must NOT be used as visual z-order.
-            List<?> roots=(List<?>)api.getMethod("getAllRootTaskInfosOnDisplay",int.class).invoke(manager,id);
-            Map<Integer,Object> byId=new HashMap<>();for(Object t:currentTasks)byId.put(number(t,"taskId"),t);
+            List<FrameworkTaskAccess.Root> roots=taskAccess.roots(id);
+            Map<Integer,FrameworkTaskAccess.Entry> byId=new HashMap<>();for(FrameworkTaskAccess.Entry t:currentTasks)byId.put(t.id,t);
             Set<Integer> seen=new HashSet<>();
-            for(Object root:roots){
-                int[] children=(int[])field(root,"childTaskIds");boolean found=false;
-                for(int i=children.length-1;i>=0;i--){Object t=byId.get(children[i]);if(t!=null){found=true;if(seen.add(children[i]))stack.put(row(t));}}
-                if(!found){int rootId=number(root,"taskId");Object t=byId.get(rootId);if(seen.add(rootId))stack.put(row(t!=null?t:root));}
+            for(FrameworkTaskAccess.Root root:roots){
+                int[] children=root.children;boolean found=false;
+                for(int i=children.length-1;i>=0;i--){FrameworkTaskAccess.Entry t=byId.get(children[i]);if(t!=null){found=true;if(seen.add(children[i]))stack.put(row(t));}}
+                if(!found){int rootId=root.task.id;FrameworkTaskAccess.Entry t=byId.get(rootId);if(seen.add(rootId))stack.put(row(t!=null?t:root.task));}
             }
             stackReliable=true;
-            for(Object t:currentTasks)if((Boolean)field(t,"isVisible")&&!seen.contains(number(t,"taskId")))stackReliable=false;
+            for(FrameworkTaskAccess.Entry t:currentTasks)if(t.visible&&!seen.contains(t.id))stackReliable=false;
         }catch(Exception e){record("stack probe unavailable: "+reason(e));}
         caps.put("stackOrder",stackReliable);
         return new JSONObject().put("backend","shizuku/activity_task+wct").put("capabilities",caps)
@@ -111,21 +107,33 @@ final class TaskBackend {
                 .put("stack",stack)
                 .put("tasks",list).put("operations",new JSONArray(log)).toString();
     }
-    private JSONObject row(Object t)throws Exception {
-        Rect b=bounds(t);ComponentName c=component(t);return new JSONObject().put("id",number(t,"taskId")).put("component",c==null?"unknown/unknown":c.flattenToString()).put("mode",mode(t))
-                .put("left",b.left).put("top",b.top).put("right",b.right).put("bottom",b.bottom).put("visible",field(t,"isVisible")).put("focused",field(t,"isFocused"));
+    private JSONObject row(FrameworkTaskAccess.Entry t)throws Exception {
+        Rect b=new Rect(t.bounds);ComponentName c=t.component;return new JSONObject().put("id",t.id).put("component",c==null?"unknown/unknown":c.flattenToString()).put("mode",t.windowMode)
+                .put("left",b.left).put("top",b.top).put("right",b.right).put("bottom",b.bottom).put("visible",t.visible).put("focused",t.focused);
     }
     String launchProfile(String requested,String resolved,int id,int windowMode,int l,int top,int r,int bottom,boolean newWindow)throws Exception {
         Policy.component(requested);ComponentName target=ComponentName.unflattenFromString(requested);display(id);
         if(windowMode!=1&&windowMode!=5)throw new IllegalArgumentException("Unsupported mode");
         if(!resolved.isEmpty()){Policy.component(resolved);if(!target.getPackageName().equals(ComponentName.unflattenFromString(resolved).getPackageName()))throw new IllegalArgumentException("Profile package mismatch");}
-        Set<Integer> before=new HashSet<>();Object existing=null;
-        for(Object t:tasks(id)){if(!eligible(t,id))continue;before.add(number(t,"taskId"));String c=component(t).flattenToString();if(c.equals(requested)||c.equals(resolved))existing=t;}
-        if(!newWindow&&existing!=null){apply(change(existing,"reorder",boolean.class,true));return new JSONObject().put("task",row(existing)).put("created",false).toString();}
+        Set<Integer> before=new HashSet<>();FrameworkTaskAccess.Entry existing=null;
+        for(FrameworkTaskAccess.Entry t:tasks(id)){if(!eligible(t,id))continue;before.add(t.id);String c=t.component.flattenToString();if(c.equals(requested)||c.equals(resolved))existing=t;}
         android.app.ActivityOptions options=android.app.ActivityOptions.makeBasic().setLaunchDisplayId(id);
         Point size=new Point();display(id).getRealSize(size);
         Rect wanted=new Rect(Math.max(0,l),Math.max(0,top),Math.min(size.x,r),Math.min(size.y,bottom));
         if(wanted.isEmpty())throw new IllegalArgumentException("Invalid launch bounds");
+        if(windowMode==5){Rect area=workAreas.get(id);if(area==null)throw new IllegalStateException("Work area is not available");wanted=WorkArea.clamp(wanted,area);}
+        if(!newWindow&&existing!=null){
+            if(existing.windowMode!=windowMode){
+                Object tx=transaction.getConstructor().newInstance();Object taskToken=existing.token;
+                transaction.getMethod("setWindowingMode",token,int.class).invoke(tx,taskToken,windowMode);
+                if(windowMode==5)transaction.getMethod("setBounds",token,Rect.class).invoke(tx,taskToken,wanted);
+                if(windowMode==5)applyBounds(tx);else apply(tx);
+            }
+            apply(change(existing,"reorder",boolean.class,true));existing=requireTask(id,existing.id);
+            record("profile reuse "+requested+" requestedMode="+windowMode+" actualMode="+existing.windowMode+" bounds="+new Rect(existing.bounds));
+            return new JSONObject().put("task",row(existing)).put("created",false).toString();
+        }
+
         options.setLaunchBounds(wanted);android.app.ActivityOptions.class.getMethod("setLaunchWindowingMode",int.class).invoke(options,windowMode);
         android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_LAUNCHER).setComponent(target)
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK|(newWindow?android.content.Intent.FLAG_ACTIVITY_MULTIPLE_TASK:android.content.Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));
@@ -133,30 +141,45 @@ final class TaskBackend {
         if(start==null)throw new UnsupportedOperationException("Framework launch API unavailable");
         int result=(Integer)start.invoke(manager,null,"com.android.shell",null,intent,null,null,null,0,0,null,options.toBundle(),android.os.Process.myUid()/100000);
         if(result<0)throw new IllegalStateException("Activity start failed: "+result);
-        Object found=null;boolean created=false;
+        FrameworkTaskAccess.Entry found=null;boolean created=false;
         long until=android.os.SystemClock.uptimeMillis()+2500;
         do{
-            for(Object t:tasks(id))if(eligible(t,id)&&component(t).getPackageName().equals(target.getPackageName())){
-                if(!before.contains(number(t,"taskId"))){found=t;created=true;break;}
-                if(component(t).equals(target)||component(t).flattenToString().equals(resolved))found=t;
+            for(FrameworkTaskAccess.Entry t:tasks(id))if(eligible(t,id)&&t.component.getPackageName().equals(target.getPackageName())){
+                if(!before.contains(t.id)){found=t;created=true;break;}
+                if(t.component.equals(target)||t.component.flattenToString().equals(resolved))found=t;
             }
             if(created)break;android.os.SystemClock.sleep(100);
         }while(android.os.SystemClock.uptimeMillis()<until);
         if(found==null)throw new IllegalStateException("Could not find the launched window");
-        if(created){
-            Object tx=transaction.getConstructor().newInstance();Object taskToken=field(found,"token");
+        if(created||found.windowMode!=windowMode){
+            Object tx=transaction.getConstructor().newInstance();Object taskToken=found.token;
             transaction.getMethod("setWindowingMode",token,int.class).invoke(tx,taskToken,windowMode);
             if(windowMode==5)transaction.getMethod("setBounds",token,Rect.class).invoke(tx,taskToken,wanted);
             if(windowMode==5)applyBounds(tx);else apply(tx);
-            found=requireTask(id,number(found,"taskId"));
+            found=requireTask(id,found.id);
         }
-        record("profile launch "+requested+" display="+id+" newWindow="+newWindow+" created="+created+" requested="+wanted+" actual="+bounds(found));
+        record("profile launch "+requested+" display="+id+" newWindow="+newWindow+" created="+created+" requested="+wanted+" actual="+new Rect(found.bounds));
         return new JSONObject().put("task",row(found)).put("created",created).toString();
     }
+    String moveWorkspaceTask(int source,int destination,int taskId,String component)throws Exception {
+        display(source);display(destination);
+        FrameworkTaskAccess.Entry task=requireTask(source,taskId);
+        if(!task.component.flattenToString().equals(component))throw new IllegalArgumentException("Task identity changed");
+        // Only move a standalone root. Moving a grouped root could take unrelated apps with it.
+        boolean standalone=false;
+        for(FrameworkTaskAccess.Root root:taskAccess.roots(source))if(root.task.id==taskId){
+            standalone=true;for(int child:root.children)if(child!=taskId)standalone=false;
+        }
+        if(!standalone)throw new IllegalStateException("Grouped tasks cannot be transferred");
+        api.getMethod("moveRootTaskToDisplay",int.class,int.class).invoke(manager,taskId,destination);
+        FrameworkTaskAccess.Entry moved=requireTask(destination,taskId);
+        record("handoff task="+taskId+" from="+source+" to="+destination);
+        return row(moved).toString();
+    }
     private void record(String message){if(log.size()>=30)log.removeFirst();log.addLast(System.currentTimeMillis()+" "+message);}
-    private Object change(Object t,String name,Class<?> extra,Object arg) throws Exception {
+    private Object change(FrameworkTaskAccess.Entry t,String name,Class<?> extra,Object arg) throws Exception {
         Object tx=transaction.getConstructor().newInstance();
-        transaction.getMethod(name,token,extra).invoke(tx,field(t,"token"),arg);return tx;
+        transaction.getMethod(name,token,extra).invoke(tx,t.token,arg);return tx;
     }
     private void apply(Object tx) throws Exception {organizerApi.getMethod("applyTransaction",transaction).invoke(organizer,tx);}
     private void applyBounds(Object tx) throws Exception {
@@ -169,7 +192,7 @@ final class TaskBackend {
     }
     String operate(int id,int taskId,String action,int l,int top,int r,int bottom) throws Exception {
         try {
-            Object t=requireTask(id,taskId);Object taskToken=field(t,"token");
+            FrameworkTaskAccess.Entry t=requireTask(id,taskId);Object taskToken=t.token;
             switch(action){
                 case "focus": apply(change(t,"reorder",boolean.class,true));break;
                 case "minimize": apply(change(t,"reorder",boolean.class,false));break;
@@ -183,26 +206,25 @@ final class TaskBackend {
                 case "restore": {
                     Display d=display(id);Point size=new Point();d.getRealSize(size);
                     android.util.DisplayMetrics metrics=new android.util.DisplayMetrics();d.getRealMetrics(metrics);
-                    int dock=Math.round(60*metrics.density), caption=Math.round(32*metrics.density);
-                    int[] area=WindowGeometry.area(size.x,size.y,dock);
-                    Rect current=bounds(t), wanted;
+                    Rect area=workAreas.get(id);
+                    if(area==null)throw new IllegalStateException("Work area is not available");
+                    Rect current=new Rect(t.bounds), wanted;
                     if(action.equals("maximize")){
-                        restoreBounds.putIfAbsent(taskId,current);wanted=new Rect(area[0],caption,area[2],area[3]);
+                        restoreBounds.putIfAbsent(taskId,current);wanted=new Rect(area);
                     } else if(action.equals("restore")) {
                         wanted=restoreBounds.remove(taskId);
-                        if(wanted==null)wanted=new Rect(size.x/6,size.y/6,size.x*5/6,Math.min(area[3],size.y*5/6));
+                        if(wanted==null)wanted=new Rect(area.left+area.width()/6,area.top+area.height()/6,area.right-area.width()/6,area.bottom-area.height()/6);
                     } else if(action.equals("left")||action.equals("right")) {
                         restoreBounds.putIfAbsent(taskId,current);
-                        int middle=size.x/2;wanted=new Rect(action.equals("left")?0:middle,caption,action.equals("left")?middle:size.x,area[3]);
+                        int middle=area.centerX();wanted=new Rect(action.equals("left")?area.left:middle,area.top,action.equals("left")?middle:area.right,area.bottom);
                     } else wanted=new Rect(l,top,r,bottom);
-                    int[] safe=WindowGeometry.clamp(wanted.left,wanted.top-caption,wanted.right,wanted.bottom-caption,area[2],Math.max(1,area[3]-caption),Math.round(240*metrics.density),Math.round(160*metrics.density));
-                    wanted=new Rect(safe[0],safe[1]+caption,safe[2],safe[3]+caption);
+                    wanted=WorkArea.clamp(wanted,area);
                     Object tx=transaction.getConstructor().newInstance();
                     transaction.getMethod("setWindowingMode",token,int.class).invoke(tx,taskToken,5);
                     transaction.getMethod("setBounds",token,Rect.class).invoke(tx,taskToken,wanted);
                     applyBounds(tx);
                     // The result may be constrained further by the application's minimum size.
-                    record(action+" task="+taskId+" via="+lastBoundsDispatch+" requested="+wanted+" actual="+bounds(requireTask(id,taskId)));
+                    record(action+" task="+taskId+" via="+lastBoundsDispatch+" requested="+wanted+" actual="+new Rect(requireTask(id,taskId).bounds));
                     return "OK";
                 }
                 default:throw new IllegalArgumentException("Unsupported operation");

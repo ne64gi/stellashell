@@ -10,3 +10,9 @@ local.properties
 .env
 .env.*
 .DS_Store
+
+# Local Windows session configuration and external binaries
+/tools/windows/stellashell.json
+/tools/windows/*.exe
+/tools/windows/*.dll
+/tools/windows/scrcpy-server

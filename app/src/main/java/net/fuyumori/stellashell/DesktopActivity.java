@@ -35,6 +35,16 @@ public final class DesktopActivity extends Activity implements DisplayManager.Di
         root.setOnLongClickListener(v->{desktopMenu(anchor,0);return true;});
         root.setOnGenericMotionListener((v,event)->{if(event.getActionMasked()==MotionEvent.ACTION_BUTTON_PRESS&&(event.getButtonState()&MotionEvent.BUTTON_SECONDARY)!=0){desktopMenu(anchor,0);return true;}return false;});
         root.post(()->desktopAction(getIntent()));
+        getWindow().setDecorFitsSystemWindows(false);
+        getWindow().getAttributes().layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
+        root.setOnApplyWindowInsetsListener((view,insets)->{
+            WorkArea area=WorkArea.read(this,insets);
+            for(View canvas:new View[]{widgetCanvas,shortcutCanvas}){
+                FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)canvas.getLayoutParams();
+                p.setMargins(area.application.left,area.application.top,area.physical.right-area.application.right,area.physical.bottom-area.application.bottom);canvas.setLayoutParams(p);
+            }
+            return insets;
+        });
         setContentView(root);
         getWindow().getInsetsController().hide(WindowInsets.Type.systemBars());
         getWindow().getInsetsController().setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
@@ -77,6 +87,6 @@ public final class DesktopActivity extends Activity implements DisplayManager.Di
     @Override public void onDisplayRemoved(int id){if(id==displayId)finishAndRemoveTask();}
     @Override public void onDisplayAdded(int id){}
     @Override public void onDisplayChanged(int id){}
-    @Override public void onSharedPreferenceChanged(SharedPreferences p,String key){if(key!=null&&key.startsWith("wallpaper")){wallpaper();if(imageWallpaper!=null)imageWallpaper.reload();}if("enabled".equals(key)&&!p.getBoolean("enabled",false))finishAndRemoveTask();if(shortcuts!=null&&("desktop_shortcuts".equals(key)||"shortcut_snap".equals(key)))shortcuts.refresh();}
+    @Override public void onSharedPreferenceChanged(SharedPreferences p,String key){if(key!=null&&key.startsWith("wallpaper")){wallpaper();if(imageWallpaper!=null)imageWallpaper.reload();}if("shell_layout".equals(key)&&root!=null)root.requestApplyInsets();if("enabled".equals(key)&&!p.getBoolean("enabled",false))finishAndRemoveTask();if(shortcuts!=null&&("desktop_shortcuts".equals(key)||"shortcut_snap".equals(key)))shortcuts.refresh();}
     @Override public void onDestroy(){if(imageWallpaper!=null)imageWallpaper.destroy();if(widgets!=null)widgets.destroy();if(displays!=null)displays.unregisterDisplayListener(this);Launches.prefs(this).unregisterOnSharedPreferenceChangeListener(this);super.onDestroy();}
 }

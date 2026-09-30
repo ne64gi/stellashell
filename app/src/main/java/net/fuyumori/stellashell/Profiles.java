@@ -43,8 +43,11 @@ final class Profiles {
         }catch(JSONException e){throw new IllegalStateException(e);}
     }
     static AppLaunchProfile.Plan plan(Context c,String component,int displayId){
-        Display d=Displays.require(c,displayId);Point size=new Point();d.getRealSize(size);DisplayMetrics metrics=new DisplayMetrics();d.getRealMetrics(metrics);
-        return get(c,component).plan(size.x,size.y,Math.round(32*metrics.density),Math.round(60*metrics.density),cascade++);
+        WorkArea area=WorkArea.get(c,displayId);AppLaunchProfile profile=get(c,component);
+        if(profile.hasLastBounds){profile.x-=area.application.left;profile.y-=area.application.top;}
+        AppLaunchProfile.Plan local=profile.plan(area.application.width(),area.application.height(),area.caption,0,cascade++);
+        if(local.windowingMode==1)return new AppLaunchProfile.Plan(local.state,0,0,area.physical.width(),area.physical.height());
+        return new AppLaunchProfile.Plan(local.state,local.left+area.application.left,local.top+area.application.top,local.right+area.application.left,local.bottom+area.application.top);
     }
     static void begin(String component){launching.add(key(component));}
     static void end(String component){launching.remove(key(component));}
@@ -55,6 +58,7 @@ final class Profiles {
     }
     static void observe(Context c,TaskSession.Task task,int displayId){
         try {
+            if(WorkArea.get(c,displayId).imeVisible)return;
             String component=taskKeys.get(task.id);
             if(component==null){
                 component=key(task.component);
@@ -62,9 +66,7 @@ final class Profiles {
             }
             if(launching.contains(component))return;
             AppLaunchProfile p=get(c,component);
-            Display display=Displays.require(c,displayId);Point size=new Point();display.getRealSize(size);DisplayMetrics metrics=new DisplayMetrics();display.getRealMetrics(metrics);
-            boolean maximized=task.mode==5 && task.bounds.left==0 && task.bounds.top<=Math.round(32*metrics.density)+2
-                    && task.bounds.right>=size.x-2 && task.bounds.bottom>=size.y-Math.round(60*metrics.density)-2;
+            boolean maximized=task.mode==5 && WorkArea.get(c,displayId).maximized(task.bounds);
             p.lastState=task.mode==1?AppLaunchProfile.Mode.FULLSCREEN:maximized?AppLaunchProfile.Mode.MAXIMIZED:AppLaunchProfile.Mode.WINDOWED;
             if(p.rememberBounds&&task.mode==5&&!maximized&&!task.bounds.isEmpty()){
                 p.x=task.bounds.left;p.y=task.bounds.top;p.lastWidth=task.bounds.width();p.lastHeight=task.bounds.height();p.hasLastBounds=true;

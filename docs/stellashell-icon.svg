@@ -1,1 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="432" height="432" viewBox="0 0 108 108"><rect width="108" height="108" rx="24" fill="#111B30"/><g transform="translate(8 11) scale(.8)"><path d="M33,46H28C24,46 24,54 28,54H30C34,54 34,64 30,64H25" fill="none" stroke="#73E8D5" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M40,40V64H45 M51,46V64H56" fill="none" stroke="#EEF5FF" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M67,46H63C59,46 59,54 63,54H65C69,54 69,64 65,64H61" fill="none" stroke="#73E8D5" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M75,46V64H80 M85,52V64H90" fill="none" stroke="#EEF5FF" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M75,27L77.6,34.4L85,37L77.6,39.6L75,47L72.4,39.6L65,37L72.4,34.4Z" fill="#B6A6FF"/><path d="M27,73H82V75H27Z" fill="#355065"/></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="432" height="432" viewBox="0 0 108 108" role="img" aria-label="StellaShell star">
+  <defs><linearGradient id="starlight" gradientUnits="userSpaceOnUse" x1="35" y1="28" x2="73" y2="82">
+    <stop offset="0" stop-color="#D8FFF5"/><stop offset=".5" stop-color="#73E8D5"/><stop offset="1" stop-color="#72AEF5"/>
+  </linearGradient></defs>
+  <rect width="108" height="108" rx="24" fill="#111B30"/>
+  <path d="M54,24 C58,43 65,50 84,54 C65,58 58,65 54,84 C50,65 43,58 24,54 C43,50 50,43 54,24 Z" fill="url(#starlight)"/>
+  <path d="M74,30 L75.5,34.5 L80,36 L75.5,37.5 L74,42 L72.5,37.5 L68,36 L72.5,34.5 Z" fill="#EEF5FF"/>
+</svg>

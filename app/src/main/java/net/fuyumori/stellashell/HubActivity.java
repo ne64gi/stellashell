@@ -18,7 +18,7 @@ public final class HubActivity extends Activity implements DisplayManager.Displa
     private DesktopWidgets widgets;
     private FrameLayout widgetCanvas;
     private LinearLayout widgetPage,notificationPage,notificationRows;
-    private Button widgetsTab,notificationsTab,widgetSettings;
+    private Button widgetsTab,notificationsTab,panelSettings;
     private boolean notifications;
     private DisplayManager displays;
     private final Runnable refresh=()->{if(notificationRows!=null)renderNotifications();};
@@ -39,12 +39,12 @@ public final class HubActivity extends Activity implements DisplayManager.Displa
         displays=getSystemService(DisplayManager.class);displays.registerDisplayListener(this,new Handler(Looper.getMainLooper()));
         Launches.prefs(this).registerOnSharedPreferenceChangeListener(this);
         FrameLayout backdrop=new FrameLayout(this);backdrop.setBackgroundColor(0x22101725);backdrop.setOnClickListener(v->finish());
-        LinearLayout panel=Ui.column(this);panel.setPadding(dp(16),dp(16),dp(16),dp(16));panel.setBackground(Ui.rounded(this,Ui.BG,22));panel.setElevation(dp(18));panel.setOnClickListener(v->{});
+        LinearLayout panel=Ui.column(this);panel.setPadding(dp(16),dp(16),dp(16),dp(16));panel.setBackground(Appearance.surface(this,22));panel.setElevation(dp(18));panel.setOnClickListener(v->{});
         FrameLayout.LayoutParams box=new FrameLayout.LayoutParams(Math.min(dp(720),getResources().getDisplayMetrics().widthPixels-dp(24)),-1,Gravity.RIGHT|Gravity.TOP);
         box.setMargins(dp(12),dp(16),dp(12),dp(76));backdrop.addView(panel,box);
         LinearLayout heading=new LinearLayout(this);heading.setGravity(Gravity.CENTER_VERTICAL);
         TextView title=Ui.text(this,getString(R.string.hub_title),22,Ui.TEXT);heading.addView(title,new LinearLayout.LayoutParams(0,-2,1));
-        widgetSettings=Ui.button(this,"⚙",this::widgetMenu);widgetSettings.setContentDescription(getString(R.string.hub_widget_settings));heading.addView(widgetSettings,new LinearLayout.LayoutParams(dp(48),dp(44)));
+        panelSettings=Ui.button(this,"⚙",this::settingsMenu);panelSettings.setContentDescription(getString(R.string.hub_widget_settings));heading.addView(panelSettings,new LinearLayout.LayoutParams(dp(48),dp(44)));
         Button close=Ui.button(this,"×",this::finish);close.setContentDescription(getString(R.string.ui_close));heading.addView(close,new LinearLayout.LayoutParams(dp(48),dp(44)));panel.addView(heading);
         LinearLayout tabs=new LinearLayout(this);
         widgetsTab=Ui.button(this,getString(R.string.hub_widgets),()->showTab(false));notificationsTab=Ui.button(this,getString(R.string.hub_notifications),()->showTab(true));
@@ -53,10 +53,6 @@ public final class HubActivity extends Activity implements DisplayManager.Displa
         widgetPage=Ui.column(this);pages.addView(widgetPage,new FrameLayout.LayoutParams(-1,-1));
         widgetCanvas=new FrameLayout(this);widgetCanvas.setClipChildren(true);widgetPage.addView(widgetCanvas,new LinearLayout.LayoutParams(-1,0,1));widgets=new DesktopWidgets(this,widgetCanvas,true);
         notificationPage=Ui.column(this);pages.addView(notificationPage,new FrameLayout.LayoutParams(-1,-1));
-        Button access=Ui.button(this,getString(R.string.hub_access),()->{
-            try{startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS),ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle());}
-            catch(RuntimeException e){Launches.problem(this,e.getMessage());}
-        });notificationPage.addView(access);
         ScrollView scroll=new ScrollView(this);notificationRows=Ui.column(this);scroll.addView(notificationRows);notificationPage.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         setContentView(backdrop);getWindow().setLayout(-1,-1);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN|WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
@@ -67,16 +63,29 @@ public final class HubActivity extends Activity implements DisplayManager.Displa
         showTab(state!=null&&state.getBoolean("notifications"));
     }
     private int dp(int value){return Ui.dp(this,value);}
-    private void widgetMenu(){
+    private void settingsMenu(){
+        PopupMenu menu=new PopupMenu(this,panelSettings);
+        if(notifications){
+            menu.getMenu().add(R.string.hub_access).setOnMenuItemClickListener(item->{
+                try{startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS),ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle());}
+                catch(RuntimeException e){Launches.problem(this,e.getMessage());}
+                return true;
+            });
+            menu.show();return;
+        }
         if(widgets==null)return;
-        PopupMenu menu=new PopupMenu(this,widgetSettings);
         menu.getMenu().add(R.string.ui_add_widget).setOnMenuItemClickListener(item->{widgets.choose();return true;});
         menu.getMenu().add(widgets.isEditing()?R.string.ui_finish_editing_widgets:R.string.ui_edit_widgets).setOnMenuItemClickListener(item->{widgets.setEditing(!widgets.isEditing());updateEdit();return true;});
         menu.getMenu().add(R.string.widget_launch_primary).setCheckable(true).setChecked(Launches.prefs(this).getBoolean(WidgetLaunchContext.PRIMARY,true)).setOnMenuItemClickListener(item->{Launches.prefs(this).edit().putBoolean(WidgetLaunchContext.PRIMARY,!item.isChecked()).apply();return true;});
         menu.show();
     }
-    private void updateEdit(){if(widgetSettings!=null&&widgets!=null){widgetSettings.setText(widgets.isEditing()?"⚙ •":"⚙");widgetSettings.setContentDescription(getString(widgets.isEditing()?R.string.ui_finish_editing_widgets:R.string.hub_widget_settings));}}
-    private void showTab(boolean value){notifications=value;widgetSettings.setVisibility(value?View.GONE:View.VISIBLE);widgetPage.setVisibility(value?View.GONE:View.VISIBLE);notificationPage.setVisibility(value?View.VISIBLE:View.GONE);widgetsTab.setTextColor(value?Ui.MUTED:Ui.ACCENT);notificationsTab.setTextColor(value?Ui.ACCENT:Ui.MUTED);if(value)renderNotifications();}
+    private void updateEdit(){if(panelSettings!=null&&widgets!=null){
+        boolean editing=!notifications&&widgets.isEditing();
+        panelSettings.setText(editing?"⚙ •":"⚙");
+        String description=getString(notifications?R.string.hub_access:editing?R.string.ui_finish_editing_widgets:R.string.hub_widget_settings);
+        panelSettings.setContentDescription(description);panelSettings.setTooltipText(description);
+    }}
+    private void showTab(boolean value){notifications=value;updateEdit();widgetPage.setVisibility(value?View.GONE:View.VISIBLE);notificationPage.setVisibility(value?View.VISIBLE:View.GONE);widgetsTab.setTextColor(value?Ui.MUTED:Ui.ACCENT);notificationsTab.setTextColor(value?Ui.ACCENT:Ui.MUTED);if(value)renderNotifications();}
     private void renderNotifications(){
         notificationRows.removeAllViews();
         if(ShellNotifications.locked(this)){Ui.note(notificationRows,getString(R.string.hub_locked));return;}

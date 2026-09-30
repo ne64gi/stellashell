@@ -68,7 +68,7 @@ final class WindowChrome {
         Frame(TaskSession.Task t){task=t;rendered=new Rect(t.bounds);for(int i=0;i<9;i++)parts.add(new ArrayList<>());
             String name=t.packageName();try{name=context.getPackageManager().getApplicationLabel(context.getPackageManager().getApplicationInfo(name,0)).toString();}catch(Exception ignored){}label=name;
         }
-        private boolean isMaximized(){android.graphics.Point size=new android.graphics.Point();context.getDisplay().getRealSize(size);return rendered.left==0&&rendered.top<=Ui.dp(context,32)&&rendered.right>=size.x-2&&rendered.bottom>=size.y-Ui.dp(context,60)-2;}
+        private boolean isMaximized(){return WorkArea.get(context,context.getDisplay().getDisplayId()).maximized(rendered);}
         private View content(int edge){
             if(edge!=0){
                 View h=new ResizeHandle(context,edge);h.setContentDescription(context.getString(R.string.ui_resize,label));
@@ -88,7 +88,7 @@ final class WindowChrome {
         }
         private void style(View v,int edge){
             if(edge!=0)return;
-            LinearLayout row=(LinearLayout)v;row.setBackground(Ui.rounded(context,active?0xff202a38:0xff18212c,8));
+            LinearLayout row=(LinearLayout)v;row.setBackground(Ui.rounded(context,active?Ui.PANEL:Ui.BG,8));
             ((TextView)row.getChildAt(0)).setTextColor(active?Ui.TEXT:Ui.MUTED);
             for(int i=1;i<row.getChildCount();i++){View child=row.getChildAt(i);child.setAlpha(active?1f:.62f);if(i==4){((CaptionButton)child).action=isMaximized()?"restore":"maximize";child.invalidate();}}
         }
@@ -112,7 +112,8 @@ final class WindowChrome {
         }
         private void part(int edge,Rect whole,List<int[]> blockers){
             android.graphics.Point size=new android.graphics.Point();context.getDisplay().getRealSize(size);
-            int[] area={Math.max(0,whole.left),Math.max(0,whole.top),Math.min(size.x,whole.right),Math.min(size.y-Ui.dp(context,60),whole.bottom)};
+            Rect work=WorkArea.get(context,context.getDisplay().getDisplayId()).application;
+            int[] area={Math.max(work.left,whole.left),Math.max(work.top,whole.top),Math.min(work.right,whole.right),Math.min(work.bottom,whole.bottom)};
             List<int[]> visible=ChromeOcclusion.visible(area,blockers);List<Fragment> list=parts.get(edge);
             // Preserve the window owning the gesture even when a split caption becomes whole.
             if(heldRoot!=null)for(int i=1;i<list.size();i++)if(list.get(i).root==heldRoot){Collections.swap(list,0,i);break;}
@@ -145,8 +146,7 @@ final class WindowChrome {
                 if(edge==3||edge==5||edge==6)b.top=Math.min(b.top,b.bottom-minH);else b.bottom=Math.max(b.bottom,b.top+minH);
                 int caption=Ui.dp(context,32);
                 android.graphics.Point size=new android.graphics.Point();context.getDisplay().getRealSize(size);
-                int[] safe=WindowGeometry.clamp(b.left,b.top-caption,b.right,b.bottom-caption,size.x,Math.max(1,size.y-Ui.dp(context,60)-caption),minW,minH);
-                rendered=new Rect(safe[0],safe[1]+caption,safe[2],safe[3]+caption);relayout();
+                rendered=WorkArea.get(context,context.getDisplay().getDisplayId()).clamp(b);relayout();
                 long now=SystemClock.uptimeMillis();boolean done=event.getActionMasked()==MotionEvent.ACTION_UP;
                 if(done||now-lastSend>120){wantResize=true;if(!waitingFocus)session.resize(task,rendered);lastSend=now;}
                 if(done){if(v instanceof ResizeHandle)((ResizeHandle)v).active(false);dragging=false;start=null;end(Frame.this);}return true;

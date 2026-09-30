@@ -35,6 +35,13 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
 
     AppMenu(Context context,WindowManager windows,int displayId){this.context=context;this.windows=windows;this.displayId=displayId;}
     boolean isOpen(){return root!=null;}
+    void relayout(){
+        if(root==null)return;WorkArea area=WorkArea.get(context,displayId);
+        menuWidth=Math.max(1,Math.min(dp(640),area.application.width()-dp(24)));
+        menuHeight=Math.max(1,Math.min(dp(720),area.application.height()-dp(24)));
+        WindowManager.LayoutParams p=(WindowManager.LayoutParams)root.getLayoutParams();p.width=menuWidth;p.height=menuHeight;
+        p.x=area.application.left+dp(12);p.y=Math.max(area.application.top,area.application.bottom-menuHeight-dp(12));windows.updateViewLayout(root,p);
+    }
     void back(){if(openGroup!=null)closeFolder();else close();}
     void close(){
         AppOrganization.prefs(context).unregisterOnSharedPreferenceChangeListener(this);
@@ -50,14 +57,15 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         AppOrganization.prefs(context).registerOnSharedPreferenceChangeListener(this);
         Launches.prefs(context).registerOnSharedPreferenceChangeListener(this);
         hiddenMode=false;loaded=false;all.clear();
-        menuWidth=Math.min(dp(640),context.getResources().getDisplayMetrics().widthPixels-dp(24));
-        menuHeight=Math.min(dp(720),context.getResources().getDisplayMetrics().heightPixels-dp(140));
-        root=new FrameLayout(context);root.setBackground(Ui.rounded(context,Ui.PANEL,22));root.setClipToOutline(true);
+        WorkArea area=WorkArea.get(context,displayId);
+        menuWidth=Math.max(1,Math.min(dp(640),area.application.width()-dp(24)));
+        menuHeight=Math.max(1,Math.min(dp(720),area.application.height()-dp(24)));
+        root=new FrameLayout(context);root.setBackground(Appearance.surface(context,22));root.setClipToOutline(true);
         main=Ui.column(context);main.setPadding(dp(20),dp(18),dp(20),dp(12));root.addView(main,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout heading=new LinearLayout(context);heading.setGravity(Gravity.CENTER_VERTICAL);
-        search=new EditText(context);search.setSingleLine();search.setTextSize(16);search.setTextColor(Ui.TEXT);search.setHintTextColor(Ui.MUTED);
+        search=new EditText(context);search.setTypeface(Appearance.face);search.setSingleLine();search.setTextSize(16);search.setTextColor(Ui.TEXT);search.setHintTextColor(Ui.MUTED);
         search.setHint(R.string.ui_search_by_name);search.setContentDescription(context.getString(R.string.ui_search_apps));
-        search.setPadding(dp(14),0,dp(14),0);search.setBackground(Ui.rounded(context,0xff121e2c,12));
+        search.setPadding(dp(14),0,dp(14),0);search.setBackground(Ui.rounded(context,Ui.BG,12));
         heading.addView(search,new LinearLayout.LayoutParams(0,dp(48),1));
         Button settings=smallButton("⚙",context.getString(R.string.launcher_tools));settings.setOnClickListener(v->tools(settings));heading.addView(settings,new LinearLayout.LayoutParams(dp(48),dp(48)));
         Button close=smallButton("×",context.getString(R.string.ui_close));close.setOnClickListener(v->close());heading.addView(close,new LinearLayout.LayoutParams(dp(44),dp(48)));main.addView(heading);
@@ -75,7 +83,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         });
         WindowManager.LayoutParams params=new WindowManager.LayoutParams(menuWidth,menuHeight,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL|WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,PixelFormat.TRANSLUCENT);
-        params.gravity=Gravity.BOTTOM|Gravity.LEFT;params.x=dp(12);params.y=dp(72);
+        params.gravity=Gravity.TOP|Gravity.LEFT;params.setFitInsetsTypes(0);params.x=area.application.left+dp(12);params.y=Math.max(area.application.top,area.application.bottom-menuHeight-dp(12));
         params.softInputMode=WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN|WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
         params.setTitle("StellaShell app menu");
         try{windows.addView(root,params);root.requestFocus();render();}catch(RuntimeException error){close();throw error;}
@@ -172,7 +180,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         if(folderLayer!=null)root.removeView(folderLayer);
         main.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         folderLayer=new FrameLayout(context);folderLayer.setBackgroundColor(0x8808121c);folderLayer.setOnClickListener(v->closeFolder());root.addView(folderLayer,new FrameLayout.LayoutParams(-1,-1));
-        LinearLayout panel=Ui.column(context);panel.setPadding(dp(18),dp(16),dp(18),dp(18));panel.setBackground(Ui.rounded(context,0xff263445,18));panel.setElevation(dp(16));panel.setOnClickListener(v->{});
+        LinearLayout panel=Ui.column(context);panel.setPadding(dp(18),dp(16),dp(18),dp(18));panel.setBackground(Appearance.surface(context,18));panel.setElevation(dp(16));panel.setOnClickListener(v->{});
         int width=Math.min(dp(480),menuWidth-dp(40));int height=Math.min(dp(450),Math.max(dp(160),(root.getHeight()>0?root.getHeight():menuHeight)-dp(64)));
         FrameLayout.LayoutParams box=new FrameLayout.LayoutParams(width,height,Gravity.CENTER);folderLayer.addView(panel,box);
         String group=openGroup;LinearLayout header=new LinearLayout(context);header.setGravity(Gravity.CENTER_VERTICAL);
@@ -208,6 +216,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         int[] labels={R.string.ui_wallpaper,R.string.ui_add_widget,R.string.widget_edit_toggle,R.string.ui_new_shortcut,R.string.ui_snap_icons_to_grid,R.string.ui_display_settings,R.string.ui_desktop_settings};int[] actions={3,6,7,2,1,4,5};
         SubMenu desktop=menu.addSubMenu(context.getString(R.string.launcher_desktop_tools));
         for(int i=0;i<labels.length;i++){int action=actions[i];desktop.add(context.getString(labels[i])).setOnMenuItemClickListener(item->{close();Launches.desktopAction(context,displayId,action);return true;});}
+        menu.add(R.string.appearance_title).setOnMenuItemClickListener(item->{close();AppearanceActivity.open(context,displayId);return true;});
         menu.add(R.string.apps_visible_title).setOnMenuItemClickListener(item->{selectApps(null);return true;});
         menu.add(R.string.launcher_new_group).setOnMenuItemClickListener(item->{groupDialog(null);return true;});
         menu.add(hiddenMode?R.string.launcher_all:R.string.launcher_hidden).setOnMenuItemClickListener(item->{hiddenMode=!hiddenMode;closeFolder();render();return true;});

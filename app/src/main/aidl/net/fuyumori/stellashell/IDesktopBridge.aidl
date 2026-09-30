@@ -13,4 +13,7 @@ interface IDesktopBridge {
     String syncMouseRouting(int displayId, IBinder owner) = 9;
     String syncVirtualKeyboard(int displayId, boolean hide, IBinder owner) = 10;
     String captureDisplay(int displayId, in ParcelFileDescriptor output) = 11;
+    String syncPrimaryScreen(int displayId, boolean off, IBinder owner) = 12;
+    String moveWorkspaceTask(int source, int destination, int taskId, String component) = 14;
+    void setWorkArea(int displayId, int left, int top, int right, int bottom) = 13;
 }

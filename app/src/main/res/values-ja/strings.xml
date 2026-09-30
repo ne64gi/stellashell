@@ -69,10 +69,10 @@
     <string name="ui_running" formatted="false">" 実行中"</string>
     <string name="ui_pinned" formatted="false">" ピン留め"</string>
     <string name="ui_could_not_open_the_app_menu" formatted="false">"アプリメニューを開けません: "</string>
-    <string name="ui_turn_usb_c_or_a_separate_scrcpy_display_into_a_desktop_keep_your" formatted="false">"USB-C や scrcpy の独立画面をデスクトップに。\nスマホのホームは、そのまま。"</string>
-    <string name="ui_1_allow_taskbar_overlay" formatted="false">"1  操作バーの表示を許可"</string>
-    <string name="ui_2_connect_authorize_shizuku_retry" formatted="false">"2  Shizuku に接続・許可／再試行"</string>
-    <string name="ui_3_configure_desktop_mode" formatted="false">"3  Desktop Shell 用に設定する"</string>
+    <string name="ui_turn_usb_c_or_a_separate_scrcpy_display_into_a_desktop_keep_your" formatted="false">本体画面または接続したディスプレイで使用します。</string>
+    <string name="ui_1_allow_taskbar_overlay" formatted="false">重ねて表示する権限</string>
+    <string name="ui_2_connect_authorize_shizuku_retry" formatted="false">Shizukuに接続</string>
+    <string name="ui_3_configure_desktop_mode" formatted="false">ウィンドウ機能を有効にする</string>
     <string name="ui_enable_desktop_features" formatted="false">"デスクトップ機能を有効にする"</string>
     <string name="ui_enable_freeform_windows_and_turn_off_android_s_force_desktop_mode" formatted="false">"自由形式ウィンドウを有効にし、Android の強制デスクトップモードをオフにします。StellaShell が外部ホームとバーを担当します。元の設定は保存します。反映には scrcpy の再接続または USB の抜き差しが必要です。"</string>
     <string name="ui_enable" formatted="false">"有効にする"</string>
@@ -80,7 +80,7 @@
     <string name="ui_connect_to_shizuku_first" formatted="false">"先に Shizuku に接続してください"</string>
     <string name="ui_after_starting_display_connections_are_detected_automatically_aft" formatted="false">"開始後は接続・抜線を自動検出します。再起動後は Shizuku と本アプリを起動してください。停止だけでは端末設定は戻りません。復元は下のボタンから行えます。"</string>
     <string name="ui_launch_in_windows_experimental" formatted="false">"ウィンドウで起動する（試験）"</string>
-    <string name="ui_when_off_apps_open_fullscreen_drag_the_active_window_s_title_bar" formatted="false">"オフは全画面起動。アクティブな窓は上のタイトル部分で移動、縁でサイズ変更できます。アプリの最小サイズは OS に制限される場合があります。"</string>
+    <string name="ui_when_off_apps_open_fullscreen_drag_the_active_window_s_title_bar" formatted="false">標準の起動方法を選びます。アプリごとの起動設定が優先されます。</string>
     <string name="ui_reopen_external_desktop" formatted="false">"外部ホームを開き直す"</string>
     <string name="ui_connect_an_external_display_first" formatted="false">"先に外部ディスプレイを接続してください"</string>
     <string name="ui_start_the_external_desktop_first" formatted="false">"先に外部デスクトップを開始してください"</string>
@@ -216,12 +216,12 @@
     <string name="widget_edit_toggle">ウィジェットの編集／終了</string>
     <string name="primary_mode">本体画面モード（実験的）</string>
     <string name="primary_note">この端末の画面にデスクトップを表示します。外部画面は不要です。標準ホームは変更しません。</string>
-    <string name="primary_start">本体画面でデスクトップを開始</string>
+    <string name="primary_start">本体画面で開始</string>
     <string name="primary_running">本体画面で実行中 · タップで設定</string>
     <string name="exit_desktop">デスクトップを終了</string>
     <string name="reopen_desktop">デスクトップを表示</string>
-    <string name="external_start_explicit">外部画面で開始（USB / scrcpy）</string>
-    <string name="external_wait_explicit">外部画面の接続を待つ（USB / scrcpy）</string>
+    <string name="external_start_explicit">外部画面で開始</string>
+    <string name="external_wait_explicit">外部画面の接続を待つ</string>
     <string name="external_start_note">USBディスプレイを接続するか、PCの scrcpy --new-display で仮想画面を作成してください。このボタンでは仮想画面を作成しません。未接続の場合は接続を待機します。</string>
     <string name="mode_stop_first">表示先を変えるときは、デスクトップを終了してから開始ボタンを選んでください。</string>
     <string name="reset_connection">画面・マウスの接続をリセット</string>
@@ -272,4 +272,40 @@
     <string name="quick_wifi_disconnected">Wi-Fi · 未接続</string>
     <string name="quick_wifi_off">Wi-Fi · オフ</string>
     <string name="quick_wifi_unknown">Wi-Fi · 状態を取得できません</string>
+    <string name="appearance_title">外観設定</string>
+    <string name="appearance_note">StellaShellの外観だけを変更します。アプリ・Androidウィジェットの中身は変えません。ガラス風は半透明＋縁取りで、背景ぼかしではありません。プレビューで確認して保存してください。</string>
+    <string name="appearance_background">バー・パネルの背景色</string>
+    <string name="appearance_accent">アクセント色</string>
+    <string name="appearance_glass">ガラス風（半透明＋縁取り）</string>
+    <string name="appearance_opacity">不透明度</string>
+    <string name="appearance_font">フォント</string>
+    <string name="appearance_font_default">標準</string>
+    <string name="appearance_import">フォントを読み込む（.ttf / .otf / .ttc・128 MiBまで）</string>
+    <string name="appearance_custom">読み込んだフォント</string>
+    <string name="appearance_preview">プレビューを更新</string>
+    <string name="appearance_reset">初期設定に戻す（保存で反映）</string>
+    <string name="appearance_save">外観を保存</string>
+    <string name="appearance_invalid_color">色は #RRGGBB 形式で入力してください。</string>
+    <string name="appearance_importing">フォントを読み込み中…</string>
+    <string name="appearance_import_failed">フォントを読み込めませんでした。</string>
+    <string name="appearance_collection">コレクション内の書体を選ぶ</string>
+    <string name="appearance_collection_face">書体 %1$d</string>
+    <string name="quick_primary_screen_off">本体画面だけ消灯</string>
+    <string name="shell_layout">シェルのレイアウト</string>
+    <string name="shell_layout_auto">自動</string>
+    <string name="shell_layout_desktop">デスクトップ タスクバー</string>
+    <string name="shell_layout_compact">コンパクト エッジDock</string>
+    <string name="edge_dock_open">内側へスワイプ、またはタップでDockを開く</string>
+    <string name="workspace_enable">Compactワークスペース（試験機能）</string>
+    <string name="workspace_stop_first">デスクトップを停止してから変更してください。</string>
+    <string name="workspace_transfer">ワークスペースを外部画面／本体へ移す</string>
+    <string name="workspace_primary">Primaryとして使う</string>
+    <string name="workspace_floating">Floatingで開く</string>
+    <string name="workspace_auto">外部画面の接続時に自動で引き継ぐ（試験機能）</string>
+    <string name="setup_home_tab">開始</string>
+    <string name="setup_settings_tab">設定</string>
+    <string name="setup_diagnostics_tab">診断</string>
+    <string name="setup_permissions_section">権限とセットアップ</string>
+    <string name="setup_display_section">表示と動作</string>
+    <string name="setup_tools_section">メンテナンス</string>
 </resources>

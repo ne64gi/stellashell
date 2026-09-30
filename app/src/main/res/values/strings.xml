@@ -69,10 +69,10 @@
     <string name="ui_running" formatted="false">" · running"</string>
     <string name="ui_pinned" formatted="false">" · pinned"</string>
     <string name="ui_could_not_open_the_app_menu" formatted="false">"Could not open the app menu: "</string>
-    <string name="ui_turn_usb_c_or_a_separate_scrcpy_display_into_a_desktop_keep_your" formatted="false">"Turn USB-C or a separate scrcpy display into a desktop.\nKeep your phone’s home screen unchanged."</string>
-    <string name="ui_1_allow_taskbar_overlay" formatted="false">"1  Allow taskbar overlay"</string>
-    <string name="ui_2_connect_authorize_shizuku_retry" formatted="false">"2  Connect / authorize Shizuku · Retry"</string>
-    <string name="ui_3_configure_desktop_mode" formatted="false">"3  Configure desktop mode"</string>
+    <string name="ui_turn_usb_c_or_a_separate_scrcpy_display_into_a_desktop_keep_your" formatted="false">Use the device screen or a connected display.</string>
+    <string name="ui_1_allow_taskbar_overlay" formatted="false">Overlay permission</string>
+    <string name="ui_2_connect_authorize_shizuku_retry" formatted="false">Connect to Shizuku</string>
+    <string name="ui_3_configure_desktop_mode" formatted="false">Enable window support</string>
     <string name="ui_enable_desktop_features" formatted="false">"Enable desktop features"</string>
     <string name="ui_enable_freeform_windows_and_turn_off_android_s_force_desktop_mode" formatted="false">"Enable freeform windows and turn off Android’s force-desktop mode. StellaShell provides the external home and taskbar. Original settings are saved. Reconnect scrcpy or the USB display afterward."</string>
     <string name="ui_enable" formatted="false">"Enable"</string>
@@ -80,7 +80,7 @@
     <string name="ui_connect_to_shizuku_first" formatted="false">"Connect to Shizuku first"</string>
     <string name="ui_after_starting_display_connections_are_detected_automatically_aft" formatted="false">"After starting, display connections are detected automatically. After rebooting, start Shizuku and this app again. Stopping does not restore device settings; use the restore button below."</string>
     <string name="ui_launch_in_windows_experimental" formatted="false">"Launch in windows (experimental)"</string>
-    <string name="ui_when_off_apps_open_fullscreen_drag_the_active_window_s_title_bar" formatted="false">"When off, apps open fullscreen. Drag the active window’s title bar to move it or its edges to resize. Android may enforce app minimum sizes."</string>
+    <string name="ui_when_off_apps_open_fullscreen_drag_the_active_window_s_title_bar" formatted="false">Choose the default launch mode. Individual app profiles take precedence.</string>
     <string name="ui_reopen_external_desktop" formatted="false">"Reopen external desktop"</string>
     <string name="ui_connect_an_external_display_first" formatted="false">"Connect an external display first"</string>
     <string name="ui_start_the_external_desktop_first" formatted="false">"Start the external desktop first"</string>
@@ -216,12 +216,12 @@
     <string name="widget_edit_toggle">Edit / finish editing widgets</string>
     <string name="primary_mode">Device screen mode (experimental)</string>
     <string name="primary_note">Start the desktop on this device’s screen. No external display is needed. Your default home app stays unchanged.</string>
-    <string name="primary_start">Start desktop on device screen</string>
+    <string name="primary_start">Start on this device</string>
     <string name="primary_running">Running on device screen · Tap for settings</string>
     <string name="exit_desktop">Stop desktop</string>
     <string name="reopen_desktop">Show desktop</string>
-    <string name="external_start_explicit">Start on external screen (USB / scrcpy)</string>
-    <string name="external_wait_explicit">Wait for external screen (USB / scrcpy)</string>
+    <string name="external_start_explicit">Start on external display</string>
+    <string name="external_wait_explicit">Wait for external display</string>
     <string name="external_start_note">Connect a USB display, or create a virtual display with scrcpy --new-display on your PC. This button does not create a virtual display. If no screen is connected, StellaShell waits for one.</string>
     <string name="mode_stop_first">To change screens, stop the current desktop first, then choose a start button.</string>
     <string name="reset_connection">Reset display and mouse connection</string>
@@ -272,4 +272,40 @@
     <string name="quick_wifi_disconnected">Wi-Fi · Not connected</string>
     <string name="quick_wifi_off">Wi-Fi · Off</string>
     <string name="quick_wifi_unknown">Wi-Fi · Status unavailable</string>
+    <string name="appearance_title">Appearance</string>
+    <string name="appearance_note">Customize StellaShell only, not apps or Android widgets. Glass uses transparency and a border, not background blur. Preview your changes, then Save.</string>
+    <string name="appearance_background">Surface color</string>
+    <string name="appearance_accent">Accent color</string>
+    <string name="appearance_glass">Glass-style surfaces</string>
+    <string name="appearance_opacity">Opacity</string>
+    <string name="appearance_font">Font</string>
+    <string name="appearance_font_default">Default</string>
+    <string name="appearance_import">Import font (.ttf / .otf / .ttc, up to 128 MiB)</string>
+    <string name="appearance_custom">Imported font</string>
+    <string name="appearance_preview">Update preview</string>
+    <string name="appearance_reset">Reset draft to defaults</string>
+    <string name="appearance_save">Save appearance</string>
+    <string name="appearance_invalid_color">Enter a color as #RRGGBB.</string>
+    <string name="appearance_importing">Loading font…</string>
+    <string name="appearance_import_failed">Could not load font.</string>
+    <string name="appearance_collection">Choose face from collection</string>
+    <string name="appearance_collection_face">Face %1$d</string>
+    <string name="quick_primary_screen_off">Turn off phone screen only</string>
+    <string name="shell_layout">Shell layout</string>
+    <string name="shell_layout_auto">Auto</string>
+    <string name="shell_layout_desktop">Desktop Taskbar</string>
+    <string name="shell_layout_compact">Compact Edge Dock</string>
+    <string name="edge_dock_open">Swipe inward or tap to open the dock</string>
+    <string name="workspace_enable">Compact workspace (experimental)</string>
+    <string name="workspace_stop_first">Stop the desktop before changing workspace mode.</string>
+    <string name="workspace_transfer">Move workspace to external display / back to phone</string>
+    <string name="workspace_primary">Use as Primary</string>
+    <string name="workspace_floating">Open as Floating</string>
+    <string name="workspace_auto">Automatically transfer on external display connection (experimental)</string>
+    <string name="setup_home_tab">Start</string>
+    <string name="setup_settings_tab">Settings</string>
+    <string name="setup_diagnostics_tab">Diagnostics</string>
+    <string name="setup_permissions_section">Permissions &amp; setup</string>
+    <string name="setup_display_section">Display &amp; behavior</string>
+    <string name="setup_tools_section">Maintenance</string>
 </resources>

@@ -39,7 +39,7 @@ final class DesktopShortcuts {
             bg.addState(new int[]{android.R.attr.state_focused},Ui.rounded(activity,0x30ffffff,12));
             bg.addState(new int[]{},Ui.rounded(activity,Color.TRANSPARENT,12));cell.setBackground(bg);
             ImageView icon=new ImageView(activity);icon.setImageDrawable(info.loadIcon(activity.getPackageManager()));cell.addView(icon,new LinearLayout.LayoutParams(dp(44),dp(44)));
-            TextView name=Ui.text(activity,label,13,Ui.TEXT);name.setGravity(Gravity.CENTER);name.setMaxLines(2);name.setEllipsize(android.text.TextUtils.TruncateAt.END);name.setShadowLayer(dp(2),0,dp(1),0xaa000000);cell.addView(name,new LinearLayout.LayoutParams(-1,-2));
+            TextView name=Ui.text(activity,label,13,0xffe7edf5);name.setGravity(Gravity.CENTER);name.setMaxLines(2);name.setEllipsize(android.text.TextUtils.TruncateAt.END);name.setShadowLayer(dp(2),0,dp(1),0xaa000000);cell.addView(name,new LinearLayout.LayoutParams(-1,-2));
             cell.setContentDescription(label);cell.setFocusable(true);cell.setTooltipText(label);
             cell.setOnClickListener(v->{if(moving==cell){cancelMove();return;}Launches.app(activity,component,display);});
             View.OnLongClickListener menu=v->{cancelMove();AppContextMenu.show(activity,cell,component,display,()->{},null,null,()->{moving=cell;cell.setSelected(true);cell.requestFocus();Ui.message(activity,activity.getString(R.string.ui_drag_this_icon_to_place_it_tap_or_press_back_to_cancel));});return true;};

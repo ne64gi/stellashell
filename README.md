@@ -1,12 +1,18 @@
 # StellaShell
 
+[セットアップ手順（① Shizuku / ② self-ADB / ③ scrcpy）](docs/setup/README.md) · [おすすめフォント](docs/FONTS.md) · [Shizuku停止時の機能表](docs/LIMITED-MODE-0.7.md)
+
+> **公開を一時停止しています**
+> ライセンス表記の不足と、コードの来歴に確認が必要な箇所が見つかったため、リポジトリを一時的に非公開にしました。修正・再監査後に再公開する予定です。GPL違反が確定したという告知ではありません。
+> [監査記録](docs/LICENSE-AUDIT-2026-09-29.md) · [修正・再監査の状況](docs/LICENSE-REMEDIATION-2026-09-29.md)
+
 <img src="docs/stellashell-icon.svg" width="112" alt="StellaShell icon">
 
-**[APKをダウンロード / Download APK — v0.5.5](https://github.com/ne64gi/stellashell/releases/download/v0.5.5/StellaShell-0.5.5.apk)** · [リリース情報・SHA-256](https://github.com/ne64gi/stellashell/releases/tag/v0.5.5)
+**監査前の旧版（来歴調査対象）：[APK v0.5.5](https://github.com/ne64gi/stellashell/releases/download/v0.5.5/StellaShell-0.5.5.apk)** · [リリース情報・SHA-256](https://github.com/ne64gi/stellashell/releases/tag/v0.5.5)
 
-実機検証済みの開発用署名APKです。必要条件と導入手順は下記を参照してください。
+上記は監査前の開発用署名APKの記録です。今回の修正を含む再配布候補ではありません。再公開用APKは、ライセンス決定・再監査後に固定したcommitから作成します。
 
-Androidの外部画面をデスクトップとして使う、Shizukuベースの独立したDesktop Shell。Sony SOG06 / Android 14 と REDMAGIC NX809J / Android 16 で検証しています。Dextop の topology API・アクセシビリティミラー・Flutter は使いません。本体の標準ホームは変更しません。
+Androidの外部画面をデスクトップとして使う、ShizukuベースのDesktop Shell。Sony SOG06 / Android 14 と REDMAGIC NX809J / Android 16 で検証しています。Dextop の topology API・アクセシビリティミラー・Flutter は使いません。本体の標準ホームは変更しません。
 
 ## Requirements / 通常のセットアップ
 
@@ -24,6 +30,16 @@ Shizuku停止時は設定画面に状態を表示します。Shizuku側で起動
 
 Termuxから自己ADBを利用したい場合のみ、[初回セットアップ](tools/setup-self-adb.sh) と日常用 [adb5555](tools/adb5555) を利用できます。[使い方・制約](tools/README.md) を参照してください。これらはStellaShellの必須セットアップではなく、Shizukuの起動を代行するものでもありません。
 
+## 0.7.0: フォント・テーマ設定
+
+**Start → ⚙ → 外観設定**、または設定画面の **外観設定** から変更できます。
+
+- Midnight／Frost／AMOLEDのプリセット、バー・Start・パネルの背景色、アクセント色。
+- ガラス風の半透明＋縁取り（不透明度35〜100%）。背景ぼかしは実装していません。
+- 標準／Sans Serif／Serif／Monospace／Condensed、`.ttf`・`.otf`・`.ttc`ファイルの読み込み（128 MiBまで）。TTCはコレクション内の書体番号を選択・保存できます。ファイルはアプリ内部へコピーするので元ファイルへの継続アクセスは不要です。
+- プレビューと保存を分離。キャンセルは変更を破棄、初期設定に戻す操作も保存するまで反映しません。保存でShellの画面を再構築しますが、他のアプリの窓は操作しません。
+- アプリやAndroidウィジェット内部、Androidシステムのダイアログは対象外です。色と透明度によっては背景とのコントラストが下がるためプレビューで確認してください。
+
 ## 0.6.1: アプリ一覧の一括管理・ウィジェット操作
 
 - **Start → ⚙ → 表示するアプリ** で、アイコン付きチェック一覧から表示・非表示をまとめて編集できます。
@@ -35,6 +51,8 @@ Termuxから自己ADBを利用したい場合のみ、[初回セットアップ]
 時計パネルのウィジェット追加・編集は上部の **⚙** にまとめました。同じメニューの **ウィジェットのアプリを本体画面で開く** は標準でオン。オフならウィジェットを表示中の画面へ起動を要求します。デスクトップ上のウィジェットにも共通の設定です。更新・切替などの元の操作は維持します。アプリ側の再起動・別Activityへの転送やOEMの制約によって、起動先指定が最終画面まで維持されない場合があります。
 
 バー右側の **▣** で表示中のデスクトップをPNG撮影し、端末の `Pictures/StellaShell` へ保存します（Shizuku必須、Sony Android 14で確認。非対応frameworkではエラー表示し、本体画面への撮影にフォールバックしません）。保護された内容は撮影対象外です。
+
+クイック設定の **本体画面だけ消灯** は、外部デスクトップ動作中に本体パネルだけを消し、Androidは起きた状態に保ちます（Shizuku必須・SOG06で検証）。チェック解除／Shell終了／外部画面切断で点灯へ戻す設計です。起動ごとにオフから始まり、端末のスリープ設定は書き換えません。非対応frameworkはエラーになります。
 
 **バッテリーをタップ**するとクイック設定を開き、端末共通のメディア音量を調整できます。Wi-Fiの接続状態と、本体のWi-Fi設定への入口も表示します。SSID表示・Wi-Fi直接切替・Bluetooth等は未実装です。
 
@@ -190,11 +208,11 @@ StellaShellの設計・調査・実機検証を支えてくれた、先行プロ
 
 - **[Taskbar](https://github.com/farmerbb/Taskbar)** — Braden Farmer / contributors。Androidの外部ディスプレイ、freeform window、Startメニュー・タスクバー構成の参考に。
 - **[Dextop](https://github.com/NarYuki/Dextop)** — NarYuki / contributors。Androidデスクトップ環境の着想と、framework・端末ごとの互換性を調べる際の参考に。
-- **[scrcpy](https://github.com/Genymobile/scrcpy)** — Genymobile / contributors。独立した仮想ディスプレイとPCからの表示・操作を通じて、StellaShellの開発・検証を支えるツールとして。
+- **[scrcpy](https://github.com/Genymobile/scrcpy)** — Genymobile / Romain Vimont / contributors。開発・検証ツールに加え、本体画面の消灯処理にDisplayControl初期化コードを改変して取り込んでいます（Apache-2.0）。著作権・変更通知と原文ライセンスは [Third-party notices](THIRD_PARTY_NOTICES.md) とAPKに同梱しています。
 
 These projects inspired our design and made device testing possible. Thank you to their maintainers and contributors.
 
-参考・謝辞と、APKに含まれる依存ライブラリの表記は区別しています。依存関係・ライセンスと調査時の参照コミットは [Third-party notices](THIRD_PARTY_NOTICES.md) を参照してください。各プロジェクトによるStellaShellの公式な推奨・提携を示すものではありません。
+参考・謝辞、改変して取り込んだコード、依存ライブラリ、ビルド資材の表記を区別しています。依存関係・ライセンスと調査時の参照コミットは [Third-party notices](THIRD_PARTY_NOTICES.md) を参照してください。各プロジェクトによるStellaShellの公式な推奨・提携を示すものではありません。
 
 ## 本体画面モード（0.5.6・実験的）
 
@@ -214,3 +232,12 @@ Shizuku、オーバーレイ許可、端末のfreeform対応が必要です。**
 設定または **Start → ⚙ → 画面・マウスの接続をリセット** で、StellaShellが設定したマウス割当てを解除し、古い画面選択を忘れて、現在接続中の画面を再検出します。アプリのデータ・ウィジェットは削除せず、他のアプリが作成した仮想画面も削除しません。
 
 Display IDはAndroidが割り当てる番号で、接続し直すと増えることがあります。大きい番号でも同じ数の画面が残っているとは限りません。このリセットは接続の再検出であり、Androidの番号を振り直すものではありません。番号だけを戻すための端末再起動は通常不要です。
+
+## ライセンス
+
+StellaShell本体・ドキュメント・同梱ヘルパーは、別途表記された第三者部分を除き **GPL-3.0-or-later**（GNU GPL v3、またはそれ以降）です。[LICENSE](LICENSE) / [NOTICE](NOTICE) を参照してください。scrcpy由来部分のApache-2.0著作権・変更通知などは [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) とAPK内に保持しています。本体ライセンスの選択は過去の来歴問題の解消を意味しません。
+
+
+## Windowsから仮想デスクトップを開始
+
+[Windows用セッションランチャーとJSONサンプル](tools/windows/README.md) を同梱しています。端末名で接続先を選択し、scrcpyで仮想画面を作ってStellaShellを起動します。scrcpy / ADB本体は別途必要です。

@@ -16,11 +16,53 @@ public final class WidgetRenderInstrumentation extends Instrumentation {
         Bundle result=new Bundle();
         try{
             Throwable[] failure={null};
-            runOnMainSync(()->{try{if(organizationOnly){organization();widgetRouting();return;}check(400,300,200,100);check(100,120,200,100);check(200,100,200,100);iconPreview();locales();organization();widgetRouting();}catch(Throwable error){failure[0]=error;}});
+            runOnMainSync(()->{try{workAreas();if(organizationOnly){organization();widgetRouting();appearance();return;}check(400,300,200,100);check(100,120,200,100);check(200,100,200,100);iconPreview();locales();organization();widgetRouting();appearance();}catch(Throwable error){failure[0]=error;}});
             if(failure[0]!=null)throw failure[0];
             if(!organizationOnly)wallpaperDecode();
-            result.putString("stream",organizationOnly?"App organization bulk selection + RemoteViews routing passed\n":"WidgetViewport: 3 rendering/input scenarios + bounded wallpaper decoding + locale + app organization checks passed\n");finish(-1,result);
+            result.putString("stream",organizationOnly?"App organization + RemoteViews routing + appearance passed\n":"WidgetViewport: 3 rendering/input scenarios + bounded wallpaper decoding + locale + app organization checks passed\n");finish(-1,result);
         }catch(Throwable error){result.putString("stream","FAILED: "+error+"\n");finish(0,result);}
+    }
+    private void workAreas(){
+        android.graphics.Rect display=new android.graphics.Rect(0,0,1920,1080);
+        WorkArea desktop=new WorkArea(display,display,false,32,60);
+        require(desktop.content.equals(new android.graphics.Rect(0,32,1920,1020)),"external desktop geometry regressed");
+        WorkArea local=new WorkArea(display,new android.graphics.Rect(30,80,1890,1000),false,32,60);
+        require(local.content.equals(new android.graphics.Rect(30,112,1890,940)),"system insets and caption not composed");
+        require(local.clamp(new android.graphics.Rect(0,0,3000,2000)).equals(local.content),"oversized restore escaped work area");
+        WorkArea ime=new WorkArea(display,new android.graphics.Rect(30,80,1890,600),true,32,0);
+        require(ime.content.bottom==600&&ime.content.top==112,"compact IME work area reserves a dock");
+        android.graphics.Rect moved=ime.clamp(new android.graphics.Rect(1700,500,1900,900));
+        require(moved.equals(new android.graphics.Rect(1690,200,1890,600)),"clamp must preserve fitting size and offsets");
+        require(ime.maximized(ime.content)&&!ime.maximized(moved),"maximize detection wrong");
+    }
+    private void appearance(){
+        try{
+            java.io.File collection=new java.io.File("/system/fonts/NotoSansCJK-Regular.ttc");
+            if(collection.exists()){
+                int count=FontCollection.count(collection);require(count>1,"system TTC is not a collection");
+                require(new android.graphics.Typeface.Builder(collection).setTtcIndex(0).build()!=null,"first TTC face failed");
+                require(new android.graphics.Typeface.Builder(collection).setTtcIndex(count-1).build()!=null,"last TTC face failed");
+                Appearance.Config selection=new Appearance.Config();selection.ttcIndex=count-1;
+                require(new org.json.JSONObject(selection.json()).getInt("ttcIndex")==count-1,"TTC index not serialized");
+            }
+        }catch(Exception e){throw new AssertionError(e);}
+
+        android.content.Context c=new android.content.ContextWrapper(getTargetContext()){
+            @Override public android.content.SharedPreferences getSharedPreferences(String name,int mode){return super.getSharedPreferences("instrumentation_appearance",mode);}
+        };
+        try{
+            Launches.prefs(c).edit().clear().commit();Appearance.Config defaults=Appearance.read(c);
+            require(defaults.opacity==100&&!defaults.glass,"appearance defaults changed");
+            Appearance.Config draft=new Appearance.Config();draft.panel=0xffdce7f1;draft.accent=0xff005e87;draft.glass=true;draft.opacity=65;draft.font="serif";
+            require(!Appearance.read(c).glass,"draft leaked to preferences");
+            Launches.prefs(c).edit().putString(Appearance.KEY,draft.json()).commit();Appearance.Config restored=Appearance.read(c);
+            require(restored.panel==draft.panel&&restored.opacity==65&&restored.glass&&"serif".equals(restored.font),"appearance persistence failed");
+            require(Appearance.foreground(0xffffffff)==0xff101725&&Appearance.foreground(0xff000000)==0xffe7edf5,"foreground contrast wrong");
+            android.graphics.drawable.GradientDrawable surface=Appearance.surface(c,restored,0);
+            android.graphics.Bitmap image=android.graphics.Bitmap.createBitmap(10,10,android.graphics.Bitmap.Config.ARGB_8888);surface.setBounds(0,0,10,10);surface.draw(new android.graphics.Canvas(image));require(android.graphics.Color.alpha(image.getPixel(5,5))>=164&&android.graphics.Color.alpha(image.getPixel(5,5))<=167,"glass opacity incorrect");image.recycle();
+            Launches.prefs(c).edit().putString(Appearance.KEY,"{bad").commit();require(Appearance.read(c).panel==defaults.panel,"corrupt preferences did not recover");
+            android.widget.FrameLayout tree=new android.widget.FrameLayout(c);android.appwidget.AppWidgetHostView widget=new android.appwidget.AppWidgetHostView(c);android.widget.TextView providerText=new android.widget.TextView(c);providerText.setTypeface(android.graphics.Typeface.MONOSPACE);widget.addView(providerText);tree.addView(widget);Appearance.fonts(tree);require(providerText.getTypeface()==android.graphics.Typeface.MONOSPACE,"provider font was modified");
+        }finally{Launches.prefs(c).edit().clear().commit();}
     }
     private void widgetRouting(){
         final Bundle[] sent={null};
