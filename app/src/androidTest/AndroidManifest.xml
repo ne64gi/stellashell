@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name="net.fuyumori.stellashell.IconPackFixtureActivity" android:exported="true" android:label="StellaShell icon test fixture">
+            <intent-filter><action android:name="org.adw.launcher.THEMES" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>
+        </activity>
+        <activity android:name="net.fuyumori.stellashell.HomeLaunchProbeActivity" android:exported="true" android:taskAffinity="stellashell.home.probe" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <activity android:name="net.fuyumori.stellashell.PolishPrimaryActivity" android:exported="true" android:resizeableActivity="true" android:taskAffinity="stellashell.polish.primary" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <activity android:name="net.fuyumori.stellashell.PolishSecondaryActivity" android:exported="true" android:resizeableActivity="true" android:taskAffinity="stellashell.polish.secondary" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+    </application>
+</manifest>

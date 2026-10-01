@@ -9,9 +9,9 @@ import java.util.*;
 /** Polls only the chosen display; at most one request in flight per session. */
 final class TaskSession {
     static final class Task {
-        final int id,mode;final String component;final boolean visible,focused;final Rect bounds;
+        final int id,mode;final String component;final boolean visible,focused,alwaysOnTop;final Rect bounds;
         Task(JSONObject j)throws JSONException {
-            id=j.getInt("id");mode=j.getInt("mode");component=j.getString("component");visible=j.getBoolean("visible");focused=j.getBoolean("focused");
+            id=j.getInt("id");mode=j.getInt("mode");component=j.getString("component");visible=j.getBoolean("visible");focused=j.getBoolean("focused");alwaysOnTop=j.optBoolean("alwaysOnTop");
             bounds=new Rect(j.getInt("left"),j.getInt("top"),j.getInt("right"),j.getInt("bottom"));
         }
         String packageName(){return component.substring(0,component.indexOf('/'));}
@@ -20,7 +20,7 @@ final class TaskSession {
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final List<Task> tasks=new ArrayList<>();
     private final List<Task> stack=new ArrayList<>();private boolean stackReliable;
-    private boolean closed,busy,canArrange;private String lastDiagnostic="";
+    private boolean closed,busy,canArrange,canPin;private String lastDiagnostic="";
     private WorkArea previousArea;
     private final Map<Integer,Rect> reflow=new HashMap<>();
     private final Map<Integer,Rect> beforeIme=new HashMap<>(),imeAdjusted=new HashMap<>();
@@ -30,23 +30,27 @@ final class TaskSession {
     List<Task> stack(){return new ArrayList<>(stack);}
     boolean stackReliable(){return stackReliable;}
     boolean canArrange(){return canArrange && Bridge.get(context).ready();}
+    boolean canPin(){return canPin&&canArrange();}
     private final Runnable poll=new Runnable(){public void run(){refresh();int visible=0;for(Task t:tasks)if(t.visible)visible++;if(!closed)handler.postDelayed(this,stackReliable&&visible>1?300:1100);}};
     void refresh(){
-        if(closed||busy||Workspace.isBusy())return;
+        if(closed||busy||Workspace.isBusy()||Launches.pending())return;
         if(!Bridge.get(context).ready()){
             if(!tasks.isEmpty()||canArrange){tasks.clear();stack.clear();stackReliable=false;canArrange=false;changed.run();}return;
         }
         busy=true;
         Bridge.get(context).call(s->s.taskSnapshot(displayId),(result,error)->{
-            busy=false;if(closed)return;
+            busy=false;if(closed||Workspace.isBusy()||Launches.pending())return;
             try {
                 if(error!=null)throw new IllegalStateException(error);
                 JSONObject data=new JSONObject(result),caps=data.getJSONObject("capabilities");
                 tasks.clear();JSONArray rows=data.getJSONArray("tasks");for(int i=0;i<rows.length();i++)tasks.add(new Task(rows.getJSONObject(i)));
+                Workspace.observe(context,displayId,tasks);
+                if(Workspace.isBusy())return; // Do not normalize a snapshot that just triggered a role change.
                 Set<Integer> live=new HashSet<>();for(Task task:tasks)live.add(task.id);
                 normalized.retainAll(live);reflow.keySet().retainAll(live);beforeIme.keySet().retainAll(live);imeAdjusted.keySet().retainAll(live);
                 stack.clear();JSONArray layers=data.optJSONArray("stack");if(layers!=null)for(int i=0;i<layers.length();i++)stack.add(new Task(layers.getJSONObject(i)));
                 stackReliable=caps.optBoolean("stackOrder");
+                canPin=caps.optBoolean("alwaysOnTop");
                 canArrange=caps.optBoolean("bounds")&&caps.optBoolean("windowingMode")&&caps.optBoolean("reorder");
                 diagnostic(data.getString("backend")+" "+caps+" boundsDispatch="+data.optString("boundsDispatch","unknown")+"\n"+data.getJSONArray("operations"));
             }catch(Exception e){tasks.clear();stack.clear();stackReliable=false;canArrange=false;diagnostic(e.toString());}
@@ -82,7 +86,7 @@ final class TaskSession {
     void action(Task task,String action){
         if(closed)return;
         Bridge.get(context).call(s->{WorkArea.get(context,displayId).sync(s,displayId);String before=s.taskSnapshot(displayId);String answer=s.taskOperation(displayId,task.id,action,0,0,0,0);return answer.startsWith("ERROR:")?answer:before;},(result,error)->{
-            if(error==null)Profiles.rememberSnapshot(context,result,task.id,displayId);if(closed)return;if(error!=null)Launches.problem(context,error);refresh();
+            if(error==null){Profiles.rememberSnapshot(context,result,task.id,displayId);if("focus".equals(action))Workspace.focused(context,task,displayId);}if(closed)return;if(error!=null)Launches.problem(context,error);refresh();
         });
     }
     void resize(Task task,Rect bounds){if(closed)return;dragTask=task;pendingBounds=new Rect(bounds);flushDrag();}
@@ -95,9 +99,9 @@ final class TaskSession {
         });
     }
     private void flushDrag(){
-        if(closed||busy||pendingBounds==null)return;
+        if(closed||busy||pendingBounds==null||Workspace.isBusy()||Launches.pending())return;
         Rect b=pendingBounds;Task t=dragTask;pendingBounds=null;busy=true;
-        Bridge.get(context).call(s->{WorkArea.get(context,displayId).sync(s,displayId);return s.taskOperation(displayId,t.id,"bounds",b.left,b.top,b.right,b.bottom);},(result,error)->{
+        Bridge.get(context).call(s->{WorkArea.get(context,displayId).sync(s,displayId);return s.taskOperation(displayId,t.id,"resize",b.left,b.top,b.right,b.bottom);},(result,error)->{
             busy=false;if(closed)return;
             if(error!=null){pendingBounds=null;Launches.problem(context,error);}else if(pendingBounds!=null)flushDrag();else refresh();
         });

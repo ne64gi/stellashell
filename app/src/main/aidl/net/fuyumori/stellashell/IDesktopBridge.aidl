@@ -16,4 +16,7 @@ interface IDesktopBridge {
     String syncPrimaryScreen(int displayId, boolean off, IBinder owner) = 12;
     String moveWorkspaceTask(int source, int destination, int taskId, String component) = 14;
     void setWorkArea(int displayId, int left, int top, int right, int bottom) = 13;
+    String displaySessions() = 15;
+    String closeDisplaySession(int displayId, String identity) = 16;
+    String syncWindowPins(boolean enabled, IBinder owner) = 17;
 }

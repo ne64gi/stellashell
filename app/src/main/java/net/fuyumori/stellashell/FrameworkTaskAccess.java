@@ -18,14 +18,14 @@ final class FrameworkTaskAccess {
     static final class Entry {
         final int id, displayId, userId, windowMode, activityType;
         final ComponentName component;
-        final boolean visible, focused;
+        final boolean visible, focused, alwaysOnTop;
         final Object token;
         final Rect bounds;
         Entry(TaskInfo source, int display, int user, int mode, int type,
-                boolean visible, boolean focused, Object token, Rect area) {
+                boolean visible, boolean focused, boolean alwaysOnTop, Object token, Rect area) {
             id=source.taskId;displayId=display;userId=user;windowMode=mode;activityType=type;
             component=source.baseActivity!=null?source.baseActivity:source.topActivity;
-            this.visible=visible;this.focused=focused;this.token=token;
+            this.visible=visible;this.focused=focused;this.alwaysOnTop=alwaysOnTop;this.token=token;
             bounds=new Rect(area);
         }
     }
@@ -46,6 +46,7 @@ final class FrameworkTaskAccess {
     private final Field window=Configuration.class.getField("windowConfiguration");
     private final Method area=window.getType().getMethod("getBounds");
     private final Method mode, activityType;
+    private final Method alwaysOnTop=window.getType().getMethod("isAlwaysOnTop");
     private final boolean taskGetters;
     private final Class<?> serviceApi;
 
@@ -70,7 +71,7 @@ final class FrameworkTaskAccess {
         Object receiver=taskGetters?source:windowState;
         return new Entry(source,display.getInt(source),user.getInt(source),
                 (Integer)mode.invoke(receiver),(Integer)activityType.invoke(receiver),
-                visible.getBoolean(source),focused.getBoolean(source),taskToken.invoke(source),
+                visible.getBoolean(source),focused.getBoolean(source),(Boolean)alwaysOnTop.invoke(windowState),taskToken.invoke(source),
                 (Rect)area.invoke(windowState));
     }
     List<Entry> query(int displayId)throws ReflectiveOperationException {

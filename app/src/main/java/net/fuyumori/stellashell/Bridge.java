@@ -52,7 +52,7 @@ public final class Bridge {
     private Bridge(Context context) {
         this.context=context;
         args = new Shizuku.UserServiceArgs(new ComponentName(context, DesktopBridgeService.class))
-                .daemon(false).processNameSuffix("desktop_bridge").debuggable(false).version(18);
+                .daemon(false).processNameSuffix("desktop_bridge").debuggable(false).version(23);
         Shizuku.addBinderReceivedListenerSticky(this::connect);
         Shizuku.addBinderDeadListener(() -> { service = null; screenOff=false; binding = false; changed(); });
         Shizuku.addRequestPermissionResultListener((code, result) -> { if (result == PackageManager.PERMISSION_GRANTED) connect(); changed(); });
@@ -60,6 +60,10 @@ public final class Bridge {
     public void observe(Runnable listener) { listeners.add(listener); }
     public void remove(Runnable listener) { listeners.remove(listener); }
     private void changed() { main.post(() -> { for (Runnable r : listeners) r.run(); }); }
+    public boolean authorized() {
+        try{return Shizuku.pingBinder()&&Shizuku.getVersion()>=13&&Shizuku.checkSelfPermission()==PackageManager.PERMISSION_GRANTED;}
+        catch(RuntimeException e){return false;}
+    }
     public boolean ready() { return service != null && service.asBinder().isBinderAlive(); }
     public String status() {
         if (!Shizuku.pingBinder()) return context.getString(R.string.ui_shizuku_is_not_running_start_shizuku_for_full_window_management_t);
@@ -91,6 +95,8 @@ public final class Bridge {
                 IDesktopBridge current = service;
                 if (current == null || !current.asBinder().isBinderAlive()) throw new IllegalStateException(status());
                 current.setPrimaryMode(Displays.primaryActive(context));
+                String pins=current.syncWindowPins(Launches.prefs(context).getBoolean("enabled",false),mouseOwner);
+                if(pins.startsWith("ERROR:"))throw new IllegalStateException(pins);
                 String routing;
                 try{routing=current.syncMouseRouting(Launches.prefs(context).getBoolean("enabled",false)&&(!Displays.primary(context)||Workspace.target(context)>0)?mouseDisplay:-1,mouseOwner);}
                 catch(Exception e){routing="unavailable: "+e.getClass().getSimpleName();}

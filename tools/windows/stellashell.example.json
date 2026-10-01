@@ -14,6 +14,7 @@
   },
   "scrcpy": {
     "keyboard": "uhid",
+    "rightAltAsMeta": true,
     "imePolicy": "local",
     "systemDecorations": false,
     "fullscreen": true

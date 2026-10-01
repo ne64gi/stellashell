@@ -12,14 +12,19 @@ import android.widget.*;
 import java.util.*;
 
 /** Wallpaper and opt-in shortcuts only; the app catalog belongs to Start. */
-public final class DesktopActivity extends Activity implements DisplayManager.DisplayListener,SharedPreferences.OnSharedPreferenceChangeListener {
+public class DesktopActivity extends Activity implements DisplayManager.DisplayListener,SharedPreferences.OnSharedPreferenceChangeListener {
     private int displayId;private DisplayManager displays;private DesktopShortcuts shortcuts;
     private DesktopWallpaper imageWallpaper;
-    private DesktopWidgets widgets;private FrameLayout root;
+    private DesktopWidgets widgets;protected FrameLayout root;
+    protected boolean homeSurface(){return false;}
     @Override public void onCreate(Bundle state){
         super.onCreate(state);displayId=getDisplay()==null?-1:getDisplay().getDisplayId();
-        try{Displays.require(this,displayId);}catch(RuntimeException e){finish();return;}
-        if(!Launches.prefs(this).getBoolean("enabled",false)){finish();return;}
+        if(homeSurface()){
+            if(displayId!=0){finish();return;}
+        }else{
+            try{Displays.require(this,displayId);}catch(RuntimeException e){finish();return;}
+            if(!Launches.prefs(this).getBoolean("enabled",false)){finish();return;}
+        }
         displays=getSystemService(DisplayManager.class);displays.registerDisplayListener(this,new Handler(Looper.getMainLooper()));
         Launches.prefs(this).registerOnSharedPreferenceChangeListener(this);
         root=new FrameLayout(this);
@@ -27,12 +32,13 @@ public final class DesktopActivity extends Activity implements DisplayManager.Di
         imageWallpaper=new DesktopWallpaper(this);root.addView(imageWallpaper.view,new FrameLayout.LayoutParams(-1,-1));imageWallpaper.reload();
         FrameLayout widgetCanvas=new FrameLayout(this);
         FrameLayout.LayoutParams canvasParams=new FrameLayout.LayoutParams(-1,-1);canvasParams.bottomMargin=Ui.dp(this,64);
-        root.addView(widgetCanvas,canvasParams);widgets=new DesktopWidgets(this,widgetCanvas);
+        root.addView(widgetCanvas,canvasParams);widgets=new DesktopWidgets(this,widgetCanvas,false,homeSurface());
         FrameLayout shortcutCanvas=new FrameLayout(this);
         FrameLayout.LayoutParams shortcutParams=new FrameLayout.LayoutParams(-1,-1);shortcutParams.bottomMargin=Ui.dp(this,64);
         root.addView(shortcutCanvas,shortcutParams);shortcuts=new DesktopShortcuts(this,shortcutCanvas,displayId);
         View anchor=new View(this);root.addView(anchor,new FrameLayout.LayoutParams(1,1,Gravity.BOTTOM|Gravity.LEFT));
-        root.setOnLongClickListener(v->{desktopMenu(anchor,0);return true;});
+        widgets.onEditingChanged(()->{if(widgets.isEditing())widgetCanvas.bringToFront();else shortcutCanvas.bringToFront();});
+        // Empty-surface holds must not enter widget editing during window gestures.
         root.setOnGenericMotionListener((v,event)->{if(event.getActionMasked()==MotionEvent.ACTION_BUTTON_PRESS&&(event.getButtonState()&MotionEvent.BUTTON_SECONDARY)!=0){desktopMenu(anchor,0);return true;}return false;});
         root.post(()->desktopAction(getIntent()));
         getWindow().setDecorFitsSystemWindows(false);
@@ -41,7 +47,8 @@ public final class DesktopActivity extends Activity implements DisplayManager.Di
             WorkArea area=WorkArea.read(this,insets);
             for(View canvas:new View[]{widgetCanvas,shortcutCanvas}){
                 FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)canvas.getLayoutParams();
-                p.setMargins(area.application.left,area.application.top,area.physical.right-area.application.right,area.physical.bottom-area.application.bottom);canvas.setLayoutParams(p);
+                android.graphics.Rect usable=homeSurface()?area.usable:area.application;
+                p.setMargins(usable.left,usable.top,area.physical.right-usable.right,area.physical.bottom-usable.bottom+(homeSurface()?Ui.dp(this,64):0));canvas.setLayoutParams(p);
             }
             return insets;
         });
@@ -82,11 +89,12 @@ public final class DesktopActivity extends Activity implements DisplayManager.Di
     @Override protected void onStart(){super.onStart();if(widgets!=null)widgets.start();}
     @Override protected void onStop(){if(widgets!=null)widgets.stop();super.onStop();}
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(imageWallpaper!=null&&imageWallpaper.result(request,result,data))return;if(widgets!=null)widgets.result(request,result);}
-    @Override public void onBackPressed(){if(shortcuts!=null)shortcuts.cancelMove();}
+    @Override public void onBackPressed(){if(widgets!=null&&widgets.finishEditing())return;if(shortcuts!=null)shortcuts.cancelMove();}
+    @Override public boolean dispatchKeyEvent(KeyEvent event){if(event.getKeyCode()==KeyEvent.KEYCODE_ESCAPE&&event.getAction()==KeyEvent.ACTION_UP&&widgets!=null&&widgets.finishEditing())return true;return super.dispatchKeyEvent(event);}
     @Override public void onConfigurationChanged(Configuration c){super.onConfigurationChanged(c);}
     @Override public void onDisplayRemoved(int id){if(id==displayId)finishAndRemoveTask();}
     @Override public void onDisplayAdded(int id){}
     @Override public void onDisplayChanged(int id){}
-    @Override public void onSharedPreferenceChanged(SharedPreferences p,String key){if(key!=null&&key.startsWith("wallpaper")){wallpaper();if(imageWallpaper!=null)imageWallpaper.reload();}if("shell_layout".equals(key)&&root!=null)root.requestApplyInsets();if("enabled".equals(key)&&!p.getBoolean("enabled",false))finishAndRemoveTask();if(shortcuts!=null&&("desktop_shortcuts".equals(key)||"shortcut_snap".equals(key)))shortcuts.refresh();}
+    @Override public void onSharedPreferenceChanged(SharedPreferences p,String key){if(key!=null&&key.startsWith("wallpaper")){wallpaper();if(imageWallpaper!=null)imageWallpaper.reload();}if("shell_layout".equals(key)&&root!=null)root.requestApplyInsets();if(!homeSurface()&&"enabled".equals(key)&&!p.getBoolean("enabled",false))finishAndRemoveTask();if(shortcuts!=null&&("desktop_shortcuts".equals(key)||"shortcut_snap".equals(key)||IconTheme.changed(key)))shortcuts.refresh();}
     @Override public void onDestroy(){if(imageWallpaper!=null)imageWallpaper.destroy();if(widgets!=null)widgets.destroy();if(displays!=null)displays.unregisterDisplayListener(this);Launches.prefs(this).unregisterOnSharedPreferenceChangeListener(this);super.onDestroy();}
 }
