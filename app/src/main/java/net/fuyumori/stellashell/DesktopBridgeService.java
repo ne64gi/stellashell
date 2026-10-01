@@ -141,13 +141,13 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
     @Override public synchronized String syncMouseRouting(int displayId,android.os.IBinder owner){
         if(context==null)return "unavailable: Shizuku context";
         if(mouseRouting==null)mouseRouting=new MouseRouting(context);
-        return mouseRouting.sync(primaryMode?-1:displayId,owner);
+        return mouseRouting.sync(displayId,owner);
     }
     private VirtualKeyboardPolicy virtualKeyboard;
     @Override public synchronized String syncVirtualKeyboard(int displayId,boolean hide,android.os.IBinder owner){
         if(context==null)return "unavailable: Shizuku context";
         if(virtualKeyboard==null)virtualKeyboard=new VirtualKeyboardPolicy(context);
-        return virtualKeyboard.sync(primaryMode?-1:displayId,hide,owner);
+        return virtualKeyboard.sync(displayId,hide,owner);
     }
     @Override public synchronized String captureDisplay(int displayId,android.os.ParcelFileDescriptor output){
         try(android.os.ParcelFileDescriptor owned=output){

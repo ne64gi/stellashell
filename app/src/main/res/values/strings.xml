@@ -437,4 +437,17 @@
     <string name="widget_edit_number">Enter a number from 0 to 10000</string>
     <string name="hub_unread_count">%1$d unread notifications</string>
     <string name="opening_on_phone">Opening on the phone screen</string>
+    <string name="phone_workspace">Phone workspace</string>
+    <string name="phone_sidebar">Keep the Phone sidebar available</string>
+    <string name="phone_window_management">Manage Phone apps as Stella windows</string>
+    <string name="phone_workspace_note">Off: apps open normally in Android; long-press an app to open a floating window. Phone pins, shortcuts and wallpaper are independent of Desktop. The sidebar needs overlay permission; floating windows need Shizuku.</string>
+    <string name="wallpaper_position">Wallpaper position</string>
+    <string name="wallpaper_horizontal">Horizontal focal point</string>
+    <string name="wallpaper_vertical">Vertical focal point</string>
+    <string name="wallpaper_drag">Drag the preview to frame the image. Fill keeps the selected focal point when the screen changes shape.</string>
+    <string name="phone_pin">Pin to Phone sidebar</string>
+    <string name="phone_unpin">Unpin from Phone sidebar</string>
+    <string name="phone_floating">Open floating window</string>
+    <string name="phone_sidebar_over_apps">Show sidebar over other apps</string>
+    <string name="sidebar_height">Sidebar trigger position (top → bottom)</string>
 </resources>

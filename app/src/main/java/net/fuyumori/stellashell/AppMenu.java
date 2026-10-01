@@ -21,6 +21,8 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     private final Context context;
     private final WindowManager windows;
     private final int displayId;
+    private final boolean activityHosted;
+    private WorkArea area(){return activityHosted?WorkArea.read(context,windows.getCurrentWindowMetrics().getWindowInsets()):WorkArea.get(context,displayId);}
     private final List<Launches.App> all=new ArrayList<>();
     private final Set<android.app.AlertDialog> dialogs=new HashSet<>();
     private FrameLayout root,folderLayer;
@@ -34,10 +36,10 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     private PopupMenu activePopup;private long outsideDown=-1;
     void toggle(ExecutorService loader,long downTime){if(downTime>0&&downTime==outsideDown)return;open(loader);}
 
-    AppMenu(Context context,WindowManager windows,int displayId){this.context=context;this.windows=windows;this.displayId=displayId;}
+    AppMenu(Context context,WindowManager windows,int displayId){this.context=context;this.windows=windows;this.displayId=displayId;this.activityHosted=context instanceof HomeActivity&&displayId==0;}
     boolean isOpen(){return root!=null;}
     void relayout(){
-        if(root==null)return;WorkArea area=WorkArea.get(context,displayId);
+        if(root==null)return;WorkArea area=area();
         menuWidth=Math.max(1,Math.min(dp(640),area.application.width()-dp(24)));
         menuHeight=Math.max(1,Math.min(dp(720),area.application.height()-dp(24)));
         WindowManager.LayoutParams p=(WindowManager.LayoutParams)root.getLayoutParams();p.width=menuWidth;p.height=menuHeight;
@@ -56,11 +58,11 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     }
     void open(ExecutorService loader){
         if(isOpen()){close();return;}
-        Displays.require(context,displayId);StartPins.initialize(context);
+        if(!activityHosted)Displays.require(context,displayId);StartPins.initialize(context);
         AppOrganization.prefs(context).registerOnSharedPreferenceChangeListener(this);
         Launches.prefs(context).registerOnSharedPreferenceChangeListener(this);
         hiddenMode=false;loaded=false;all.clear();
-        WorkArea area=WorkArea.get(context,displayId);
+        WorkArea area=area();
         menuWidth=Math.max(1,Math.min(dp(640),area.application.width()-dp(24)));
         menuHeight=Math.max(1,Math.min(dp(720),area.application.height()-dp(24)));
         root=new FrameLayout(context);root.setBackground(Appearance.surface(context,22));root.setClipToOutline(true);
@@ -86,7 +88,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
             public void onTextChanged(CharSequence s,int start,int before,int count){closeFolder();render();scroll.scrollTo(0,0);}
             public void afterTextChanged(Editable text){}
         });
-        WindowManager.LayoutParams params=new WindowManager.LayoutParams(menuWidth,menuHeight,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+        WindowManager.LayoutParams params=new WindowManager.LayoutParams(menuWidth,menuHeight,activityHosted?WindowManager.LayoutParams.TYPE_APPLICATION_PANEL:WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL|WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,PixelFormat.TRANSLUCENT);
         params.gravity=Gravity.TOP|Gravity.LEFT;params.setFitInsetsTypes(0);params.x=area.application.left+dp(12);params.y=Math.max(area.application.top,area.application.bottom-menuHeight-dp(12));
         params.softInputMode=WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN|WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
@@ -200,7 +202,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         panel.setFocusableInTouchMode(true);panel.requestFocus();panel.setOnKeyListener((v,key,event)->{if((key==KeyEvent.KEYCODE_ESCAPE||key==KeyEvent.KEYCODE_BACK)&&event.getAction()==KeyEvent.ACTION_UP){closeFolder();return true;}return false;});
     }
     @Override public void onSharedPreferenceChanged(SharedPreferences prefs,String key){
-        if(root==null || prefs==Launches.prefs(context)&&!"start_pinned".equals(key)&&!IconTheme.changed(key))return;
+        if(root==null || prefs==Launches.prefs(context)&&!WorkspaceProfile.changed(key,"start_pinned")&&!IconTheme.changed(key))return;
         if(renderQueued)return;renderQueued=true;FrameLayout generation=root;
         root.post(()->{renderQueued=false;if(root==generation)render();});
     }
@@ -234,7 +236,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         menu.add(R.string.reset_connection).setOnMenuItemClickListener(item->{close();DockService.resetConnection(context);return true;});
         menu.add(R.string.exit_desktop).setOnMenuItemClickListener(item->{close();DockService.stop(context);return true;});popup.show();
     }
-    private void showDialog(android.app.AlertDialog dialog){dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);dialogs.add(dialog);dialog.setOnDismissListener(d->dialogs.remove(dialog));dialog.show();}
+    private void showDialog(android.app.AlertDialog dialog){if(!activityHosted)dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);dialogs.add(dialog);dialog.setOnDismissListener(d->dialogs.remove(dialog));dialog.show();}
     private void groupDialog(String old){
         EditText input=new EditText(context);input.setSingleLine();input.setHint(R.string.launcher_group_name);input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(40)});if(old!=null)input.setText(old);
         android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(context).setTitle(old==null?R.string.launcher_new_group:R.string.launcher_rename_group).setView(input).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_save,null).create();showDialog(dialog);

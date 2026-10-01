@@ -14,6 +14,10 @@ import java.util.concurrent.*;
 
 public final class DockService extends Service implements DisplayManager.DisplayListener,SharedPreferences.OnSharedPreferenceChangeListener {
     private static boolean alive;
+    private static DockService instance;
+    private static boolean homeVisible;
+    static void homeVisible(boolean visible){homeVisible=visible;if(instance!=null){instance.positionDock();instance.positionHandles();}}
+    private boolean sidebarAllowed(){return displayId!=0||Launches.prefs(this).getBoolean("phone_sidebar_over_apps",true)||homeVisible;}
     static boolean running(){return alive;}
     private static final String STOP="net.fuyumori.stellashell.STOP";
     private static final String RESET="net.fuyumori.stellashell.RESET_CONNECTION";
@@ -42,6 +46,7 @@ public final class DockService extends Service implements DisplayManager.Display
         WindowManager.LayoutParams p=(WindowManager.LayoutParams)dock.getLayoutParams();
         p.gravity=Gravity.TOP|Gravity.LEFT;p.setFitInsetsTypes(0);
         if(a.compact){
+            if(!sidebarAllowed())compactShown=false;
             int width=Ui.dp(c,76),height=Math.min(Ui.dp(c,500),a.usable.height());
             if(dock instanceof ScrollView){View content=((ScrollView)dock).getChildAt(0);android.view.ViewGroup.LayoutParams child=content.getLayoutParams();int h=Math.max(Ui.dp(c,176),height);if(child.height!=h){child.height=h;content.setLayoutParams(child);}}
             p.width=compactShown?width:1;p.height=compactShown?height:1;
@@ -58,10 +63,13 @@ public final class DockService extends Service implements DisplayManager.Display
         for(int i=0;i<edgeHandles.size();i++){
             View v=edgeHandles.get(i);WindowManager.LayoutParams p=(WindowManager.LayoutParams)v.getLayoutParams();
             p.x=i==0?Math.max(a.usable.left,a.gestureLeft)+Ui.dp(v.getContext(),8):Math.min(a.usable.right,a.physical.right-a.gestureRight)-Ui.dp(v.getContext(),24);
-            p.y=Math.max(a.usable.top,a.usable.bottom-Ui.dp(v.getContext(),180));windows.updateViewLayout(v,p);
+            int travel=Math.max(0,a.usable.height()-p.height);
+            int percent=Math.max(0,Math.min(100,Launches.prefs(this).getInt("sidebar_height",80)));
+            p.y=a.usable.top+Math.round(travel*percent/100f);
+            v.setVisibility(sidebarAllowed()?View.VISIBLE:View.GONE);windows.updateViewLayout(v,p);
         }
     }
-    private void showCompact(boolean right){compactRight=right;compactShown=true;positionDock();}
+    private void showCompact(boolean right){if(!sidebarAllowed())return;compactRight=right;compactShown=true;positionDock();}
     private void attachCompact(Context c){
         renderedCompact=true;
         LinearLayout column=Ui.column(c);column.setGravity(Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);
@@ -70,7 +78,7 @@ public final class DockService extends Service implements DisplayManager.Display
         column.addView(batteryView(c),new LinearLayout.LayoutParams(-1,Ui.dp(c,44)));
         ScrollView scroll=new ScrollView(c);LinearLayout entries=Ui.column(c);entries.setGravity(Gravity.CENTER_HORIZONTAL);scroll.addView(entries);
         java.util.List<TaskSession.Task> running=tasks.tasks();java.util.Set<Integer> used=new java.util.HashSet<>();
-        for(String component:Launches.pins(this)){
+        for(String component:Launches.pins(c)){
             TaskSession.Task match=null;for(TaskSession.Task t:running)if(t.packageName().equals(ComponentName.unflattenFromString(component).getPackageName())){match=t;break;}
             addEntry(c,entries,component,match,true);if(match!=null)used.add(match.id);
         }
@@ -168,7 +176,7 @@ public final class DockService extends Service implements DisplayManager.Display
         super.onConfigurationChanged(configuration);closeAreaObserver();removeDock();update(false);
     }
     @Override public void onCreate() {
-        super.onCreate();alive=true;ShellPanels.observe(panelsChanged);
+        super.onCreate();alive=true;instance=this;ShellPanels.observe(panelsChanged);
         Launches.prefs(this).edit().remove("active_display").apply();
         IntentFilter batteryFilter=new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
         Intent battery=Build.VERSION.SDK_INT>=33?registerReceiver(batteryReceiver,batteryFilter,Context.RECEIVER_NOT_EXPORTED):registerReceiver(batteryReceiver,batteryFilter);
@@ -267,7 +275,7 @@ public final class DockService extends Service implements DisplayManager.Display
             LinearLayout entries=new LinearLayout(c);entries.setGravity(Gravity.CENTER_VERTICAL);strip.addView(entries);
             java.util.List<TaskSession.Task> running=tasks==null?new java.util.ArrayList<>():tasks.tasks();
             java.util.Set<Integer> represented=new java.util.HashSet<>();
-            for(String component:Launches.pins(this)){
+            for(String component:Launches.pins(c)){
                 String pkg=ComponentName.unflattenFromString(component).getPackageName();
                 TaskSession.Task match=null;for(TaskSession.Task t:running)if(t.packageName().equals(pkg)){match=t;break;}
                 addEntry(c,entries,component,match,true);if(match!=null)represented.add(match.id);
@@ -342,13 +350,16 @@ public final class DockService extends Service implements DisplayManager.Display
         if(id==displayId && !geometry(id).equals(displayGeometry)){closeAreaObserver();removeDock();update(false);}
     }
     @Override public void onSharedPreferenceChanged(SharedPreferences p,String key){
+        if("sidebar_height".equals(key)||"phone_sidebar_over_apps".equals(key)){positionDock();positionHandles();return;}
         if("enabled".equals(key) && !p.getBoolean("enabled",false)){stopSelf();return;}
+        if("phone_sidebar".equals(key)&&!p.getBoolean(key,true)&&displayId==0&&WorkspaceProfile.standard(this,0)){stop(this,false);return;}
+        if("phone_window_management".equals(key)){closeAreaObserver();removeDock();if(tasks!=null)tasks.close();tasks=null;update(false,true);return;}
         if("shell_layout".equals(key)){if(areaObserver!=null)areaObserver.refresh();areaChanged();return;}
         if(Appearance.KEY.equals(key))Appearance.load(this);
-        if("pinned".equals(key)||Appearance.KEY.equals(key)||IconTheme.changed(key)){removeDock();if(displayId>=0)attachDock();}
+        if(WorkspaceProfile.changed(key,"pinned")||Appearance.KEY.equals(key)||IconTheme.changed(key)){removeDock();if(displayId>=0)attachDock();}
     }
     @Override public void onDestroy(){
-        destroyed=true;alive=false;ShellPanels.unobserve(panelsChanged);ShellPanels.dismiss(displayId);Launches.prefs(this).edit().remove("active_display").apply();closeAreaObserver();Bridge.get(this).mouseDisplay(-1);
+        destroyed=true;alive=false;if(instance==this)instance=null;ShellPanels.unobserve(panelsChanged);ShellPanels.dismiss(displayId);Launches.prefs(this).edit().remove("active_display").apply();closeAreaObserver();Bridge.get(this).mouseDisplay(-1);
         if(batteryRegistered){unregisterReceiver(batteryReceiver);batteryRegistered=false;}
         if(displays!=null)displays.unregisterDisplayListener(this);
         Launches.prefs(this).unregisterOnSharedPreferenceChangeListener(this);if(tasks!=null)tasks.close();removeDock();menuLoader.shutdownNow();super.onDestroy();

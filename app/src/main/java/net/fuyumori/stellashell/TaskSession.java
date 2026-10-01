@@ -43,12 +43,12 @@ final class TaskSession {
             try {
                 if(error!=null)throw new IllegalStateException(error);
                 JSONObject data=new JSONObject(result),caps=data.getJSONObject("capabilities");
-                tasks.clear();JSONArray rows=data.getJSONArray("tasks");for(int i=0;i<rows.length();i++)tasks.add(new Task(rows.getJSONObject(i)));
+                tasks.clear();JSONArray rows=data.getJSONArray("tasks");for(int i=0;i<rows.length();i++){Task task=new Task(rows.getJSONObject(i));if(!WorkspaceProfile.standard(context,displayId)||Workspace.owns(task)&&task.mode==5)tasks.add(task);};
                 Workspace.observe(context,displayId,tasks);
                 if(Workspace.isBusy())return; // Do not normalize a snapshot that just triggered a role change.
                 Set<Integer> live=new HashSet<>();for(Task task:tasks)live.add(task.id);
                 normalized.retainAll(live);reflow.keySet().retainAll(live);beforeIme.keySet().retainAll(live);imeAdjusted.keySet().retainAll(live);
-                stack.clear();JSONArray layers=data.optJSONArray("stack");if(layers!=null)for(int i=0;i<layers.length();i++)stack.add(new Task(layers.getJSONObject(i)));
+                stack.clear();JSONArray layers=data.optJSONArray("stack");if(layers!=null)for(int i=0;i<layers.length();i++){Task task=new Task(layers.getJSONObject(i));if(!WorkspaceProfile.standard(context,displayId)||Workspace.owns(task)&&task.mode==5)stack.add(task);};
                 stackReliable=caps.optBoolean("stackOrder");
                 canPin=caps.optBoolean("alwaysOnTop");
                 canArrange=caps.optBoolean("bounds")&&caps.optBoolean("windowingMode")&&caps.optBoolean("reorder");

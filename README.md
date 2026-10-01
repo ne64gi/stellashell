@@ -1,18 +1,18 @@
 # StellaShell
 
-**開発版 0.8.0** — [変更点と検証範囲](docs/RELEASE-0.8.0.md)。v1／安定版ではありません。
+**プレリリース 0.9.0** — [Phone Workspaceの使い方](docs/PHONE-WORKSPACE.md)。前回の固定点は [0.8.0](docs/RELEASE-0.8.0.md) です。v1／安定版ではありません。
 
 [セットアップ手順（① Shizuku / ② self-ADB / ③ scrcpy）](docs/setup/README.md) · [おすすめフォント](docs/FONTS.md) · [Shizuku停止時の機能表](docs/LIMITED-MODE-0.7.md)
 
-> **公開を一時停止しています**
-> ライセンス表記の不足と、コードの来歴に確認が必要な箇所が見つかったため、リポジトリを一時的に非公開にしました。修正・再監査後に再公開する予定です。GPL違反が確定したという告知ではありません。
+> **ライセンス監査の履歴**
+> 表記不足とコード来歴の確認のため、一時非公開にして修正・調査を行いました。現在のライセンスと第三者表記は LICENSE / THIRD_PARTY_NOTICES.md を参照してください。
 > [監査記録](docs/LICENSE-AUDIT-2026-09-29.md) · [修正・再監査の状況](docs/LICENSE-REMEDIATION-2026-09-29.md)
 
 <img src="docs/stellashell-icon.svg" width="112" alt="StellaShell icon">
 
-**監査前の旧版（来歴調査対象）：[APK v0.5.5](https://github.com/ne64gi/stellashell/releases/download/v0.5.5/StellaShell-0.5.5.apk)** · [リリース情報・SHA-256](https://github.com/ne64gi/stellashell/releases/tag/v0.5.5)
+**[APK v0.9.0](https://github.com/ne64gi/stellashell/releases/download/v0.9.0/StellaShell-0.9.0.apk)** · [変更点・検証範囲](docs/RELEASE-0.9.0.md) · [リリース・SHA-256](https://github.com/ne64gi/stellashell/releases/tag/v0.9.0)
 
-上記は監査前の開発用署名APKの記録です。今回の修正を含む再配布候補ではありません。再公開用APKは、ライセンス決定・再監査後に固定したcommitから作成します。
+開発用署名のプレリリースです。v1／安定版ではありません。監査前の旧版 v0.5.5 は現在の配布候補ではありません。
 
 Androidの外部画面をデスクトップとして使う、ShizukuベースのDesktop Shell。Sony SOG06 / Android 14 と REDMAGIC NX809J / Android 16 で検証しています。Dextop の topology API・アクセシビリティミラー・Flutter は使いません。標準ホームは自動では変更しません。任意のホームアプリとして使う入口もあります。
 
@@ -21,7 +21,7 @@ Androidの外部画面をデスクトップとして使う、Shizukuベースの
 ダッシュボードの **ホーム画面を開く** で試し、**標準ホームに設定** からAndroidの選択画面で設定できます。**設定 → ホームアプリを変更** で元のホームに戻せます。インストールや拡張機能の開始だけでは標準ホームは変わりません。
 
 - 基本ホーム：アプリ一覧・検索・通常起動・壁紙・ショートカットはShizukuやオーバーレイ許可なしで使えます。
-- 拡張機能：本体画面モードでShizuku・オーバーレイが利用可能なとき、メイン／サブ・小窓管理に接続します。Compactのメインは本来の全画面（ウィンドウ最大化とは別）、サブは小窓です。管理中のサブが全画面へ変わった場合は小窓へ戻します。接続できなければ通常のアプリ起動へ戻ります。
+- 拡張機能：Phoneでは標準Androidの起動が既定です。「スマホのアプリもStellaでウィンドウ管理する」をONにした場合、本体画面モードでShizuku・オーバーレイが利用可能なとき、メイン／サブ・小窓管理に接続します。Compactのメインは本来の全画面（ウィンドウ最大化とは別）、サブは小窓です。管理中のサブが全画面へ変わった場合は小窓へ戻します。接続できなければ通常のアプリ起動へ戻ります。
 - **拡張機能を停止**してもホーム用Activityは無効にしません。HOME入口は外部画面用SECONDARY_HOMEと分離しています。
 - ホームのウィジェットは既存の外部デスクトップ／Hubとは別の保存先・Hostです。既存配置を自動移動しません。
 - Android標準の最近のアプリ／ジェスチャー画面を置換する機能ではありません。再起動後・OEM別の標準ホーム運用は引き続き検証対象です。

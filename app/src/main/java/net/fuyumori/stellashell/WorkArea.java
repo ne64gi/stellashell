@@ -24,7 +24,7 @@ final class WorkArea {
         int types=WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout()|WindowInsets.Type.mandatorySystemGestures();
         Insets system=insets.getInsets(types);
         Rect stable=inset(physical,insets.getInsetsIgnoringVisibility(types));
-        boolean compact=ShellPresentation.compact(Launches.prefs(c).getString("shell_layout","auto"),stable.width()/density,stable.height()/density);
+        boolean compact=WorkspaceProfile.standard(c,c.getDisplay().getDisplayId())||ShellPresentation.compact(Launches.prefs(c).getString("shell_layout","auto"),stable.width()/density,stable.height()/density);
         Insets all=insets.getInsets(types|WindowInsets.Type.ime());
         WorkArea result=new WorkArea(physical,inset(physical,all),compact,Math.round(32*density),compact?0:Math.round(60*density));
         result.imeVisible=insets.isVisible(WindowInsets.Type.ime());

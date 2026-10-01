@@ -93,6 +93,22 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
             String[] values={"auto","desktop","compact"};int selected=Arrays.asList(values).indexOf(Launches.prefs(this).getString("shell_layout","auto"));
             new AlertDialog.Builder(this).setTitle(R.string.shell_layout).setSingleChoiceItems(new String[]{getString(R.string.shell_layout_auto),getString(R.string.shell_layout_desktop),getString(R.string.shell_layout_compact)},Math.max(0,selected),(dialog,which)->{Launches.prefs(this).edit().putString("shell_layout",values[which]).apply();dialog.dismiss();}).setNegativeButton(R.string.ui_cancel,null).show();
         }));
+        DashboardUi.section(root,getString(R.string.phone_workspace));card=DashboardUi.card(root);
+        toggle(card,R.string.phone_sidebar,"phone_sidebar",true,checked->{
+            Launches.prefs(this).edit().putBoolean("phone_sidebar",checked).apply();
+            if(checked&&!Settings.canDrawOverlays(this))Ui.message(this,getString(R.string.ui_allow_the_taskbar_overlay_first));
+        });DashboardUi.divider(card);
+        toggle(card,R.string.phone_sidebar_over_apps,"phone_sidebar_over_apps",true,checked->Launches.prefs(this).edit().putBoolean("phone_sidebar_over_apps",checked).apply());
+        Ui.note(card,getString(R.string.sidebar_height));
+        SeekBar sidebarHeight=new SeekBar(this);sidebarHeight.setMax(100);sidebarHeight.setProgress(Launches.prefs(this).getInt("sidebar_height",80));sidebarHeight.setContentDescription(getString(R.string.sidebar_height));
+        sidebarHeight.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+            public void onProgressChanged(SeekBar bar,int value,boolean fromUser){if(fromUser)Launches.prefs(SetupActivity.this).edit().putInt("sidebar_height",value).apply();}
+            public void onStartTrackingTouch(SeekBar bar){} public void onStopTrackingTouch(SeekBar bar){}
+        });card.addView(sidebarHeight);DashboardUi.divider(card);
+        toggle(card,R.string.phone_window_management,"phone_window_management",false,checked->{
+            Launches.prefs(this).edit().putBoolean("phone_window_management",checked).apply();
+        });
+        Ui.note(card,getString(R.string.phone_workspace_note));
         DashboardUi.section(root,getString(R.string.dashboard_workspace));card=DashboardUi.card(root);
         final Switch[] workspace={null};workspace[0]=toggle(card,R.string.workspace_enable,"compact_workspace",false,checked->{
             if(checked==Launches.prefs(this).getBoolean("compact_workspace",false))return;
