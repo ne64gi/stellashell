@@ -14,15 +14,19 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
     private static final String FREEFORM = "enable_freeform_support";
     public DesktopBridgeService() { context = null; }
     public DesktopBridgeService(Context context) { this.context = context; }
-    @Override public synchronized void destroy() { if(primaryScreen!=null)primaryScreen.release();if(mouseRouting!=null)mouseRouting.release();if(virtualKeyboard!=null)virtualKeyboard.release();System.exit(0); }
+    @Override public synchronized void destroy() { releaseWindowPins();if(primaryScreen!=null)primaryScreen.release();if(mouseRouting!=null)mouseRouting.release();if(virtualKeyboard!=null)virtualKeyboard.release();System.exit(0); }
     private static String exec(String... args) throws Exception {
         Process process = new ProcessBuilder(args).redirectErrorStream(true).start();
         ByteArrayOutputStream output = new ByteArrayOutputStream();
+        boolean keepTail=args.length>0&&"/system/bin/logcat".equals(args[0]);
         Thread reader = new Thread(() -> {
             try (InputStream input = process.getInputStream()) {
                 byte[] bytes = new byte[1024]; int n;
                 while ((n = input.read(bytes)) != -1) {
-                    synchronized (output) { if (output.size() < 16384) output.write(bytes, 0, Math.min(n, 16384-output.size())); }
+                    synchronized (output) {
+                        if(keepTail&&output.size()+n>16384){byte[] previous=output.toByteArray();int keep=16384-n;output.reset();output.write(previous,previous.length-keep,keep);}
+                        if(output.size()<16384)output.write(bytes,0,Math.min(n,16384-output.size()));
+                    }
                 }
             } catch (IOException ignored) {}
         }, "desktop-command-output");
@@ -36,6 +40,16 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
                 throw new IOException(result.isEmpty() ? "Operation was rejected" : result);
             return result;
         } finally { process.destroy(); }
+    }
+    private DisplaySessions displaySessions;
+    private DisplaySessions displays(){if(displaySessions==null)displaySessions=new DisplaySessions(context,DesktopBridgeService::exec);return displaySessions;}
+    @Override public synchronized String displaySessions() {
+        try{return displays().snapshot();}
+        catch(Exception e){return "ERROR: "+e.getMessage();}
+    }
+    @Override public synchronized String closeDisplaySession(int id,String identity) {
+        try{return displays().close(id,identity);}
+        catch(Exception e){return "ERROR: "+e.getMessage();}
     }
     private static String read(String key) throws Exception {
         String value = exec("/system/bin/settings", "get", "global", key); Policy.setting(value); return value;
@@ -106,6 +120,23 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
     @Override public synchronized String moveWorkspaceTask(int source,int destination,int taskId,String component){
         try{return tasks().moveWorkspaceTask(source,destination,taskId,component);}catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}
     }
+    private android.os.IBinder pinOwner;
+    private android.os.IBinder.DeathRecipient pinDeath;
+    private String releaseWindowPins(){
+        try{if(taskBackend!=null)taskBackend.releasePins();}
+        catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}
+        if(pinOwner!=null&&pinDeath!=null)pinOwner.unlinkToDeath(pinDeath,0);
+        pinOwner=null;pinDeath=null;return "inactive";
+    }
+    @Override public synchronized String syncWindowPins(boolean enabled,android.os.IBinder owner){
+        if(!enabled||owner==null||!owner.isBinderAlive())return releaseWindowPins();
+        if(owner.equals(pinOwner))return "active";
+        String released=releaseWindowPins();if(released.startsWith("ERROR:"))return released;
+        pinOwner=owner;android.os.IBinder lease=owner;
+        pinDeath=()->{synchronized(DesktopBridgeService.this){if(lease.equals(pinOwner))releaseWindowPins();}};
+        try{owner.linkToDeath(pinDeath,0);}catch(android.os.RemoteException e){return releaseWindowPins();}
+        return "active";
+    }
     private MouseRouting mouseRouting;
     @Override public synchronized String syncMouseRouting(int displayId,android.os.IBinder owner){
         if(context==null)return "unavailable: Shizuku context";
@@ -131,6 +162,8 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
     @Override public synchronized String syncPrimaryScreen(int displayId,boolean off,android.os.IBinder owner){
         if(context==null)return "ERROR: Service context unavailable";
         if(primaryScreen==null)primaryScreen=new PrimaryScreenPower(context);
-        return primaryScreen.sync(displayId,off&&!primaryMode,owner);
+        // primaryMode authorizes display 0 operations; it does not mean the workspace
+        // is currently on display 0. PrimaryScreenPower validates the external lease.
+        return primaryScreen.sync(displayId,off,owner);
     }
 }

@@ -18,7 +18,12 @@ final class DesktopWidgets {
     private final AppWidgetHost host;
     private final android.content.SharedPreferences prefs;
     private final List<Entry> entries=new ArrayList<>();
-    private boolean editing;
+    private boolean editing,editorLeft,editorCollapsed;
+    private Entry selected;
+    private View editor;
+    private Runnable editingChanged=()->{};
+    private final TextView[] values=new TextView[4];
+    private int step=8;
     private int pending=-1;
     private static final class Entry {
         int id,x,y,w,h,mode,baseW,baseH;
@@ -28,9 +33,13 @@ final class DesktopWidgets {
         AppWidgetProviderInfo info;
     }
     DesktopWidgets(Activity a,FrameLayout c){this(a,c,false);}
-    DesktopWidgets(Activity a,FrameLayout c,boolean panel){
-        activity=a;canvas=c;manager=AppWidgetManager.getInstance(a);host=new AppWidgetHost(a,panel?HOST+1:HOST);
-        prefs=a.getSharedPreferences(panel?"panel_widgets":"desktop_widgets",0);pending=prefs.getInt("pending",-1);
+    DesktopWidgets(Activity a,FrameLayout c,boolean panel){this(a,c,panel,false);}
+    DesktopWidgets(Activity a,FrameLayout c,boolean panel,boolean home){
+        this(a,c,panel?"panel_widgets":home?"home_widgets":"desktop_widgets",panel?HOST+1:home?HOST+2:HOST);
+    }
+    DesktopWidgets(Activity a,FrameLayout c,String preferenceName,int hostId){
+        activity=a;canvas=c;manager=AppWidgetManager.getInstance(a);host=new AppWidgetHost(a,hostId);
+        prefs=a.getSharedPreferences(preferenceName,0);pending=prefs.getInt("pending",-1);
         try{
             JSONArray array=new JSONArray(prefs.getString("items","[]"));
             for(int i=0;i<array.length();i++){
@@ -41,13 +50,29 @@ final class DesktopWidgets {
         Set<Integer> retained=new HashSet<>();for(Entry e:entries)retained.add(e.id);if(pending>=0)retained.add(pending);
         for(int id:host.getAppWidgetIds())if(!retained.contains(id))host.deleteAppWidgetId(id);
         canvas.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{if(r-l!=or-ol||b-t!=ob-ot)relayout();});
+        // Empty-surface holds must not enter widget editing during window gestures.
         rebuild();
     }
     void start(){try{host.startListening();}catch(RuntimeException e){Ui.message(activity,activity.getString(R.string.ui_widget_update)+e.getMessage());}}
     void stop(){host.stopListening();}
     void destroy(){if(activity.isFinishing()&&pending>=0)cancel();}
     boolean isEditing(){return editing;}
-    void setEditing(boolean value){editing=value;rebuild();}
+    void onEditingChanged(Runnable listener){editingChanged=listener;}
+    boolean finishEditing(){if(!editing)return false;setEditing(false);return true;}
+    void setEditing(boolean value){
+        editing=value;if(value&&selected==null&&!entries.isEmpty())selected=entries.get(entries.size()-1);
+        if(!value){for(Entry e:entries)((WidgetEditFrame)e.frame).cancelEditingGesture();save();selected=null;}
+        editorCollapsed=false;updateSelection();showEditor();editingChanged.run();
+    }
+    private void select(Entry entry){boolean entering=!editing;boolean different=selected!=entry;selected=entry;editing=true;
+        if(entering){editorCollapsed=false;editingChanged.run();}
+        updateSelection();if(entering||different)showEditor();
+    }
+    private void updateSelection(){for(Entry e:entries){
+        android.graphics.drawable.GradientDrawable outline=new android.graphics.drawable.GradientDrawable();
+        outline.setColor(android.graphics.Color.TRANSPARENT);outline.setStroke(dp(e==selected?2:1),e==selected?Ui.ACCENT:Ui.MUTED);
+        e.frame.setForeground(editing?outline:null);
+    }}
     void choose(){
         if(pending>=0){new AlertDialog.Builder(activity).setMessage(activity.getString(R.string.ui_a_widget_is_still_being_added_cancel_it_and_choose_another)).setNegativeButton(activity.getString(R.string.ui_back),null).setPositiveButton(activity.getString(R.string.ui_choose_again),(d,w)->{cancel();choose();}).show();return;}
         List<AppWidgetProviderInfo> providers=new ArrayList<>(manager.getInstalledProviders());
@@ -131,7 +156,8 @@ final class DesktopWidgets {
         Entry e=new Entry();e.id=pending;e.x=24+entries.size()%5*24;e.y=140+entries.size()%5*24;
         e.w=defaultSize(info,true);e.h=defaultSize(info,false);entries.add(e);
         // Commit the entry and clear pending together: recreation cannot orphan a bound ID.
-        pending=-1;save();editing=true;rebuild();Ui.message(activity,info.resizeMode==AppWidgetProviderInfo.RESIZE_NONE?activity.getString(R.string.ui_drag_the_top_bar_to_move_the_provider_marks_this_widget_as_fixed):activity.getString(R.string.ui_drag_the_top_bar_to_move_or_the_bottom_right_corner_to_resize_fin));
+        pending=-1;save();selected=e;editing=true;editorCollapsed=false;rebuild();editingChanged.run();
+        Ui.message(activity,activity.getString(R.string.widget_edit_hint));
     }
     private void cancel(){if(pending>=0)host.deleteAppWidgetId(pending);pending=-1;prefs.edit().remove("pending").apply();}
     private int pxToDp(int value){return Math.round(value/activity.getResources().getDisplayMetrics().density);}
@@ -141,25 +167,100 @@ final class DesktopWidgets {
         prefs.edit().putString("items",array.toString()).putInt("pending",pending).apply();
     }
     private void rebuild(){
-        canvas.removeAllViews();for(Entry e:entries){
-            e.info=manager.getAppWidgetInfo(e.id);e.frame=new FrameLayout(activity);
+        canvas.removeAllViews();editor=null;for(Entry e:entries){
+            e.info=manager.getAppWidgetInfo(e.id);
+            e.frame=new WidgetEditFrame(activity,new WidgetEditFrame.Actions(){
+                int x,y,w,h,originalX,originalY,originalW,originalH;boolean resizing;
+                public boolean editing(){return editing;}
+                public boolean canResize(){return resizable(e,2)||resizable(e,3);}
+                public void select(){DesktopWidgets.this.select(e);}
+                public void begin(boolean resize){
+                    resizing=resize;FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)e.frame.getLayoutParams();
+                    x=pxToDp(p.leftMargin);y=pxToDp(p.topMargin);w=pxToDp(p.width);h=pxToDp(p.height);
+                    originalX=e.x;originalY=e.y;originalW=e.w;originalH=e.h;
+                }
+                public void move(float dx,float dy){
+                    int aw=pxToDp(canvas.getWidth()),ah=pxToDp(canvas.getHeight()),deltaX=pxToDp(Math.round(dx)),deltaY=pxToDp(Math.round(dy));
+                    if(resizing){
+                        e.x=x;e.y=y;
+                        if(resizable(e,2))e.w=WidgetGeometry.resize(w+deltaX,aw-x,e.info==null?80:minimum(e,true),e.info==null?0:maximum(e,true));
+                        if(resizable(e,3))e.h=WidgetGeometry.resize(h+deltaY,ah-y,e.info==null?60:minimum(e,false),e.info==null?0:maximum(e,false));
+                    }else{e.x=Math.max(0,Math.min(x+deltaX,aw-Math.min(e.w,aw)));e.y=Math.max(0,Math.min(y+deltaY,ah-Math.min(e.h,ah)));}
+                    layout(e);updateValues();
+                }
+                public void end(boolean cancel){if(cancel){e.x=originalX;e.y=originalY;e.w=originalW;e.h=originalH;layout(e);updateValues();}else save();}
+
+            });
+            e.frame.setContentDescription(activity.getString(R.string.ui_edit_widgets)+": "+label(e));
             if(e.info!=null){
                 e.view=host.createView(new WidgetLaunchContext(activity),e.id,e.info);e.viewport=new WidgetViewport(activity);e.viewport.addView(e.view);e.frame.addView(e.viewport,new FrameLayout.LayoutParams(-1,-1));
             }else{e.view=null;TextView missing=Ui.text(activity,activity.getString(R.string.ui_widget_unavailable_remove_it_in_edit_mode),14,Ui.MUTED);e.frame.addView(missing);}
-            if(editing){
-                e.frame.setBackground(Ui.rounded(activity,Ui.PANEL,8));
-                // Editing intercepts provider touches; normal mode leaves all gestures to RemoteViews.
-                View shield=new View(activity);shield.setClickable(true);e.frame.addView(shield,new FrameLayout.LayoutParams(-1,-1));
-                LinearLayout bar=new LinearLayout(activity);bar.setBackgroundColor(Ui.PANEL);
-                TextView move=Ui.text(activity,activity.getString(R.string.ui_move)+(e.info==null?activity.getString(R.string.ui_widget):e.info.loadLabel(activity.getPackageManager())),13,Ui.TEXT);move.setGravity(Gravity.CENTER_VERTICAL);move.setPadding(dp(8),0,0,0);move.setContentDescription(activity.getString(R.string.ui_move_widget));bar.addView(move,new LinearLayout.LayoutParams(0,-1,1));gesture(move,e,false);
-                if(e.info!=null){TextView settings=Ui.text(activity,"⋮",22,Ui.ACCENT);settings.setGravity(Gravity.CENTER);settings.setContentDescription(activity.getString(R.string.ui_widget_display_settings));settings.setOnClickListener(v->options(e));bar.addView(settings,new LinearLayout.LayoutParams(dp(36),-1));}
-                TextView remove=Ui.text(activity,"×",22,Ui.TEXT);remove.setGravity(Gravity.CENTER);remove.setContentDescription(activity.getString(R.string.ui_remove_widget));bar.addView(remove,new LinearLayout.LayoutParams(dp(40),-1));remove.setOnClickListener(v->new AlertDialog.Builder(activity).setMessage(activity.getString(R.string.ui_remove_this_widget)).setNegativeButton(activity.getString(R.string.ui_cancel),null).setPositiveButton(activity.getString(R.string.ui_remove),(d,w)->{entries.remove(e);save();host.deleteAppWidgetId(e.id);rebuild();}).show());
-                e.frame.addView(bar,new FrameLayout.LayoutParams(-1,dp(32),Gravity.TOP));
-                if(e.info!=null&&(e.mode!=WidgetGeometry.NORMAL||e.info.resizeMode!=AppWidgetProviderInfo.RESIZE_NONE)){TextView resize=Ui.text(activity,"◢",24,Ui.ACCENT);resize.setGravity(Gravity.CENTER);resize.setBackgroundColor(Ui.PANEL);resize.setContentDescription(activity.getString(R.string.ui_resize_widget));e.frame.addView(resize,new FrameLayout.LayoutParams(dp(40),dp(40),Gravity.BOTTOM|Gravity.RIGHT));gesture(resize,e,true);}
-                else if(e.info!=null){TextView fixed=Ui.text(activity,activity.getString(R.string.ui_fixed_size),11,Ui.MUTED);fixed.setGravity(Gravity.CENTER);fixed.setContentDescription(activity.getString(R.string.ui_the_provider_does_not_support_resizing));fixed.setOnClickListener(v->options(e));bar.addView(fixed,new LinearLayout.LayoutParams(dp(76),-1));}
-            }
             canvas.addView(e.frame,new FrameLayout.LayoutParams(dp(e.w),dp(e.h)));layout(e);
         }
+        updateSelection();showEditor();
+    }
+    private String label(Entry e){return e.info==null?activity.getString(R.string.ui_widget)+" #"+e.id:e.info.loadLabel(activity.getPackageManager());}
+    private void showEditor(){
+        if(editor!=null)canvas.removeView(editor);editor=null;Arrays.fill(values,null);if(!editing)return;
+        if(editorCollapsed){
+            Button tab=Ui.button(activity,editorLeft?"›":"‹",()->{editorCollapsed=false;showEditor();});tab.setContentDescription(activity.getString(R.string.widget_edit_open));editor=tab;
+            canvas.addView(tab,new FrameLayout.LayoutParams(dp(48),dp(64),(editorLeft?Gravity.LEFT:Gravity.RIGHT)|Gravity.CENTER_VERTICAL));return;
+        }
+        ScrollView scroll=new ScrollView(activity);scroll.setFillViewport(false);scroll.setBackground(Ui.rounded(activity,Ui.BG,14));scroll.setElevation(dp(12));editor=scroll;
+        LinearLayout panel=Ui.column(activity);panel.setPadding(dp(8),dp(8),dp(8),dp(12));scroll.addView(panel);
+        LinearLayout tools=new LinearLayout(activity);
+        tools.addView(editorButton("⇄",R.string.widget_edit_side,()->{editorLeft=!editorLeft;showEditor();}),new LinearLayout.LayoutParams(0,dp(48),1));
+        tools.addView(editorButton(editorLeft?"‹":"›",R.string.widget_edit_hide,()->{editorCollapsed=true;showEditor();}),new LinearLayout.LayoutParams(0,dp(48),1));panel.addView(tools);
+        panel.addView(Ui.button(activity,activity.getString(R.string.widget_edit_done),()->setEditing(false)));
+        TextView title=Ui.text(activity,activity.getString(R.string.ui_edit_widgets),16,Ui.ACCENT);title.setPadding(0,dp(12),0,dp(4));panel.addView(title);
+        if(!entries.isEmpty()){
+            Spinner picker=new Spinner(activity);List<String> labels=new ArrayList<>();for(Entry e:entries)labels.add(label(e));
+            ArrayAdapter<String> adapter=new ArrayAdapter<>(activity,android.R.layout.simple_spinner_dropdown_item,labels);picker.setAdapter(adapter);picker.setSelection(Math.max(0,entries.indexOf(selected)));picker.setContentDescription(activity.getString(R.string.widget_edit_select));panel.addView(picker,new LinearLayout.LayoutParams(-1,dp(48)));
+            picker.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,View v,int index,long id){if(selected!=entries.get(index))select(entries.get(index));}});
+        }
+        if(selected!=null){
+            Entry entry=selected;
+            TextView hint=Ui.text(activity,activity.getString(R.string.widget_edit_hint),12,Ui.MUTED);panel.addView(hint);
+            Button precision=Ui.button(activity,activity.getString(R.string.widget_edit_step,step),()->{step=step==1?8:1;showEditor();});panel.addView(precision);
+            int[] names={R.string.widget_edit_x,R.string.widget_edit_y,R.string.widget_edit_width,R.string.widget_edit_height};
+            for(int i=0;i<4;i++){
+                final int axis=i;LinearLayout row=new LinearLayout(activity);row.setGravity(Gravity.CENTER_VERTICAL);
+                Button less=editorButton("−",names[i],()->adjust(entry,axis,geometry(entry,axis)-step));less.setContentDescription(activity.getString(names[i])+" −");
+                Button more=editorButton("+",names[i],()->adjust(entry,axis,geometry(entry,axis)+step));more.setContentDescription(activity.getString(names[i])+" +");
+                TextView value=Ui.text(activity,"",13,Ui.TEXT);value.setGravity(Gravity.CENTER);value.setBackground(Ui.toolbarBackground(activity,8));value.setOnClickListener(v->number(entry,axis,names[axis]));values[i]=value;
+                row.addView(less,new LinearLayout.LayoutParams(dp(48),dp(48)));row.addView(value,new LinearLayout.LayoutParams(0,dp(48),1));row.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));panel.addView(row);
+                boolean enabled=resizable(entry,axis);less.setEnabled(enabled);more.setEnabled(enabled);value.setEnabled(enabled);row.setAlpha(enabled?1:.45f);
+            }
+            if(entry.info!=null){
+                panel.addView(Ui.text(activity,activity.getString(R.string.ui_widget_display_settings),13,Ui.MUTED));
+                RadioGroup modes=new RadioGroup(activity);String[] labels={activity.getString(R.string.widget_edit_normal),activity.getString(R.string.widget_edit_force),activity.getString(R.string.widget_edit_scale)};
+                for(int i=0;i<labels.length;i++){RadioButton radio=new RadioButton(activity);radio.setText(labels[i]);radio.setTextColor(Ui.TEXT);radio.setId(View.generateViewId());modes.addView(radio,new RadioGroup.LayoutParams(-1,dp(48)));radio.setChecked(entry.mode==i);final int mode=i;radio.setOnClickListener(v->{entry.mode=mode;if(mode==WidgetGeometry.SCALE&&(entry.baseW<=0||entry.baseH<=0)){entry.baseW=defaultSize(entry.info,true);entry.baseH=defaultSize(entry.info,false);}save();layout(entry);showEditor();});}panel.addView(modes);
+                if(entry.mode==WidgetGeometry.SCALE)panel.addView(Ui.button(activity,activity.getString(R.string.ui_render_size),()->renderSize(entry)));
+                panel.addView(Ui.button(activity,activity.getString(R.string.ui_reset_to_recommended_size),()->{entry.w=defaultSize(entry.info,true);entry.h=defaultSize(entry.info,false);entry.baseW=entry.w;entry.baseH=entry.h;layout(entry);save();updateValues();}));
+            }
+            panel.addView(Ui.button(activity,activity.getString(R.string.ui_remove_widget),()->new AlertDialog.Builder(activity).setMessage(R.string.ui_remove_this_widget).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_remove,(d,w)->{entries.remove(entry);selected=entries.isEmpty()?null:entries.get(entries.size()-1);save();host.deleteAppWidgetId(entry.id);rebuild();}).show()));
+        }
+        panel.addView(Ui.button(activity,activity.getString(R.string.ui_add_widget),this::choose));
+        canvas.addView(scroll,editorBounds());updateValues();
+    }
+    private FrameLayout.LayoutParams editorBounds(){int available=canvas.getWidth()>0?canvas.getWidth():activity.getResources().getDisplayMetrics().widthPixels;return new FrameLayout.LayoutParams(Math.min(available,Math.min(dp(240),Math.max(dp(160),Math.round(available*.72f)))),-1,(editorLeft?Gravity.LEFT:Gravity.RIGHT)|Gravity.TOP);}
+    private Button editorButton(String text,int description,Runnable action){Button b=Ui.toolbarButton(activity,text,action);b.setContentDescription(activity.getString(description));b.setPadding(0,0,0,0);b.setMinWidth(0);b.setMinimumWidth(0);return b;}
+    private int geometry(Entry e,int axis){return axis==0?e.x:axis==1?e.y:axis==2?e.w:e.h;}
+    private boolean resizable(Entry e,int axis){return axis<2||e.info==null||e.mode!=WidgetGeometry.NORMAL||(e.info.resizeMode&(axis==2?AppWidgetProviderInfo.RESIZE_HORIZONTAL:AppWidgetProviderInfo.RESIZE_VERTICAL))!=0;}
+    private void updateValues(){if(selected==null)return;String[] names={"X","Y",activity.getString(R.string.widget_edit_width),activity.getString(R.string.widget_edit_height)};for(int i=0;i<4;i++)if(values[i]!=null)values[i].setText(names[i]+"\n"+geometry(selected,i)+" dp");}
+    private void adjust(Entry e,int axis,int value){
+        if(!resizable(e,axis))return;int aw=Math.max(1,pxToDp(canvas.getWidth())),ah=Math.max(1,pxToDp(canvas.getHeight()));
+        e.x=Math.max(0,Math.min(e.x,aw-Math.min(e.w,aw)));e.y=Math.max(0,Math.min(e.y,ah-Math.min(e.h,ah)));
+        if(axis==0)e.x=Math.max(0,Math.min(value,aw-Math.min(e.w,aw)));
+        if(axis==1)e.y=Math.max(0,Math.min(value,ah-Math.min(e.h,ah)));
+        if(axis==2)e.w=WidgetGeometry.resize(value,aw-Math.min(e.x,aw-1),e.info==null?80:minimum(e,true),e.info==null?0:maximum(e,true));
+        if(axis==3)e.h=WidgetGeometry.resize(value,ah-Math.min(e.y,ah-1),e.info==null?60:minimum(e,false),e.info==null?0:maximum(e,false));
+        layout(e);save();updateValues();
+    }
+    private void number(Entry e,int axis,int name){
+        EditText input=new EditText(activity);input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);input.setSingleLine(true);input.setText(String.valueOf(geometry(e,axis)));input.selectAll();
+        AlertDialog dialog=new AlertDialog.Builder(activity).setTitle(activity.getString(name)+" (dp)").setView(input).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_apply,null).create();
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{int n=Integer.parseInt(input.getText().toString());if(n<0||n>10000)throw new NumberFormatException();adjust(e,axis,n);dialog.dismiss();}catch(NumberFormatException ex){input.setError(activity.getString(R.string.widget_edit_number));}}));dialog.show();
     }
     private int padding(AppWidgetProviderInfo info,boolean horizontal){
         android.graphics.Rect p=AppWidgetHostView.getDefaultPaddingForWidget(activity,info.provider,null);
@@ -179,18 +280,6 @@ final class DesktopWidgets {
         int raw=horizontal?e.info.maxResizeWidth:e.info.maxResizeHeight;
         return raw>0?pxToDp(raw)+padding(e.info,horizontal):0;
     }
-    private void options(Entry e){
-        String[] names={activity.getString(R.string.ui_normal_respect_provider_limits),activity.getString(R.string.ui_force_resize_adjust_width_and_height),activity.getString(R.string.ui_scale_proportionally_may_add_margins)};
-        new AlertDialog.Builder(activity).setTitle(activity.getString(R.string.ui_widget_display_settings))
-            .setSingleChoiceItems(names,e.mode,(dialog,which)->{
-                e.mode=which;
-                if(which==WidgetGeometry.SCALE&&(e.baseW<=0||e.baseH<=0)){e.baseW=defaultSize(e.info,true);e.baseH=defaultSize(e.info,false);}
-                save();dialog.dismiss();rebuild();
-                Ui.message(activity,which==WidgetGeometry.FORCE?activity.getString(R.string.ui_drag_the_bottom_right_corner_to_resize_content_reflow_depends_on):which==WidgetGeometry.SCALE?activity.getString(R.string.ui_drag_the_bottom_right_corner_to_scale_use_render_size_to_adjust_t):activity.getString(R.string.ui_provider_size_limits_are_now_applied));
-            }).setNeutralButton(activity.getString(R.string.ui_render_size),(d,w)->renderSize(e))
-            .setPositiveButton(activity.getString(R.string.ui_reset_to_recommended_size),(d,w)->{e.w=defaultSize(e.info,true);e.h=defaultSize(e.info,false);e.baseW=e.w;e.baseH=e.h;save();rebuild();})
-            .setNegativeButton(activity.getString(R.string.ui_close),null).show();
-    }
     private void renderSize(Entry e){
         LinearLayout panel=new LinearLayout(activity);panel.setOrientation(LinearLayout.VERTICAL);panel.setPadding(dp(20),dp(12),dp(20),0);
         panel.addView(Ui.text(activity,activity.getString(R.string.ui_size_before_scaling_dp_including_padding_increase_it_if_content_i),14,Ui.TEXT));
@@ -207,17 +296,13 @@ final class DesktopWidgets {
             }catch(NumberFormatException ex){Ui.message(activity,activity.getString(R.string.ui_enter_width_80_2048_and_height_60_2048_dp));}
         }));dialog.show();
     }
-    private void relayout(){for(Entry e:entries)layout(e);}
+    private void relayout(){for(Entry e:entries)layout(e);if(editor!=null&&!editorCollapsed)editor.setLayoutParams(editorBounds());}
     private void layout(Entry e){
         int availableW=pxToDp(canvas.getWidth()),availableH=pxToDp(canvas.getHeight());if(availableW<=0||availableH<=0)return;
-        int w=Math.min(e.w,availableW),h=Math.min(e.h,availableH),caption=editing?32:0;
-        int contentY=Math.max(0,Math.min(e.y,availableH-h));
-        // The saved rectangle describes provider content, never the editing toolbar.
-        // Usually the toolbar sits above that rectangle. At the top edge temporarily
-        // shift content down; do not silently shrink or save a changed widget size.
-        int frameY=Math.max(0,contentY-caption);
-        FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(dp(w),dp(h+caption));p.leftMargin=dp(Math.max(0,Math.min(e.x,availableW-w)));p.topMargin=dp(frameY);e.frame.setLayoutParams(p);
-        View content=e.frame.getChildAt(0);FrameLayout.LayoutParams cp=new FrameLayout.LayoutParams(-1,dp(h));cp.topMargin=dp(caption);content.setLayoutParams(cp);
+        int w=Math.min(e.w,availableW),h=Math.min(e.h,availableH);
+        // Editing adds no chrome or margins to provider content. Coordinates never jump.
+        FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(dp(w),dp(h));p.leftMargin=dp(Math.max(0,Math.min(e.x,availableW-w)));p.topMargin=dp(Math.max(0,Math.min(e.y,availableH-h)));e.frame.setLayoutParams(p);
+        View content=e.frame.getChildAt(0);content.setLayoutParams(new FrameLayout.LayoutParams(-1,-1));
         if(e.view!=null){
             int logicalW=w,logicalH=h;
             if(e.mode==WidgetGeometry.SCALE){logicalW=e.baseW>0?e.baseW:defaultSize(e.info,true);logicalH=e.baseH>0?e.baseH:defaultSize(e.info,false);}
@@ -225,22 +310,5 @@ final class DesktopWidgets {
             if(android.os.Build.VERSION.SDK_INT>=31)e.view.updateAppWidgetSize(new Bundle(),Collections.singletonList(new android.util.SizeF(logicalW,logicalH)));
             else e.view.updateAppWidgetSize(null,logicalW,logicalH,logicalW,logicalH);
         }
-    }
-    @android.annotation.SuppressLint("ClickableViewAccessibility")
-    private void gesture(View handle,Entry e,boolean resize){
-        handle.setOnTouchListener(new View.OnTouchListener(){float x,y;int ox,oy,ow,oh;boolean changed;
-            public boolean onTouch(View v,android.view.MotionEvent event){
-                if(event.getActionMasked()==MotionEvent.ACTION_DOWN){x=event.getRawX();y=event.getRawY();FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)e.frame.getLayoutParams();ox=pxToDp(p.leftMargin);oy=pxToDp(p.topMargin)+(editing?32:0);ow=pxToDp(p.width);oh=pxToDp(p.height)-(editing?32:0);changed=false;return true;}
-                if(event.getActionMasked()==MotionEvent.ACTION_MOVE){
-                    int dx=pxToDp(Math.round(event.getRawX()-x)),dy=pxToDp(Math.round(event.getRawY()-y));int aw=pxToDp(canvas.getWidth()),ah=pxToDp(canvas.getHeight());
-                    if(resize){int mode=e.mode==WidgetGeometry.NORMAL?e.info.resizeMode:AppWidgetProviderInfo.RESIZE_BOTH;
-                        if((mode&AppWidgetProviderInfo.RESIZE_HORIZONTAL)!=0)e.w=WidgetGeometry.resize(ow+dx,aw-ox,minimum(e,true),maximum(e,true));
-                        if((mode&AppWidgetProviderInfo.RESIZE_VERTICAL)!=0)e.h=WidgetGeometry.resize(oh+dy,ah-oy,minimum(e,false),maximum(e,false));
-                    }else{e.x=Math.max(0,Math.min(ox+dx,aw-ow));e.y=Math.max(0,Math.min(oy+dy,ah-oh));}
-                    changed=true;layout(e);return true;
-                }
-                if(event.getActionMasked()==MotionEvent.ACTION_UP||event.getActionMasked()==MotionEvent.ACTION_CANCEL){if(changed)save();return true;}return true;
-            }
-        });
     }
 }

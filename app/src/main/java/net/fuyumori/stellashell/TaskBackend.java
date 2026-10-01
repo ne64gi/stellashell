@@ -18,9 +18,11 @@ final class TaskBackend {
     private final Class<?> api, transaction, token;
     private final Object manager, organizer;
     private final Class<?> organizerApi;
-    private final Method boundsTransition;
+    private final Method boundsTransition,modeTransition;
     private final FrameworkTaskAccess taskAccess;
     private String lastBoundsDispatch="none";
+    private final TaskPins pins;
+    private final boolean pinSupported;
     private final Map<Integer,Rect> workAreas=new HashMap<>();
     void setWorkArea(int id,Rect area)throws Exception {
         Point size=new Point();display(id).getRealSize(size);
@@ -43,10 +45,20 @@ final class TaskBackend {
         // without moving the surface (confirmed on NX809J). Keep the proven older
         // framework path; probe the transition API rather than assuming it exists.
         Method transitionMethod=null;
-        if(android.os.Build.VERSION.SDK_INT>=36)try {
+        if(android.os.Build.VERSION.SDK_INT>=34)try {
             transitionMethod=organizerApi.getMethod("startNewTransition",int.class,transaction);
         }catch(NoSuchMethodException ignored){}
-        boundsTransition=transitionMethod;
+        modeTransition=transitionMethod;
+        boundsTransition=android.os.Build.VERSION.SDK_INT>=36?transitionMethod:null;
+        // Android 14 exposes the method but accepts DisplayAreas only; tasks need Android 15+.
+        // NX809J Android 16 terminates the caller on the first native pin request
+        // (isolated fixture probe). Do not expose an operation known to kill the bridge.
+        boolean incompatiblePin=android.os.Build.VERSION.SDK_INT==36&&"nubia".equalsIgnoreCase(android.os.Build.MANUFACTURER)&&"NX809J".equals(android.os.Build.MODEL);
+        pinSupported=android.os.Build.VERSION.SDK_INT>=35&&!incompatiblePin&&method(transaction,"setAlwaysOnTop",token,boolean.class);
+        pins=new TaskPins(new TaskPins.Access(){
+            public List<FrameworkTaskAccess.Entry> all()throws Exception{return taskAccess.query(-1);}
+            public void set(FrameworkTaskAccess.Entry task,boolean enabled)throws Exception{setPinned(task,enabled);}
+        });
     }
     private Display display(int id) {
         if(id<0 || (id==0 && !primaryMode))throw new IllegalArgumentException("The main display is not supported");
@@ -69,6 +81,7 @@ final class TaskBackend {
     }
     private boolean method(Class<?> cls,String name,Class<?>... types){try{cls.getMethod(name,types);return true;}catch(NoSuchMethodException e){return false;}}
     String snapshot(int id) throws Exception {
+        try{pins.reconcile();}catch(Exception failure){record("pin reconciliation: "+reason(failure));}
         List<FrameworkTaskAccess.Entry> currentTasks=tasks(id);
         JSONArray list=new JSONArray();
         for(FrameworkTaskAccess.Entry t:currentTasks) {
@@ -76,7 +89,7 @@ final class TaskBackend {
             Rect b=new Rect(t.bounds);ComponentName c=t.component;
             JSONObject row=new JSONObject().put("id",t.id).put("component",c.flattenToString())
                     .put("mode",t.windowMode).put("left",b.left).put("top",b.top).put("right",b.right).put("bottom",b.bottom)
-                    .put("visible",t.visible).put("focused",t.focused);
+                    .put("visible",t.visible).put("focused",t.focused).put("alwaysOnTop",pins.pinned(t)).put("pinActive",t.alwaysOnTop);
             list.put(row);
         }
         JSONObject caps=new JSONObject().put("tasks",true)
@@ -84,6 +97,7 @@ final class TaskBackend {
                 .put("reorder",method(transaction,"reorder",token,boolean.class))
                 .put("bounds",method(transaction,"setBounds",token,Rect.class))
                 .put("windowingMode",method(transaction,"setWindowingMode",token,int.class))
+                .put("alwaysOnTop",pinSupported)
                 .put("boundsTransition",boundsTransition!=null)
                 .put("close",method(api,"removeTask",int.class));
         JSONArray stack=new JSONArray();boolean stackReliable=false;
@@ -109,7 +123,7 @@ final class TaskBackend {
     }
     private JSONObject row(FrameworkTaskAccess.Entry t)throws Exception {
         Rect b=new Rect(t.bounds);ComponentName c=t.component;return new JSONObject().put("id",t.id).put("component",c==null?"unknown/unknown":c.flattenToString()).put("mode",t.windowMode)
-                .put("left",b.left).put("top",b.top).put("right",b.right).put("bottom",b.bottom).put("visible",t.visible).put("focused",t.focused);
+                .put("left",b.left).put("top",b.top).put("right",b.right).put("bottom",b.bottom).put("visible",t.visible).put("focused",t.focused).put("alwaysOnTop",pins.pinned(t)).put("pinActive",t.alwaysOnTop);
     }
     String launchProfile(String requested,String resolved,int id,int windowMode,int l,int top,int r,int bottom,boolean newWindow)throws Exception {
         Policy.component(requested);ComponentName target=ComponentName.unflattenFromString(requested);display(id);
@@ -123,11 +137,13 @@ final class TaskBackend {
         if(wanted.isEmpty())throw new IllegalArgumentException("Invalid launch bounds");
         if(windowMode==5){Rect area=workAreas.get(id);if(area==null)throw new IllegalStateException("Work area is not available");wanted=WorkArea.clamp(wanted,area);}
         if(!newWindow&&existing!=null){
-            if(existing.windowMode!=windowMode){
+            if(windowMode==1)pins.fullscreen(existing);else pins.resume(existing);
+            if(existing.windowMode!=windowMode||windowMode==1){
                 Object tx=transaction.getConstructor().newInstance();Object taskToken=existing.token;
                 transaction.getMethod("setWindowingMode",token,int.class).invoke(tx,taskToken,windowMode);
-                if(windowMode==5)transaction.getMethod("setBounds",token,Rect.class).invoke(tx,taskToken,wanted);
-                if(windowMode==5)applyBounds(tx);else apply(tx);
+                transaction.getMethod("setBounds",token,Rect.class).invoke(tx,taskToken,windowMode==5?wanted:null);
+                if(windowMode==1)transaction.getMethod("setAppBounds",token,Rect.class).invoke(tx,taskToken,(Object)null);
+                applyMode(tx);
             }
             apply(change(existing,"reorder",boolean.class,true));existing=requireTask(id,existing.id);
             record("profile reuse "+requested+" requestedMode="+windowMode+" actualMode="+existing.windowMode+" bounds="+new Rect(existing.bounds));
@@ -154,8 +170,9 @@ final class TaskBackend {
         if(created||found.windowMode!=windowMode){
             Object tx=transaction.getConstructor().newInstance();Object taskToken=found.token;
             transaction.getMethod("setWindowingMode",token,int.class).invoke(tx,taskToken,windowMode);
-            if(windowMode==5)transaction.getMethod("setBounds",token,Rect.class).invoke(tx,taskToken,wanted);
-            if(windowMode==5)applyBounds(tx);else apply(tx);
+            transaction.getMethod("setBounds",token,Rect.class).invoke(tx,taskToken,windowMode==5?wanted:null);
+            if(windowMode==1)transaction.getMethod("setAppBounds",token,Rect.class).invoke(tx,taskToken,(Object)null);
+            if(found.windowMode!=windowMode||windowMode==1)applyMode(tx);else applyBounds(tx);
             found=requireTask(id,found.id);
         }
         record("profile launch "+requested+" display="+id+" newWindow="+newWindow+" created="+created+" requested="+wanted+" actual="+new Rect(found.bounds));
@@ -176,12 +193,35 @@ final class TaskBackend {
         record("handoff task="+taskId+" from="+source+" to="+destination);
         return row(moved).toString();
     }
+    void releasePins()throws Exception {pins.release();}
+    private void setPinned(FrameworkTaskAccess.Entry task,boolean enabled)throws Exception {
+        if(!pinSupported)throw new UnsupportedOperationException("Always-on-top unsupported on this system");
+        if(enabled&&task.windowMode!=5)throw new IllegalArgumentException("Always-on-top requires a window");
+        apply(change(task,"setAlwaysOnTop",boolean.class,enabled));
+        // A declared hidden API may be ignored by an OEM. Never report a successful pin on faith.
+        FrameworkTaskAccess.Entry actual=null;
+        for(FrameworkTaskAccess.Entry entry:taskAccess.query(task.displayId))if(entry.id==task.id&&entry.token.equals(task.token))actual=entry;
+        if(actual==null||actual.alwaysOnTop!=enabled)throw new IllegalStateException("Always-on-top was not applied by the system");
+    }
+    private void requireStandalone(FrameworkTaskAccess.Entry task)throws Exception {
+        for(FrameworkTaskAccess.Root root:taskAccess.roots(task.displayId))if(root.task.id==task.id){
+            for(int child:root.children)if(child!=task.id)throw new IllegalArgumentException("Grouped windows cannot be pinned");
+            return;
+        }
+        throw new IllegalArgumentException("Grouped windows cannot be pinned");
+    }
     private void record(String message){if(log.size()>=30)log.removeFirst();log.addLast(System.currentTimeMillis()+" "+message);}
     private Object change(FrameworkTaskAccess.Entry t,String name,Class<?> extra,Object arg) throws Exception {
         Object tx=transaction.getConstructor().newInstance();
         transaction.getMethod(name,token,extra).invoke(tx,t.token,arg);return tx;
     }
     private void apply(Object tx) throws Exception {organizerApi.getMethod("applyTransaction",transaction).invoke(organizer,tx);}
+    private void applyMode(Object tx)throws Exception {
+        if(modeTransition==null){apply(tx);lastBoundsDispatch="legacy-mode-wct";return;}
+        // Mode changes also change surface crop/position, even on Android 14.
+        // Let Shell synchronize the app redraw with the visual transition.
+        modeTransition.invoke(organizer,6,tx);lastBoundsDispatch="shell-mode-transition";
+    }
     private void applyBounds(Object tx) throws Exception {
         if(boundsTransition==null){apply(tx);lastBoundsDispatch="legacy-wct";return;}
         // TRANSIT_CHANGE: let the existing SystemUI transition player synchronize
@@ -194,11 +234,25 @@ final class TaskBackend {
         try {
             FrameworkTaskAccess.Entry t=requireTask(id,taskId);Object taskToken=t.token;
             switch(action){
-                case "focus": apply(change(t,"reorder",boolean.class,true));break;
-                case "minimize": apply(change(t,"reorder",boolean.class,false));break;
+                case "pin": requireStandalone(t);pins.set(t,true);break;
+                case "unpin": pins.set(t,false);break;
+                case "fullscreen": {
+                    pins.fullscreen(t);
+                    restoreBounds.putIfAbsent(taskId,new Rect(t.bounds));
+                    Object tx=transaction.getConstructor().newInstance();
+                    transaction.getMethod("setWindowingMode",token,int.class).invoke(tx,taskToken,1);
+                    transaction.getMethod("setBounds",token,Rect.class).invoke(tx,taskToken,(Object)null);
+                    transaction.getMethod("setAppBounds",token,Rect.class).invoke(tx,taskToken,(Object)null);
+                    applyMode(tx);break;
+                }
+                case "focus": pins.resume(t);apply(change(t,"reorder",boolean.class,true));break;
+                case "minimize": pins.suspend(t);apply(change(t,"reorder",boolean.class,false));break;
                 case "close":
                     if(!(Boolean)api.getMethod("removeTask",int.class).invoke(manager,taskId))throw new IllegalStateException("Could not close the window");
-                    restoreBounds.remove(taskId);break;
+                    restoreBounds.remove(taskId);pins.closed(taskId);break;
+                case "resize":
+                    // A queued drag/IME reflow must never turn a newly promoted main into freeform.
+                    if(t.windowMode!=5)return "OK: stale window resize ignored";
                 case "bounds":
                 case "left":
                 case "right":
@@ -222,7 +276,7 @@ final class TaskBackend {
                     Object tx=transaction.getConstructor().newInstance();
                     transaction.getMethod("setWindowingMode",token,int.class).invoke(tx,taskToken,5);
                     transaction.getMethod("setBounds",token,Rect.class).invoke(tx,taskToken,wanted);
-                    applyBounds(tx);
+                    if(t.windowMode!=5)applyMode(tx);else applyBounds(tx);
                     // The result may be constrained further by the application's minimum size.
                     record(action+" task="+taskId+" via="+lastBoundsDispatch+" requested="+wanted+" actual="+new Rect(requireTask(id,taskId).bounds));
                     return "OK";

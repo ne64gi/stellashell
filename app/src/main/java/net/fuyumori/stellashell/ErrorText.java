@@ -6,6 +6,12 @@ final class ErrorText {
     static String localize(Context context,String message){
         if(message==null)return context.getString(R.string.ui_unknown_error);
         if(message.startsWith("ERROR:"))return localize(context,message.substring(6).trim());
+        if(message.startsWith("Session changed")||message.startsWith("Virtual display session unavailable"))return context.getString(R.string.displays_session_changed);
+        if(message.startsWith("Session termination requested"))return context.getString(R.string.displays_close_unconfirmed);
+        if(message.contains("Always-on-top unsupported"))return context.getString(R.string.window_pin_unsupported);
+        if(message.contains("Always-on-top requires a window"))return context.getString(R.string.window_pin_window_only);
+        if(message.contains("Always-on-top was not applied"))return context.getString(R.string.window_pin_rejected);
+        if(message.contains("Grouped windows cannot be pinned"))return context.getString(R.string.window_pin_grouped);
         String rollback=" / Some settings could not be restored. Use Restore to retry.";
         if(message.endsWith(rollback)&&message.length()>rollback.length())return localize(context,message.substring(0,message.length()-rollback.length()))+context.getString(R.string.ui_some_settings_could_not_be_restored_use_restore_to_retry);
         if(message.startsWith(" / Some settings could not be restored. Use Restore to retry."))return context.getString(R.string.ui_some_settings_could_not_be_restored_use_restore_to_retry)+message.substring(61);

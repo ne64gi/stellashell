@@ -9,6 +9,10 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <queries>
+        <intent><action android:name="org.adw.launcher.THEMES" /></intent>
+        <intent><action android:name="com.gau.go.launcherex.theme" /></intent>
+        <intent><action android:name="com.novalauncher.THEME" /></intent>
+
         <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.HOME" /></intent>
         <intent><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent>
         <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent>
@@ -16,10 +20,23 @@
     </queries>
     <application android:name=".ShellApplication" android:label="StellaShell" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:theme="@style/AppTheme"
         android:localeConfig="@xml/locales_config" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true">
+        <activity android:name=".IconSettingsActivity" android:exported="false" android:resizeableActivity="true" android:excludeFromRecents="true" />
+        <activity android:name=".PrerequisitesActivity" android:exported="false" />
+        <activity android:name=".DisplayManagementActivity" android:exported="false" />
         <activity android:name=".AppearanceActivity" android:exported="false" android:resizeableActivity="true"
             android:launchMode="singleTask" android:taskAffinity="net.fuyumori.stellashell.appearance" android:excludeFromRecents="true" />
         <activity android:name=".SetupActivity" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+        </activity>
+        <activity android:name=".HomeActivity" android:exported="true" android:launchMode="singleTask"
+            android:taskAffinity="net.fuyumori.stellashell.home" android:excludeFromRecents="true"
+            android:resizeableActivity="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboard|keyboardHidden|density">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
         <activity android:name=".DesktopActivity" android:enabled="false" android:exported="true" android:resizeableActivity="true"
             android:taskAffinity="net.fuyumori.stellashell.external" android:excludeFromRecents="true"

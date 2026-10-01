@@ -25,5 +25,12 @@ public class ChromeOcclusionTest {
         List<int[]> p=ChromeOcclusion.visible(new int[]{0,0,100,20},Collections.singletonList(new int[]{100,0,200,20}));
         assertEquals(1,p.size());assertArrayEquals(new int[]{0,0,100,20},p.get(0));
     }
+    @Test public void widgetPanelClipsOnlyOverlappingCaptionPart(){
+        List<int[]> panel=Collections.singletonList(new int[]{700,20,1000,750});
+        List<int[]> untouched=ChromeOcclusion.visible(new int[]{20,40,600,72},panel);
+        assertEquals(1,untouched.size());assertArrayEquals(new int[]{20,40,600,72},untouched.get(0));
+        List<int[]> clipped=ChromeOcclusion.visible(new int[]{500,40,900,72},panel);
+        assertEquals(1,clipped.size());assertArrayEquals(new int[]{500,40,700,72},clipped.get(0));
+    }
     private static boolean inside(int x,int y,int[] r){return x>=r[0]&&x<r[2]&&y>=r[1]&&y<r[3];}
 }

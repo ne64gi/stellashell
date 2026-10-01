@@ -14,11 +14,12 @@ final class AppContextMenu {
     static void show(Context c,View anchor,String requested,int display,Runnable dismiss,TaskSession.Task task,TaskSession session,Runnable move){
         String component=Profiles.requestedComponent(c,requested);AppLaunchProfile p=Profiles.get(c,component);PopupMenu popup=new PopupMenu(c,anchor);Menu menu=popup.getMenu();
         if(move!=null)menu.add(c.getString(R.string.ui_move_2)).setOnMenuItemClickListener(m->{move.run();return true;});
-        menu.add(c.getString(R.string.ui_open)).setOnMenuItemClickListener(m->{dismiss.run();if(task!=null)session.action(task,"focus");else Launches.app(c,component,display);return true;});
+        menu.add(c.getString(R.string.ui_open)).setOnMenuItemClickListener(m->{dismiss.run();if(task!=null)Launches.focus(c,task,display,session);else Launches.app(c,component,display);return true;});
+        if(!Launches.basicHome(c,display)){
         menu.add(c.getString(R.string.ui_open_in_new_window)).setOnMenuItemClickListener(m->{dismiss.run();Launches.app(c,component,display,true);return true;});
         if(Workspace.compact(c,display)){
-            menu.add(R.string.workspace_primary).setOnMenuItemClickListener(m->{dismiss.run();if(task!=null)Workspace.role(c,task.id,display,true);else Launches.app(c,component,display);return true;});
-            menu.add(R.string.workspace_floating).setOnMenuItemClickListener(m->{dismiss.run();if(task!=null)Workspace.role(c,task.id,display,false);else Launches.app(c,component,display,false,true);return true;});
+            menu.add(R.string.workspace_primary).setCheckable(task!=null).setChecked(task!=null&&Workspace.owns(task)&&Workspace.primary()==task.id).setOnMenuItemClickListener(m->{dismiss.run();if(task!=null)Launches.role(c,task.id,display,true);else Launches.app(c,component,display,false,false);return true;});
+            menu.add(R.string.workspace_floating).setCheckable(task!=null).setChecked(task!=null&&Workspace.owns(task)&&Workspace.primary()!=task.id).setOnMenuItemClickListener(m->{dismiss.run();if(task!=null)Launches.role(c,task.id,display,false);else Launches.app(c,component,display,false,true);return true;});
         }
         SubMenu mode=menu.addSubMenu(c.getString(R.string.ui_launch_mode_next_launch));String[] modes={c.getString(R.string.ui_windowed),c.getString(R.string.ui_maximized),c.getString(R.string.ui_fullscreen),c.getString(R.string.ui_last_state)};
         for(AppLaunchProfile.Mode value:AppLaunchProfile.Mode.values())mode.add(1,value.ordinal(),value.ordinal(),modes[value.ordinal()]).setCheckable(true).setChecked(p.launchMode==value).setOnMenuItemClickListener(m->{p.launchMode=value;Profiles.save(c,component,p);return true;});mode.setGroupCheckable(1,true,true);
@@ -27,10 +28,18 @@ final class AppContextMenu {
         SubMenu position=menu.addSubMenu(c.getString(R.string.ui_initial_position));String[] positions={c.getString(R.string.ui_automatic),c.getString(R.string.ui_center),c.getString(R.string.ui_last_position)};
         for(AppLaunchProfile.Position value:AppLaunchProfile.Position.values())position.add(3,value.ordinal(),value.ordinal(),positions[value.ordinal()]).setCheckable(true).setChecked(p.position==value).setOnMenuItemClickListener(m->{p.position=value;Profiles.save(c,component,p);return true;});position.setGroupCheckable(3,true,true);
         menu.add(c.getString(R.string.ui_remember_position_and_size)).setCheckable(true).setChecked(p.rememberBounds).setOnMenuItemClickListener(m->{p.rememberBounds=!p.rememberBounds;Profiles.save(c,component,p);return true;});
+        }
+        if(task!=null){
+            boolean available=session!=null&&session.canPin()&&(task.mode==5||task.alwaysOnTop);
+            menu.add(!available?c.getString(!session.canPin()?R.string.window_pin_unsupported:R.string.window_pin_window_only):c.getString(R.string.window_pin))
+                    .setCheckable(true).setChecked(task.alwaysOnTop).setEnabled(available)
+                    .setOnMenuItemClickListener(m->{session.action(task,task.alwaysOnTop?"unpin":"pin");return true;});
+        }
         if(task!=null){SubMenu window=menu.addSubMenu(c.getString(R.string.ui_current_window));String[] labels={c.getString(R.string.ui_minimize),c.getString(R.string.ui_maximized),c.getString(R.string.ui_restore_size),c.getString(R.string.ui_snap_left),c.getString(R.string.ui_snap_right),c.getString(R.string.ui_close)};String[] actions={"minimize","maximize","restore","left","right","close"};for(int i=0;i<labels.length;i++){String action=actions[i];window.add(labels[i]).setOnMenuItemClickListener(m->{session.action(task,action);return true;});}}
         menu.add(Launches.desktop(c).contains(component)?c.getString(R.string.ui_remove_from_desktop):c.getString(R.string.ui_add_to_desktop)).setOnMenuItemClickListener(m->{Launches.toggleDesktop(c,component);return true;});
         menu.add(StartPins.get(c).contains(component)?c.getString(R.string.start_unpin):c.getString(R.string.start_pin)).setOnMenuItemClickListener(m->{StartPins.toggle(c,component);return true;});
         menu.add(Launches.pins(c).contains(component)?c.getString(R.string.ui_unpin_from_taskbar):c.getString(R.string.ui_pin_to_taskbar)).setOnMenuItemClickListener(m->{Launches.togglePin(c,component);return true;});
+        menu.add(R.string.icons_edit).setOnMenuItemClickListener(m->{dismiss.run();IconSettingsActivity.open(c,display,component);return true;});
         menu.add(c.getString(R.string.ui_app_info)).setOnMenuItemClickListener(m->{dismiss.run();try{c.startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+p.packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),ActivityOptions.makeBasic().setLaunchDisplayId(display).toBundle());}catch(RuntimeException e){Launches.problem(c,e.getMessage());}return true;});
         SubMenu groups=menu.addSubMenu(c.getString(R.string.launcher_assign_group));
         java.util.List<String> names=new java.util.ArrayList<>();names.add("");names.addAll(AppOrganization.groups(c));

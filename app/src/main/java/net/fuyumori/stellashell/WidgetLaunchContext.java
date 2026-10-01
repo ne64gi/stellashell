@@ -24,5 +24,8 @@ final class WidgetLaunchContext extends ContextWrapper {
         // ActivityOptions do not turn broadcast/service PendingIntents into activities.
         // Keep the original sender, fill-in intent, launch flags and BAL options intact.
         super.startIntentSender(sender,fill,mask,values,extra,routed);
+        Display source=getDisplay();
+        if(primary&&source!=null&&source.getDisplayId()!=Display.DEFAULT_DISPLAY)
+            Ui.message(this,getString(R.string.opening_on_phone));
     }
 }

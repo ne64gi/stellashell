@@ -17,12 +17,12 @@ final class WindowChrome {
     WindowChrome(Context c,WindowManager wm,TaskSession session){context=c;windows=wm;this.session=session;}
     void update(List<TaskSession.Task> tasks){
         if(!session.canArrange()){clear();return;}
-        if(draggingFrame!=null){
-            boolean alive=false;for(TaskSession.Task t:tasks)if(t.id==draggingFrame.task.id&&t.visible&&t.mode==5)alive=true;
-            if(!alive)clear();return;
-        }
         stack=session.stackReliable()?session.stack():new ArrayList<>();
         if(!session.stackReliable())for(TaskSession.Task t:tasks)if(t.focused)stack.add(t);
+        if(draggingFrame!=null){
+            boolean alive=false;for(TaskSession.Task t:tasks)if(t.id==draggingFrame.task.id&&t.visible&&t.mode==5)alive=true;
+            if(!alive)clear();else relayout();return;
+        }
         Set<Integer> wanted=new HashSet<>();
         for(TaskSession.Task t:tasks)if(t.visible&&t.mode==5&&(session.stackReliable()||t.focused)){
             wanted.add(t.id);Frame f=frames.get(t.id);if(f==null){f=new Frame(t);frames.put(t.id,f);}else {f.task=t;f.rendered=new Rect(t.bounds);}
@@ -47,12 +47,22 @@ final class WindowChrome {
         }
     }
     private void end(Frame f){if(draggingFrame==f){draggingFrame=null;dragFront=false;}f.heldRoot=null;session.refresh();}
+    static List<TaskSession.Task> dragOrder(List<TaskSession.Task> stack,TaskSession.Task dragged){
+        List<TaskSession.Task> ordered=new ArrayList<>(stack);ordered.removeIf(t->t.id==dragged.id);
+        int insertion=0;
+        for(int i=0;i<ordered.size();i++){
+            TaskSession.Task task=ordered.get(i);
+            if(task.visible&&(task.mode==2||!dragged.alwaysOnTop&&task.alwaysOnTop))insertion=i+1;
+        }
+        ordered.add(insertion,dragged);return ordered;
+    }
     private void relayout(){
         List<TaskSession.Task> ordered=new ArrayList<>(stack);
-        if(draggingFrame!=null&&dragFront){ordered.removeIf(t->t.id==draggingFrame.task.id);ordered.add(0,draggingFrame.task);}
+        if(draggingFrame!=null&&dragFront)ordered=dragOrder(ordered,draggingFrame.task);
         List<int[]> blockers=new ArrayList<>();Set<Integer> drawn=new HashSet<>();
+        Rect panel=ShellPanels.bounds(context.getDisplay().getDisplayId());if(panel!=null)blockers.add(new int[]{panel.left,panel.top,panel.right,panel.bottom});
         for(TaskSession.Task t:ordered){
-            if(!t.visible)continue;
+            if(!t.visible||ShellPanels.panelTask(t.component))continue;
             Frame f=frames.get(t.id);Rect b=f==null?t.bounds:f.rendered;
             if(f!=null){f.layout(blockers);drawn.add(t.id);}
             int top=f!=null?Math.max(0,b.top-Ui.dp(context,32)):b.top;
@@ -78,23 +88,39 @@ final class WindowChrome {
             LinearLayout title=new LinearLayout(context);title.setGravity(Gravity.CENTER_VERTICAL);
             TextView name=Ui.text(context,label,13,Ui.TEXT);name.setGravity(Gravity.CENTER_VERTICAL);name.setSingleLine();name.setEllipsize(android.text.TextUtils.TruncateAt.END);name.setPadding(Ui.dp(context,12),0,0,0);
             title.addView(name,new LinearLayout.LayoutParams(0,-1,1));name.setContentDescription(context.getString(R.string.ui_bring_to_front_and_move,label));gesture(name,0);
+            if(session.canPin())button(title,context.getString(R.string.window_pin),"pin");
             button(title,context.getString(R.string.ui_snap_left),"left");button(title,context.getString(R.string.ui_snap_right),"right");button(title,context.getString(R.string.ui_minimize),"minimize");button(title,context.getString(R.string.ui_maximize_restore),"maximize");button(title,context.getString(R.string.ui_close),"close");return title;
         }
         private void button(LinearLayout row,String description,String action){
             CaptionButton b=new CaptionButton(context,action);b.setContentDescription(label+" "+description);b.setTooltipText(description);
-            b.setOnClickListener(v->{String actual=action.equals("maximize")&&isMaximized()?"restore":action;
+            b.setOnClickListener(v->{ShellPanels.dismiss(context.getDisplay().getDisplayId());String actual=action.equals("pin")?(task.alwaysOnTop?"unpin":"pin"):action.equals("maximize")&&isMaximized()?"restore":action;
                 if(active)session.action(task,actual);else session.focusForDrag(task,ok->{if(ok)session.action(task,actual);});});
             row.addView(b,new LinearLayout.LayoutParams(Ui.dp(context,36),-1));
         }
         private void style(View v,int edge){
             if(edge!=0)return;
-            LinearLayout row=(LinearLayout)v;row.setBackground(Ui.rounded(context,active?Ui.PANEL:Ui.BG,8));
+            LinearLayout row=(LinearLayout)v;
+            android.graphics.drawable.GradientDrawable background=Ui.rounded(context,active?Ui.PANEL:Ui.BG,8);
+            float radius=Ui.dp(context,8);
+            // Round only the outer top corners; the bottom joins the application content.
+            background.setCornerRadii(new float[]{radius,radius,radius,radius,0,0,0,0});
+            row.setBackground(background);
             ((TextView)row.getChildAt(0)).setTextColor(active?Ui.TEXT:Ui.MUTED);
-            for(int i=1;i<row.getChildCount();i++){View child=row.getChildAt(i);child.setAlpha(active?1f:.62f);if(i==4){((CaptionButton)child).action=isMaximized()?"restore":"maximize";child.invalidate();}}
+            for(int i=1;i<row.getChildCount();i++){
+                CaptionButton child=(CaptionButton)row.getChildAt(i);child.setAlpha(active?1f:.62f);
+                boolean snap=child.action.equals("left")||child.action.equals("right");
+                child.setVisibility(snap&&rendered.width()<Ui.dp(context,340)?View.GONE:View.VISIBLE);
+                if(child.action.equals("maximize")||child.action.equals("restore"))child.action=isMaximized()?"restore":"maximize";
+                if(child.action.equals("pin")){
+                    child.setSelected(task.alwaysOnTop);String description=context.getString(task.alwaysOnTop?R.string.window_unpin:R.string.window_pin);
+                    child.setContentDescription(label+" "+description);child.setTooltipText(description);
+                }
+                child.invalidate();
+            }
         }
         private final class Fragment {
             final FrameLayout root=new FrameLayout(context);final View child;final WindowManager.LayoutParams p;
-            Rect previousWhole;int[] previousPiece;boolean previousActive,previousMaximized;
+            Rect previousWhole;int[] previousPiece;boolean previousActive,previousMaximized,previousPinned;
             Fragment(int edge){
                 child=content(edge);root.setClipChildren(true);root.addView(child);
                 p=new WindowManager.LayoutParams(1,1,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,PixelFormat.TRANSLUCENT);
@@ -103,8 +129,8 @@ final class WindowChrome {
             }
             void place(int[] piece,Rect whole,int edge){
                 boolean maximized=isMaximized();
-                if(whole.equals(previousWhole)&&Arrays.equals(piece,previousPiece)&&previousActive==active&&previousMaximized==maximized)return;
-                previousWhole=new Rect(whole);previousPiece=piece.clone();previousActive=active;previousMaximized=maximized;
+                if(whole.equals(previousWhole)&&Arrays.equals(piece,previousPiece)&&previousActive==active&&previousMaximized==maximized&&previousPinned==task.alwaysOnTop)return;
+                previousWhole=new Rect(whole);previousPiece=piece.clone();previousActive=active;previousMaximized=maximized;previousPinned=task.alwaysOnTop;
                 FrameLayout.LayoutParams cp=new FrameLayout.LayoutParams(Math.max(1,whole.width()),Math.max(1,whole.height()));cp.leftMargin=whole.left-piece[0];cp.topMargin=whole.top-piece[1];child.setLayoutParams(cp);style(child,edge);
                 p.x=piece[0];p.y=piece[1];p.width=piece[2]-piece[0];p.height=piece[3]-piece[1];windows.updateViewLayout(root,p);
             }
@@ -133,7 +159,7 @@ final class WindowChrome {
         target.setOnTouchListener(new View.OnTouchListener(){float x,y;Rect start;
             public boolean onTouch(View v,MotionEvent event){
                 if(task==null)return false;
-                if(event.getActionMasked()==MotionEvent.ACTION_DOWN){if(event.isFromSource(InputDevice.SOURCE_MOUSE)&&(event.getButtonState()&MotionEvent.BUTTON_PRIMARY)==0)return false;if(v instanceof ResizeHandle)((ResizeHandle)v).active(true);x=event.getRawX();y=event.getRawY();start=new Rect(rendered);dragging=true;heldRoot=v.getRootView();lastSend=0;begin(Frame.this);return true;}
+                if(event.getActionMasked()==MotionEvent.ACTION_DOWN){if(event.isFromSource(InputDevice.SOURCE_MOUSE)&&(event.getButtonState()&MotionEvent.BUTTON_PRIMARY)==0)return false;if(v instanceof ResizeHandle)((ResizeHandle)v).active(true);x=event.getRawX();y=event.getRawY();start=new Rect(rendered);dragging=true;heldRoot=v.getRootView();lastSend=0;begin(Frame.this);ShellPanels.dismiss(context.getDisplay().getDisplayId());return true;}
                 if(start==null)return false;
                 if(event.getActionMasked()==MotionEvent.ACTION_CANCEL){if(v instanceof ResizeHandle)((ResizeHandle)v).active(false);wantResize=false;dragging=false;start=null;end(Frame.this);session.refresh();return true;}
                 if(event.getActionMasked()!=MotionEvent.ACTION_MOVE&&event.getActionMasked()!=MotionEvent.ACTION_UP)return true;
@@ -179,8 +205,11 @@ final class WindowChrome {
         @Override protected void onDraw(android.graphics.Canvas c){
             if(isHovered()||isPressed()||isFocused())c.drawColor(action.equals("close")?0xffb84350:isPressed()?0x38ffffff:0x18ffffff);
             float cx=getWidth()/2f,cy=getHeight()/2f,r=Ui.dp(getContext(),5);
-            paint.setColor(Ui.TEXT);paint.setStrokeWidth(Math.max(1,Ui.dp(getContext(),1)));paint.setStyle(android.graphics.Paint.Style.STROKE);
+            paint.setColor(action.equals("pin")&&isSelected()?Ui.ACCENT:Ui.TEXT);paint.setStrokeWidth(Math.max(1,Ui.dp(getContext(),1)));paint.setStyle(android.graphics.Paint.Style.STROKE);
             switch(action){
+                case "pin":
+                    if(isSelected())paint.setStyle(android.graphics.Paint.Style.FILL);
+                    c.drawRect(cx-r*.6f,cy-r,cx+r*.6f,cy,paint);c.drawLine(cx-r,cy,cx+r,cy,paint);c.drawLine(cx,cy,cx,cy+r*1.4f,paint);break;
                 case "close":c.drawLine(cx-r,cy-r,cx+r,cy+r,paint);c.drawLine(cx+r,cy-r,cx-r,cy+r,paint);break;
                 case "minimize":c.drawLine(cx-r,cy+2,cx+r,cy+2,paint);break;
                 case "restore":c.drawRect(cx-r+3,cy-r,cx+r,cy+r-3,paint);c.drawRect(cx-r,cy-r+3,cx+r-3,cy+r,paint);break;

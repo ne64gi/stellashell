@@ -56,7 +56,19 @@ final class Launches {
         for(String item:recents(c))if(!out.contains(item))out.add(item);
         return out;
     }
+    static boolean basicHome(Context c,int display){
+        return display==0&&c instanceof HomeActivity&&!HomeActivity.extensions(c);
+    }
+    static void normalApp(Context c,String component){
+        Policy.component(component);
+        Intent intent=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                .setComponent(ComponentName.unflattenFromString(component))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+        c.startActivity(intent,ActivityOptions.makeBasic().setLaunchDisplayId(0).toBundle());
+        remember(c,component);
+    }
     static void settings(Context c,int displayId) {
+        if(c instanceof HomeActivity){c.startActivity(new Intent(c,SetupActivity.class));return;}
         launch(c,new ComponentName(c,SetupActivity.class).flattenToString(),displayId,1,false);
     }
     static void problem(Context c,String message) {
@@ -71,34 +83,103 @@ final class Launches {
             c.startActivity(intent,ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle());
         }catch(RuntimeException e){problem(c,e.getMessage());}
     }
+    // Serialize launches through role assignment, so rapid taps cannot both become primary.
+    private static final ArrayDeque<Runnable> appQueue=new ArrayDeque<>();
+    private static final android.os.Handler appHandler=new android.os.Handler(android.os.Looper.getMainLooper());
+    private static boolean appLaunching;
+    private static void enqueue(Runnable action){appQueue.add(action);drainApps();}
+    private static void drainApps(){
+        appHandler.removeCallbacks(retryApps);
+        if(appLaunching||appQueue.isEmpty())return;
+        if(Workspace.isBusy()){appHandler.postDelayed(retryApps,100);return;}
+        appLaunching=true;appQueue.remove().run();
+    }
+    private static final Runnable retryApps=Launches::drainApps;
+    private static void appDone(){appLaunching=false;drainApps();}
+    static boolean pending(){return appLaunching||!appQueue.isEmpty();}
+    static void role(Context c,int task,int display,boolean primary){
+        enqueue(()->Workspace.role(c,task,display,primary,Launches::appDone));
+    }
+    static void focus(Context c,TaskSession.Task task,int display,TaskSession session){
+        enqueue(()->{
+            if(Workspace.compact(c,display)&&Workspace.needsPrimary()&&!task.alwaysOnTop)
+                Workspace.role(c,task.id,display,true,Launches::appDone);
+            else{session.action(task,"focus");appDone();}
+        });
+    }
     static void home(Context c,int displayId) {
-        launch(c,new ComponentName(c,DesktopActivity.class).flattenToString(),displayId,1,false);
+        enqueue(()->{
+            ShellPanels.dismiss(displayId);
+            String component=new ComponentName(c,displayId==0&&HomeRegistration.selected(c)?HomeActivity.class:DesktopActivity.class).flattenToString();
+            if(!Bridge.get(c).ready()){
+                try{launch(c,component,displayId,1,false);}finally{appDone();}return;
+            }
+            Bridge.get(c).call(s->{
+                // Keep the tasks alive, but put them behind the desktop on this display only.
+                org.json.JSONArray rows=new org.json.JSONObject(s.taskSnapshot(displayId)).getJSONArray("tasks");
+                for(int i=0;i<rows.length();i++){
+                    org.json.JSONObject row=rows.getJSONObject(i);
+                    if(!row.optBoolean("visible"))continue;
+                    String answer=s.taskOperation(displayId,row.getInt("id"),"minimize",0,0,0,0);
+                    if(answer==null||answer.startsWith("ERROR:"))throw new IllegalStateException(answer);
+                }
+                return s.launch(component,displayId,1);
+            },(result,error)->{
+                try{if(error!=null)problem(c,error);else Workspace.desktopShown(c,displayId);}
+                finally{appDone();}
+            });
+        });
+    }
+    static void returnedHome(Context c){
+        if(!HomeActivity.extensions(c))return;
+        enqueue(()->Bridge.get(c).call(s->{
+            org.json.JSONArray rows=new org.json.JSONObject(s.taskSnapshot(0)).getJSONArray("tasks");
+            for(int i=0;i<rows.length();i++){
+                org.json.JSONObject row=rows.getJSONObject(i);
+                if(!row.optBoolean("visible"))continue;
+                String result=s.taskOperation(0,row.getInt("id"),"minimize",0,0,0,0);
+                if(result==null||result.startsWith("ERROR:"))throw new IllegalStateException(result);
+            }
+            return "OK";
+        },(result,error)->{
+            try{if(error==null)Workspace.desktopShown(c,0);else problem(c,error);}
+            finally{appDone();}
+        }));
     }
     static void app(Context c,String component,int displayId) {
         app(c,component,displayId,false);
     }
     static void app(Context c,String component,int displayId,boolean newWindow){
-        app(c,component,displayId,newWindow,false);
+        enqueue(()->appNow(c,component,displayId,newWindow,null));
     }
+    /** Explicit long-press choice; the ordinary overload chooses automatically. */
     static void app(Context c,String component,int displayId,boolean newWindow,boolean floating){
-        if(Workspace.isBusy())return;
+        enqueue(()->appNow(c,component,displayId,newWindow,floating));
+    }
+    private static void appNow(Context c,String component,int displayId,boolean newWindow,Boolean explicitFloating){
+        ShellPanels.dismiss(displayId);
         try{
+            if(basicHome(c,displayId)){normalApp(c,component);appDone();return;}
+            Displays.require(c,displayId);
             AppLaunchProfile profile=Profiles.get(c,component);AppLaunchProfile.Plan planned=Profiles.plan(c,component,displayId);
+            boolean compact=Workspace.compact(c,displayId);
+            boolean floating=explicitFloating!=null?explicitFloating:Workspace.secondaryLaunch(component,profile.resolvedComponent,newWindow);
             android.graphics.Rect area=WorkArea.get(c,displayId).content;
-            final AppLaunchProfile.Plan plan=Workspace.compact(c,displayId)&&!floating?new AppLaunchProfile.Plan(AppLaunchProfile.Mode.MAXIMIZED,area.left,area.top,area.right,area.bottom):Workspace.compact(c,displayId)&&floating?new AppLaunchProfile.Plan(AppLaunchProfile.Mode.WINDOWED,area.left+area.width()/6,area.top+area.height()/6,area.right-area.width()/6,area.bottom-area.height()/6):planned;
+            final AppLaunchProfile.Plan plan=compact&&!floating?new AppLaunchProfile.Plan(AppLaunchProfile.Mode.FULLSCREEN,0,0,WorkArea.get(c,displayId).physical.width(),WorkArea.get(c,displayId).physical.height()):compact?new AppLaunchProfile.Plan(AppLaunchProfile.Mode.WINDOWED,area.left+area.width()/6,area.top+area.height()/6,area.right-area.width()/6,area.bottom-area.height()/6):planned;
             if(!Bridge.get(c).ready()){
                 if(newWindow||plan.windowingMode!=1)throw new IllegalStateException(c.getString(R.string.ui_launch_profiles_require_a_shizuku_connection));
-                launch(c,component,displayId,1,true);return;
+                launch(c,component,displayId,1,true);appDone();return;
             }
             Profiles.begin(component);
             Bridge.get(c).call(s->{WorkArea.get(c,displayId).sync(s,displayId);return s.launchProfile(component,profile.resolvedComponent,displayId,plan.windowingMode,plan.left,plan.top,plan.right,plan.bottom,newWindow);},(result,error)->{
                 Profiles.end(component);
-                if(error!=null){problem(c,error);return;}
-                try{org.json.JSONObject data=new org.json.JSONObject(result);Profiles.launched(c,component,data,displayId);Workspace.launched(c,data,displayId,floating);remember(c,component);
+                if(error!=null){problem(c,error);appDone();return;}
+                try{org.json.JSONObject data=new org.json.JSONObject(result);Profiles.launched(c,component,data,displayId);remember(c,component);
                     if(newWindow&&!data.optBoolean("created"))Ui.message(c,c.getString(R.string.ui_this_app_reused_its_existing_window));
-                }catch(Exception e){problem(c,e.getMessage());}
+                    Workspace.launched(c,data,displayId,floating,Launches::appDone);
+                }catch(Exception e){problem(c,e.getMessage());appDone();}
             });
-        }catch(RuntimeException e){Profiles.end(component);problem(c,e.getMessage());}
+        }catch(RuntimeException e){Profiles.end(component);problem(c,e.getMessage());appDone();}
     }
     private static void launch(Context c,String component,int displayId,int mode,boolean remember) {
         try {

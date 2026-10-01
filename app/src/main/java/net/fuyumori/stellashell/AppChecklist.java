@@ -36,7 +36,7 @@ final class AppChecklist {
                     row.setTag(new Object[]{check,icon,label,detail});
                 }else{row=(LinearLayout)recycled;Object[] views=(Object[])row.getTag();check=(CheckBox)views[0];icon=(ImageView)views[1];label=(TextView)views[2];detail=(TextView)views[3];}
                 Launches.App app=filtered.get(position);check.setOnCheckedChangeListener(null);check.setChecked(selected.contains(app.component));check.setContentDescription(app.label);
-                icon.setImageDrawable(app.icon);label.setText(app.label);
+                icon.setImageDrawable(AppIcons.forApp(context,app.component,app.icon));label.setText(app.label);
                 String current=AppOrganization.group(context,app.component),subtitle=app.component;
                 if(!current.isEmpty())subtitle+=" · "+current;
                 if(AppOrganization.hidden(context,app.component))subtitle+=" · "+context.getString(R.string.apps_hidden_badge);

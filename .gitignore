@@ -16,3 +16,10 @@ local.properties
 /tools/windows/*.exe
 /tools/windows/*.dll
 /tools/windows/scrcpy-server
+
+# Local-only RepoRitual memory, receipts, SQLite stores and agent entry
+/.reporitual/
+/AGENTS.md
+
+# Local conversation attachments (may contain personal screen content)
+/.agenttalk/

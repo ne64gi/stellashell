@@ -10,17 +10,36 @@ import android.view.View;
 
 /** Device checks against real Android drawing and inverse input transforms; no desktop changes. */
 public final class WidgetRenderInstrumentation extends Instrumentation {
-    private boolean organizationOnly;
-    @Override public void onCreate(Bundle arguments){super.onCreate(arguments);organizationOnly=arguments!=null&&"true".equals(arguments.getString("organization_only"));start();}
+    private int widgetEditDisplay=-1;
+    private boolean organizationOnly,polishPauseShell,homeChecks;private int polishDisplay=-1;
+    @Override public void onCreate(Bundle arguments){super.onCreate(arguments);if(arguments!=null&&arguments.containsKey("widget_edit_display"))widgetEditDisplay=Integer.parseInt(arguments.getString("widget_edit_display"));pinChecks=arguments!=null&&"true".equals(arguments.getString("pin_checks"));if(arguments!=null&&arguments.containsKey("icon_ui_display"))iconUiDisplay=Integer.parseInt(arguments.getString("icon_ui_display"));iconChecks=arguments!=null&&"true".equals(arguments.getString("icon_checks"));homeChecks=arguments!=null&&"true".equals(arguments.getString("home_checks"));polishPauseShell=arguments!=null&&"true".equals(arguments.getString("polish_pause_shell"));if(arguments!=null&&arguments.containsKey("polish_display"))polishDisplay=Integer.parseInt(arguments.getString("polish_display"));organizationOnly=arguments!=null&&"true".equals(arguments.getString("organization_only"));start();}
+    private boolean pinChecks;private boolean iconChecks;private int iconUiDisplay=-1;
     @Override public void onStart(){
         Bundle result=new Bundle();
         try{
+            if(widgetEditDisplay>=0){new WidgetEditorChecks(this).run(widgetEditDisplay);result.putString("stream","Widget editor: hold/scroll/tap cancellation + body drag + cancel + sidebar adjustment/collapse/side + unchanged content bounds + persistence + Back passed\n");finish(-1,result);return;}
+            if(pinChecks){TaskPinChecks.run();result.putString("stream","Window pin ownership + minimize/restore + multiple pins + fullscreen + stale task identity + cleanup/retry checks passed\n");finish(-1,result);return;}
+            if(iconChecks){IconThemeChecks.run(this);if(iconUiDisplay>=0)IconThemeChecks.ui(this,iconUiDisplay);result.putString("stream","Icon pack discovery + asset mappings + manual index + override precedence + fallback + bounded alpha-preserving image import checks passed\n");finish(-1,result);return;}
+            if(homeChecks){new HomeLauncherChecks(this).run();result.putString("stream","HOME candidate + disconnected basic home + app drawer + extension stop checks passed (default unchanged)\n");finish(-1,result);return;}
+            if(polishDisplay>=0){new DesktopPolishChecks(this,polishDisplay,polishPauseShell).run();result.putString("stream","Desktop polish fixture checks passed on display "+polishDisplay+"\n");finish(-1,result);return;}
             Throwable[] failure={null};
-            runOnMainSync(()->{try{workAreas();if(organizationOnly){organization();widgetRouting();appearance();return;}check(400,300,200,100);check(100,120,200,100);check(200,100,200,100);iconPreview();locales();organization();widgetRouting();appearance();}catch(Throwable error){failure[0]=error;}});
+            runOnMainSync(()->{try{workAreas();transparentIcons();if(organizationOnly){organization();widgetRouting();appearance();return;}check(400,300,200,100);check(100,120,200,100);check(200,100,200,100);iconPreview();locales();organization();widgetRouting();appearance();}catch(Throwable error){failure[0]=error;}});
             if(failure[0]!=null)throw failure[0];
             if(!organizationOnly)wallpaperDecode();
-            result.putString("stream",organizationOnly?"App organization + RemoteViews routing + appearance passed\n":"WidgetViewport: 3 rendering/input scenarios + bounded wallpaper decoding + locale + app organization checks passed\n");finish(-1,result);
+            result.putString("stream",organizationOnly?"App organization + RemoteViews routing + appearance passed\n":"Adaptive icon transparency + WidgetViewport: 3 rendering/input scenarios + bounded wallpaper decoding + locale + app organization checks passed\n");finish(-1,result);
         }catch(Throwable error){result.putString("stream","FAILED: "+error+"\n");finish(0,result);}
+    }
+    private void transparentIcons(){
+        android.graphics.drawable.Drawable foreground=new android.graphics.drawable.InsetDrawable(new android.graphics.drawable.ColorDrawable(Color.RED),.4f);
+        android.graphics.drawable.Drawable source=new android.graphics.drawable.AdaptiveIconDrawable(new android.graphics.drawable.ColorDrawable(Color.BLUE),foreground);
+        android.graphics.drawable.Drawable icon=AppIcons.display(source);Bitmap bitmap=Bitmap.createBitmap(100,100,Bitmap.Config.ARGB_8888);
+        icon.setBounds(0,0,100,100);icon.draw(new Canvas(bitmap));
+        require(Color.alpha(bitmap.getPixel(5,5))==0,"adaptive background still opaque");
+        require(bitmap.getPixel(50,50)==Color.RED,"adaptive foreground lost");
+        android.graphics.drawable.Drawable second=AppIcons.display(source);second.setBounds(0,0,30,30);second.draw(new Canvas(bitmap));
+        bitmap.eraseColor(Color.TRANSPARENT);icon.draw(new Canvas(bitmap));require(bitmap.getPixel(50,50)==Color.RED,"icon instances share bounds");
+        bitmap.eraseColor(Color.TRANSPARENT);android.graphics.drawable.Drawable legacy=AppIcons.display(new android.graphics.drawable.ColorDrawable(Color.WHITE));legacy.setBounds(0,0,100,100);legacy.draw(new Canvas(bitmap));
+        require(bitmap.getPixel(5,5)==Color.WHITE,"legacy icon pixels were destructively removed");bitmap.recycle();
     }
     private void workAreas(){
         android.graphics.Rect display=new android.graphics.Rect(0,0,1920,1080);

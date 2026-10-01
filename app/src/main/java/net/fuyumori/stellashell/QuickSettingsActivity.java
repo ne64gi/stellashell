@@ -50,7 +50,7 @@ public final class QuickSettingsActivity extends Activity {
             public void onStopTrackingTouch(SeekBar v){dragging=false;update();}
             public void onProgressChanged(SeekBar v,int value,boolean user){if(user)try{audio.setStreamVolume(AudioManager.STREAM_MUSIC,value,0);label(audio.getStreamVolume(AudioManager.STREAM_MUSIC));}catch(SecurityException e){Ui.message(QuickSettingsActivity.this,e.getMessage());}}
         });
-        panel.addView(Ui.text(this,getString(R.string.quick_volume_note),12,Ui.MUTED));setContentView(root);update();
+        panel.addView(Ui.text(this,getString(R.string.quick_volume_note),12,Ui.MUTED));setContentView(root);ShellPanels.activate(displayId,this,this::finish);ShellPanels.track(displayId,this,panel);update();
     }
     private void label(int value){volumeLabel.setText(getString(R.string.quick_media_volume)+"  "+Math.round(100f*value/Math.max(1,volume.getMax()))+"%");}
     private void update(){
@@ -66,8 +66,8 @@ public final class QuickSettingsActivity extends Activity {
         }catch(RuntimeException e){network.setText(R.string.quick_wifi_unknown);}
     }
     private int dp(int n){return Ui.dp(this,n);}
-    @Override protected void onResume(){super.onResume();handler.removeCallbacks(refresh);handler.post(refresh);}
+    @Override protected void onResume(){super.onResume();if(!isFinishing())ShellPanels.activate(displayId,this,this::finish);handler.removeCallbacks(refresh);handler.post(refresh);}
     @Override protected void onPause(){handler.removeCallbacks(refresh);super.onPause();}
-    @Override protected void onDestroy(){handler.removeCallbacks(refresh);if(visible.get()==this)visible.clear();super.onDestroy();}
+    @Override protected void onDestroy(){ShellPanels.release(displayId,this);handler.removeCallbacks(refresh);if(visible.get()==this)visible.clear();super.onDestroy();}
     @Override public boolean dispatchKeyEvent(KeyEvent e){if(e.getKeyCode()==KeyEvent.KEYCODE_ESCAPE&&e.getAction()==KeyEvent.ACTION_UP){finish();return true;}return super.dispatchKeyEvent(e);}
 }
