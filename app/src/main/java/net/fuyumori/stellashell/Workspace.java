@@ -29,9 +29,9 @@ final class Workspace {
             if(task.mode!=(task.id==primary?1:5)){role(c,task.id,display,task.id==primary);break;}
         }
     }
-    static boolean enabled(Context c){return Displays.primary(c)&&Launches.prefs(c).getBoolean("compact_workspace",false);}
+    static boolean enabled(Context c){return Displays.primary(c)&&(WorkspaceProfile.standard(c,0)||Launches.prefs(c).getBoolean("compact_workspace",false));}
     static int target(Context c){return enabled(c)?Launches.prefs(c).getInt("workspace_display",0):0;}
-    static boolean compact(Context c,int display){return Displays.primary(c)&&display==0&&WorkArea.get(c,display).compact;}
+    static boolean compact(Context c,int display){return !WorkspaceProfile.standard(c,display)&&Displays.primary(c)&&display==0&&WorkArea.get(c,display).compact;}
     static void reset(Context c){owned.clear();phoneBounds.clear();roleFailures.clear();primary=-1;desktopShown=true;Launches.prefs(c).edit().remove("workspace_display").apply();}
     static void desktopShown(Context c,int display){if(compact(c,display))desktopShown=true;}
     static boolean needsPrimary(){return desktopShown||primary<0;}
@@ -48,7 +48,7 @@ final class Workspace {
         launched(c,data,display,floating,()->{});
     }
     static void launched(Context c,JSONObject data,int display,boolean floating,Runnable done)throws JSONException{
-        JSONObject task=data.getJSONObject("task");int id=task.getInt("id");if(enabled(c)||compact(c,display))owned.put(id,task.getString("component"));
+        JSONObject task=data.getJSONObject("task");int id=task.getInt("id");if(enabled(c)||compact(c,display)||WorkspaceProfile.standard(c,display))owned.put(id,task.getString("component"));
         // Reused tasks also need their bounds changed: launchProfile may only focus them.
         if(compact(c,display))role(c,id,display,!floating,done);else done.run();
     }
@@ -100,6 +100,7 @@ final class Workspace {
         if(busy||!enabled(c))return;
         int source=target(c);if(source==destination){done.run();return;}
         if(!Displays.allIds(c).contains(destination))return;
+        if(owned.isEmpty()){Launches.prefs(c).edit().putInt("workspace_display",destination).apply();done.run();return;}
         busy=true;Map<Integer,String> identities=new LinkedHashMap<>(owned);
         Bridge.get(c).call(s->{
             List<Integer> moved=new ArrayList<>();Map<Integer,JSONObject> original=new HashMap<>();
@@ -145,7 +146,7 @@ final class Workspace {
                 JSONArray show=new JSONArray(result);
                 for(int i=0;i<show.length();i++)check(s.taskOperation(destination,show.getInt(i),"focus",0,0,0,0));
                 return "OK";
-            },(focusResult,focusError)->{if(focusError!=null)Launches.problem(c,focusError);else if(destination==0&&primary>=0)role(c,primary,0,true);});
+            },(focusResult,focusError)->{if(focusError!=null)Launches.problem(c,focusError);else if(destination==0&&primary>=0&&!WorkspaceProfile.standard(c,0))role(c,primary,0,true);});
         });
     }
 }

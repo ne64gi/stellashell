@@ -59,7 +59,7 @@ public final class HubActivity extends Activity implements DisplayManager.Displa
         LinearLayout.LayoutParams footerBox=new LinearLayout.LayoutParams(-1,dp(56));footerBox.topMargin=dp(10);panel.addView(footer,footerBox);
         setContentView(backdrop);ShellPanels.activate(displayId,this,this::finish);ShellPanels.track(displayId,this,panel);getWindow().setLayout(-1,-1);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN|WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        getWindow().getInsetsController().hide(WindowInsets.Type.systemBars());
+        if(displayId>0)getWindow().getInsetsController().hide(WindowInsets.Type.systemBars());
         getWindow().getInsetsController().setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
         IntentFilter filter=new IntentFilter(Intent.ACTION_SCREEN_OFF);filter.addAction(Intent.ACTION_USER_PRESENT);filter.addAction(Intent.ACTION_SCREEN_ON);
         if(Build.VERSION.SDK_INT>=33)registerReceiver(lockChanges,filter,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(lockChanges,filter);

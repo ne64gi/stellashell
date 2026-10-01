@@ -35,7 +35,7 @@ final class DesktopWidgets {
     DesktopWidgets(Activity a,FrameLayout c){this(a,c,false);}
     DesktopWidgets(Activity a,FrameLayout c,boolean panel){this(a,c,panel,false);}
     DesktopWidgets(Activity a,FrameLayout c,boolean panel,boolean home){
-        this(a,c,panel?"panel_widgets":home?"home_widgets":"desktop_widgets",panel?HOST+1:home?HOST+2:HOST);
+        this(a,c,panel?(WorkspaceProfile.phone(a)?"phone_panel_widgets":"panel_widgets"):home?"home_widgets":"desktop_widgets",panel?(WorkspaceProfile.phone(a)?HOST+3:HOST+1):home?HOST+2:HOST);
     }
     DesktopWidgets(Activity a,FrameLayout c,String preferenceName,int hostId){
         activity=a;canvas=c;manager=AppWidgetManager.getInstance(a);host=new AppWidgetHost(a,hostId);

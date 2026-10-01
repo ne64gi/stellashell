@@ -437,4 +437,17 @@
     <string name="widget_edit_number">0〜10000の数値を入力してください</string>
     <string name="hub_unread_count">未読の通知 %1$d 件</string>
     <string name="opening_on_phone">本体画面で開きます</string>
+    <string name="phone_workspace">スマホのワークスペース</string>
+    <string name="phone_sidebar">スマホでサイドバーを使う</string>
+    <string name="phone_window_management">スマホのアプリもStellaでウィンドウ管理する</string>
+    <string name="phone_workspace_note">ウィンドウ管理がOFFなら通常のAndroidとして起動します。必要なアプリだけ長押しで小窓にできます。スマホのピン留め・ショートカット・壁紙はデスクトップと別です。サイドバーには重ねて表示の許可、小窓にはShizukuが必要です。</string>
+    <string name="wallpaper_position">壁紙の表示位置</string>
+    <string name="wallpaper_horizontal">横方向の焦点位置</string>
+    <string name="wallpaper_vertical">縦方向の焦点位置</string>
+    <string name="wallpaper_drag">プレビューをドラッグして表示位置を調整できます。画面を埋める表示では、回転しても選んだ焦点位置を基準に切り抜きます。</string>
+    <string name="phone_pin">スマホのサイドバーにピン留め</string>
+    <string name="phone_unpin">スマホのサイドバーから外す</string>
+    <string name="phone_floating">小窓で開く</string>
+    <string name="phone_sidebar_over_apps">他のアプリ上でもサイドバーを表示</string>
+    <string name="sidebar_height">サイドバーの呼び出し位置（上 → 下）</string>
 </resources>

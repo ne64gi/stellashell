@@ -31,25 +31,25 @@ final class Launches {
         prefs(c).edit().putString("recent",String.join("\n",Policy.recent(recents(c),component))).apply();
     }
     static List<String> pins(Context c) {
-        String value=prefs(c).getString("pinned","");
+        String value=prefs(c).getString(WorkspaceProfile.key(c,"pinned"),"");
         return value.isEmpty()?new ArrayList<>():new ArrayList<>(Arrays.asList(value.split("\\n")));
     }
     static void togglePin(Context c,String component) {
         Policy.component(component);List<String> pins=pins(c);
         if(!pins.remove(component)) {
-            if(pins.size()>=6){Ui.message(c,c.getString(R.string.ui_you_can_pin_up_to_6_apps));return;}
+            if(!WorkspaceProfile.phone(c)&&pins.size()>=6){Ui.message(c,c.getString(R.string.ui_you_can_pin_up_to_6_apps));return;}
             pins.add(component);
         }
-        prefs(c).edit().putString("pinned",String.join("\n",pins)).apply();
+        prefs(c).edit().putString(WorkspaceProfile.key(c,"pinned"),String.join("\n",pins)).apply();
     }
     static List<String> desktop(Context c) {
-        String value=prefs(c).getString("desktop_shortcuts","");
+        String value=prefs(c).getString(WorkspaceProfile.key(c,"desktop_shortcuts"),"");
         return value.isEmpty()?new ArrayList<>():new ArrayList<>(Arrays.asList(value.split("\\n")));
     }
     static void toggleDesktop(Context c,String component) {
         Policy.component(component);List<String> items=desktop(c);
         if(!items.remove(component))items.add(component);
-        prefs(c).edit().putString("desktop_shortcuts",String.join("\n",items)).apply();
+        prefs(c).edit().putString(WorkspaceProfile.key(c,"desktop_shortcuts"),String.join("\n",items)).apply();
     }
     static List<String> shortcuts(Context c) {
         List<String> out=pins(c);
@@ -57,7 +57,7 @@ final class Launches {
         return out;
     }
     static boolean basicHome(Context c,int display){
-        return display==0&&c instanceof HomeActivity&&!HomeActivity.extensions(c);
+        return WorkspaceProfile.standard(c,display)||display==0&&c instanceof HomeActivity&&!HomeActivity.extensions(c);
     }
     static void normalApp(Context c,String component){
         Policy.component(component);
@@ -68,7 +68,7 @@ final class Launches {
         remember(c,component);
     }
     static void settings(Context c,int displayId) {
-        if(c instanceof HomeActivity){c.startActivity(new Intent(c,SetupActivity.class));return;}
+        if(c instanceof HomeActivity||WorkspaceProfile.standard(c,displayId)){c.startActivity(new Intent(c,SetupActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle());return;}
         launch(c,new ComponentName(c,SetupActivity.class).flattenToString(),displayId,1,false);
     }
     static void problem(Context c,String message) {
@@ -78,8 +78,8 @@ final class Launches {
     }
     static void desktopAction(Context c,int displayId,int action){
         try{
-            Displays.require(c,displayId);
-            Intent intent=new Intent(c,DesktopActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("desktop_action",action);
+            if(!(c instanceof HomeActivity&&displayId==0))Displays.require(c,displayId);
+            Intent intent=new Intent(c,WorkspaceProfile.standard(c,displayId)?HomeActivity.class:DesktopActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("desktop_action",action);
             c.startActivity(intent,ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle());
         }catch(RuntimeException e){problem(c,e.getMessage());}
     }
@@ -108,6 +108,9 @@ final class Launches {
         });
     }
     static void home(Context c,int displayId) {
+        if(WorkspaceProfile.standard(c,displayId)){
+            ShellPanels.dismiss(0);c.startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),ActivityOptions.makeBasic().setLaunchDisplayId(0).toBundle());return;
+        }
         enqueue(()->{
             ShellPanels.dismiss(displayId);
             String component=new ComponentName(c,displayId==0&&HomeRegistration.selected(c)?HomeActivity.class:DesktopActivity.class).flattenToString();
@@ -159,13 +162,13 @@ final class Launches {
     private static void appNow(Context c,String component,int displayId,boolean newWindow,Boolean explicitFloating){
         ShellPanels.dismiss(displayId);
         try{
-            if(basicHome(c,displayId)){normalApp(c,component);appDone();return;}
+            if(basicHome(c,displayId)&&!Boolean.TRUE.equals(explicitFloating)){normalApp(c,component);appDone();return;}
             Displays.require(c,displayId);
             AppLaunchProfile profile=Profiles.get(c,component);AppLaunchProfile.Plan planned=Profiles.plan(c,component,displayId);
             boolean compact=Workspace.compact(c,displayId);
             boolean floating=explicitFloating!=null?explicitFloating:Workspace.secondaryLaunch(component,profile.resolvedComponent,newWindow);
             android.graphics.Rect area=WorkArea.get(c,displayId).content;
-            final AppLaunchProfile.Plan plan=compact&&!floating?new AppLaunchProfile.Plan(AppLaunchProfile.Mode.FULLSCREEN,0,0,WorkArea.get(c,displayId).physical.width(),WorkArea.get(c,displayId).physical.height()):compact?new AppLaunchProfile.Plan(AppLaunchProfile.Mode.WINDOWED,area.left+area.width()/6,area.top+area.height()/6,area.right-area.width()/6,area.bottom-area.height()/6):planned;
+            final AppLaunchProfile.Plan plan=WorkspaceProfile.standard(c,displayId)&&Boolean.TRUE.equals(explicitFloating)?new AppLaunchProfile.Plan(AppLaunchProfile.Mode.WINDOWED,area.left+area.width()/6,area.top+area.height()/6,area.right-area.width()/6,area.bottom-area.height()/6):compact&&!floating?new AppLaunchProfile.Plan(AppLaunchProfile.Mode.FULLSCREEN,0,0,WorkArea.get(c,displayId).physical.width(),WorkArea.get(c,displayId).physical.height()):compact?new AppLaunchProfile.Plan(AppLaunchProfile.Mode.WINDOWED,area.left+area.width()/6,area.top+area.height()/6,area.right-area.width()/6,area.bottom-area.height()/6):planned;
             if(!Bridge.get(c).ready()){
                 if(newWindow||plan.windowingMode!=1)throw new IllegalStateException(c.getString(R.string.ui_launch_profiles_require_a_shizuku_connection));
                 launch(c,component,displayId,1,true);appDone();return;

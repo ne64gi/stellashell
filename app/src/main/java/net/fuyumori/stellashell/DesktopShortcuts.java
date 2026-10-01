@@ -15,13 +15,13 @@ final class DesktopShortcuts {
     private final Map<String,View> icons=new LinkedHashMap<>();
     private View moving;
     DesktopShortcuts(Activity activity,FrameLayout canvas,int display){
-        this.activity=activity;this.canvas=canvas;this.display=display;positions=activity.getSharedPreferences("shortcut_positions",0);
+        this.activity=activity;this.canvas=canvas;this.display=display;positions=activity.getSharedPreferences(WorkspaceProfile.phone(activity)?"phone_shortcut_positions":"shortcut_positions",0);
         canvas.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{if(r-l!=or-ol||b-t!=ob-ot){cancelMove();layoutAll();}});
         refresh();
     }
     private int dp(int n){return Ui.dp(activity,n);}
     private int units(int n){return Math.round(n/activity.getResources().getDisplayMetrics().density);}
-    private boolean snap(){return Launches.prefs(activity).getBoolean("shortcut_snap",false);}
+    private boolean snap(){return Launches.prefs(activity).getBoolean(WorkspaceProfile.key(activity,"shortcut_snap"),false);}
     void cancelMove(){if(moving!=null){moving.setSelected(false);moving.setAlpha(1f);moving=null;layoutAll();}}
     void refresh(){
         cancelMove();canvas.removeAllViews();icons.clear();
