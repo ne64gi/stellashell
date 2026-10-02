@@ -47,7 +47,7 @@ final class Launches {
         return value.isEmpty()?new ArrayList<>():new ArrayList<>(Arrays.asList(value.split("\\n")));
     }
     static void toggleDesktop(Context c,String component) {
-        Policy.component(component);List<String> items=desktop(c);
+        GroupEntries.validate(c,component);List<String> items=desktop(c);
         if(!items.remove(component))items.add(component);
         prefs(c).edit().putString(WorkspaceProfile.key(c,"desktop_shortcuts"),String.join("\n",items)).apply();
     }
@@ -174,8 +174,10 @@ final class Launches {
                 launch(c,component,displayId,1,true);appDone();return;
             }
             Profiles.begin(component);
-            Bridge.get(c).call(s->{WorkArea.get(c,displayId).sync(s,displayId);return s.launchProfile(component,profile.resolvedComponent,displayId,plan.windowingMode,plan.left,plan.top,plan.right,plan.bottom,newWindow);},(result,error)->{
+            long session=Workspace.session();
+            Bridge.get(c).call(s->{if(!Workspace.currentSession(session))throw new IllegalStateException("Workspace session ended");WorkArea.get(c,displayId).sync(s,displayId);return s.launchProfile(component,profile.resolvedComponent,displayId,plan.windowingMode,plan.left,plan.top,plan.right,plan.bottom,newWindow);},(result,error)->{
                 Profiles.end(component);
+                if(!Workspace.currentSession(session)){appDone();return;}
                 if(error!=null){problem(c,error);appDone();return;}
                 try{org.json.JSONObject data=new org.json.JSONObject(result);Profiles.launched(c,component,data,displayId);remember(c,component);
                     if(newWindow&&!data.optBoolean("created"))Ui.message(c,c.getString(R.string.ui_this_app_reused_its_existing_window));

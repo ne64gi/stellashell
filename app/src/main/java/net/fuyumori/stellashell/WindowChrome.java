@@ -89,12 +89,13 @@ final class WindowChrome {
             TextView name=Ui.text(context,label,13,Ui.TEXT);name.setGravity(Gravity.CENTER_VERTICAL);name.setSingleLine();name.setEllipsize(android.text.TextUtils.TruncateAt.END);name.setPadding(Ui.dp(context,12),0,0,0);
             title.addView(name,new LinearLayout.LayoutParams(0,-1,1));name.setContentDescription(context.getString(R.string.ui_bring_to_front_and_move,label));gesture(name,0);
             if(session.canPin())button(title,context.getString(R.string.window_pin),"pin");
-            button(title,context.getString(R.string.ui_snap_left),"left");button(title,context.getString(R.string.ui_snap_right),"right");button(title,context.getString(R.string.ui_minimize),"minimize");button(title,context.getString(R.string.ui_maximize_restore),"maximize");button(title,context.getString(R.string.ui_close),"close");return title;
+            button(title,context.getString(R.string.ui_snap_left),"left");button(title,context.getString(R.string.ui_snap_right),"right");button(title,context.getString(R.string.ui_minimize),"minimize");button(title,context.getString(R.string.ui_maximize_restore),"maximize");button(title,context.getString(R.string.task_close_window),"close");return title;
         }
         private void button(LinearLayout row,String description,String action){
             CaptionButton b=new CaptionButton(context,action);b.setContentDescription(label+" "+description);b.setTooltipText(description);
             b.setOnClickListener(v->{ShellPanels.dismiss(context.getDisplay().getDisplayId());String actual=action.equals("pin")?(task.alwaysOnTop?"unpin":"pin"):action.equals("maximize")&&isMaximized()?"restore":action;
-                if(active)session.action(task,actual);else session.focusForDrag(task,ok->{if(ok)session.action(task,actual);});});
+                // Closing a background window must not depend on successfully focusing it first.
+                if(active||"close".equals(actual))session.action(task,actual);else session.focusForDrag(task,ok->{if(ok)session.action(task,actual);});});
             row.addView(b,new LinearLayout.LayoutParams(Ui.dp(context,36),-1));
         }
         private void style(View v,int edge){

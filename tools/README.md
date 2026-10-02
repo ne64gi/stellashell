@@ -1,6 +1,7 @@
 # Optional desktop/session tools
 
 - [Windows session launcher](windows/README.md): scrcpy virtual display, selectable device profiles.
+- [Linux / macOS launcher](unix/README.md): interactive wireless pairing/connection, no fixed port required.
 - Termux self-ADB helpers below are separate, optional setup tools.
 
 # Optional Termux self-ADB helpers

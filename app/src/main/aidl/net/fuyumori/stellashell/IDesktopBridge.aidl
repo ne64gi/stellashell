@@ -19,4 +19,7 @@ interface IDesktopBridge {
     String displaySessions() = 15;
     String closeDisplaySession(int displayId, String identity) = 16;
     String syncWindowPins(boolean enabled, IBinder owner) = 17;
+    String phoneTaskSnapshot() = 18;
+    String focusPhoneTask(int taskId, String component) = 19;
+    String phoneTaskOperation(int taskId, String component, String action, int left, int top, int right, int bottom) = 20;
 }

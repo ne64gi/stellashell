@@ -50,7 +50,21 @@ final class PhoneProfileChecks {
             Workspace.transfer(phone,0,()->transferred[0]=false);
             check(!transferred[0]&&Workspace.target(phone)==0,"Phone return failed");
             prefs.edit().putBoolean("phone_window_management",true).commit();
-            check(!WorkspaceProfile.standard(phone,0),"explicit managed mode ignored");
+            check(WorkspaceProfile.standard(phone,0),"legacy management flag changed normal fullscreen launch");
+            AppOrganization.addGroup(phone,"Tools");String folder=GroupEntries.reference(phone,"Tools");
+            StartPins.toggle(phone,folder);Launches.toggleDesktop(desktop,folder);
+            check(StartPins.get(phone).contains(folder)&&!StartPins.get(desktop).contains(folder),"group Start pin leaked between profiles");
+            check(Launches.desktop(desktop).contains(folder)&&!Launches.desktop(phone).contains(folder),"group shortcut leaked between profiles");
+            desktop.getSharedPreferences("shortcut_positions",0).edit().putString(folder,"{\"x\":64,\"y\":128}").commit();
+            AppOrganization.renameGroup(phone,"Tools","Renamed");
+            check("Renamed".equals(GroupEntries.name(desktop,folder)),"rename broke stable group reference");
+            check(GroupEntries.reference(phone,"Renamed").equals(folder),"rename changed folder identity");
+            check(StartPins.get(phone).contains(folder)&&Launches.desktop(desktop).contains(folder),"rename lost group placement");
+            check(desktop.getSharedPreferences("shortcut_positions",0).getString(folder,"").contains("128"),"rename lost group position");
+            AppOrganization.renameGroup(phone,"Renamed","");
+            check(GroupEntries.name(phone,folder)==null&&!StartPins.get(phone).contains(folder)&&!Launches.desktop(desktop).contains(folder),"deleted group retained links");
+            check(!desktop.getSharedPreferences("shortcut_positions",0).contains(folder),"deleted group retained position");
+            check(StartPins.get(phone).contains("a.b/a.b.Two"),"group deletion removed unrelated app pin");
         } finally {for(String name:stores)base.deleteSharedPreferences(prefix+name);}
     }
 }

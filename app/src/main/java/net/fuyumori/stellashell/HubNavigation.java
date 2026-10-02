@@ -6,10 +6,10 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.*;
 
-/** Shared Desktop/Compact footer. Badge remains hidden until an unread source exists. */
+/** Shared Desktop/Compact footer. The dot means notification presence, not unread state. */
 final class HubNavigation extends LinearLayout {
     private final Button widgets,notifications;
-    private final TextView badge;
+    private final View notificationDot;
     HubNavigation(Context context,Runnable showWidgets,Runnable showNotifications) {
         super(context);setGravity(Gravity.CENTER);setOrientation(HORIZONTAL);
         widgets=item(R.string.hub_widgets,R.drawable.ic_hub_widgets,showWidgets);
@@ -17,16 +17,14 @@ final class HubNavigation extends LinearLayout {
         addView(widgets,new LayoutParams(0,Ui.dp(context,56),1));
         FrameLayout notificationSlot=new FrameLayout(context);
         notificationSlot.addView(notifications,new FrameLayout.LayoutParams(-1,-1));
-        badge=Ui.text(context,"",10,Ui.TEXT);badge.setGravity(Gravity.CENTER);
-        badge.setPadding(Ui.dp(context,4),0,Ui.dp(context,4),0);
-        badge.setMinWidth(Ui.dp(context,18));
-        badge.setBackground(Ui.rounded(context,Ui.PANEL,9));
-        badge.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        FrameLayout.LayoutParams count=new FrameLayout.LayoutParams(-2,Ui.dp(context,18),Gravity.END|Gravity.TOP);
-        count.setMarginEnd(Ui.dp(context,8));count.topMargin=Ui.dp(context,2);
-        notificationSlot.addView(badge,count);
+        notificationDot=new View(context);
+        notificationDot.setBackground(Ui.rounded(context,Ui.ACCENT,4));
+        notificationDot.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        FrameLayout.LayoutParams dot=new FrameLayout.LayoutParams(Ui.dp(context,8),Ui.dp(context,8),Gravity.END|Gravity.TOP);
+        dot.setMarginEnd(Ui.dp(context,12));dot.topMargin=Ui.dp(context,6);
+        notificationSlot.addView(notificationDot,dot);
         LayoutParams slot=new LayoutParams(0,Ui.dp(context,56),1);slot.setMarginStart(Ui.dp(context,8));addView(notificationSlot,slot);
-        setUnreadCount(0);select(false);
+        setNotificationPresence(false,false,null);select(false);
     }
     private Button item(int label,int icon,Runnable action) {
         Context c=getContext();Button button=Ui.toolbarButton(c,c.getString(label),action);
@@ -43,10 +41,10 @@ final class HubNavigation extends LinearLayout {
         button.setSelected(selected);button.setTextColor(selected?Ui.ACCENT:Ui.MUTED);
         button.getCompoundDrawables()[1].setTint(selected?Ui.ACCENT:Ui.MUTED);
     }
-    void setUnreadCount(int count) {
-        count=Math.max(0,count);badge.setVisibility(count==0?GONE:VISIBLE);
-        badge.setText(count>99?"99+":Integer.toString(count));
-        notifications.setContentDescription(count==0?getContext().getString(R.string.hub_notifications):
-            getContext().getString(R.string.hub_unread_count,count));
+    void setNotificationPresence(boolean locked,boolean available,java.util.List<?> snapshot) {
+        boolean present=!locked&&available&&snapshot!=null&&!snapshot.isEmpty();
+        notificationDot.setVisibility(present?VISIBLE:GONE);
+        notifications.setContentDescription(getContext().getString(present?
+            R.string.hub_notifications_present:R.string.hub_notifications));
     }
 }

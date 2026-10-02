@@ -10,7 +10,7 @@ final class WorkspaceProfile {
         try{Display d=c instanceof android.app.Service?null:c.getDisplay();if(d!=null)return d.getDisplayId()==0;}catch(UnsupportedOperationException ignored){}
         return Launches.prefs(c).getInt("active_display",Launches.prefs(c).getInt("workspace_display",0))==0;
     }
-    static boolean standard(Context c,int display){return display==0&&!Launches.prefs(c).getBoolean("phone_window_management",false);}
+    static boolean standard(Context c,int display){return display==0;}
     static String key(Context c,String key){initialize(c);return phone(c)?"phone_"+key:key;}
     static boolean changed(String key,String base){return base.equals(key)||("phone_"+base).equals(key);}
     static synchronized void initialize(Context c){

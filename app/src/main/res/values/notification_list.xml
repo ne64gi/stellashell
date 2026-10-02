@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_list_latest">Showing latest notification</string>
+    <string name="notification_list_show_latest">Show latest only ▴</string>
+    <string name="notification_list_sender">From %1$s</string>
+    <plurals name="notification_list_more">
+        <item quantity="one">%1$d more ▾</item>
+        <item quantity="other">%1$d more ▾</item>
+    </plurals>
+</resources>

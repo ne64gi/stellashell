@@ -14,6 +14,22 @@ final class DesktopShortcuts {
     private final SharedPreferences positions;
     private final Map<String,View> icons=new LinkedHashMap<>();
     private View moving;
+    private AppMenu groupMenu;
+    private final java.util.concurrent.ExecutorService groupLoader=java.util.concurrent.Executors.newSingleThreadExecutor();
+    boolean back(){if(groupMenu!=null&&groupMenu.isOpen()){groupMenu.back();return true;}return false;}
+    void closePanel(){if(groupMenu!=null)groupMenu.close();}
+    void destroy(){closePanel();groupLoader.shutdownNow();}
+    private void openGroup(String group){
+        if(groupMenu==null)groupMenu=new AppMenu(activity,activity.getSystemService(WindowManager.class),display);
+        groupMenu.openGroup(groupLoader,group);
+    }
+    private void groupOptions(View anchor,String reference,Runnable move){
+        PopupMenu popup=new PopupMenu(activity,anchor);
+        popup.getMenu().add(R.string.ui_remove_from_desktop).setOnMenuItemClickListener(item->{Launches.toggleDesktop(activity,reference);return true;});
+        popup.getMenu().add(StartPins.get(activity).contains(reference)?R.string.start_unpin:R.string.start_pin).setOnMenuItemClickListener(item->{StartPins.toggle(activity,reference);return true;});
+        popup.getMenu().add(R.string.ui_move_2).setOnMenuItemClickListener(item->{move.run();return true;});
+        popup.show();
+    }
     DesktopShortcuts(Activity activity,FrameLayout canvas,int display){
         this.activity=activity;this.canvas=canvas;this.display=display;positions=activity.getSharedPreferences(WorkspaceProfile.phone(activity)?"phone_shortcut_positions":"shortcut_positions",0);
         canvas.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{if(r-l!=or-ol||b-t!=ob-ot){cancelMove();layoutAll();}});
@@ -29,8 +45,10 @@ final class DesktopShortcuts {
         // Removed shortcuts do not retain stale coordinates when added again.
         SharedPreferences.Editor cleanup=positions.edit();for(String key:positions.getAll().keySet())if(!items.contains(key))cleanup.remove(key);cleanup.apply();
         for(String component:items)try{
-            android.content.pm.ActivityInfo info=activity.getPackageManager().getActivityInfo(ComponentName.unflattenFromString(component),0);
-            String label=info.loadLabel(activity.getPackageManager()).toString();
+            String group=GroupEntries.name(activity,component);
+            if(GroupEntries.isGroup(component)&&group==null)continue;
+            android.content.pm.ActivityInfo info=group==null?activity.getPackageManager().getActivityInfo(ComponentName.unflattenFromString(component),0):null;
+            String label=group==null?info.loadLabel(activity.getPackageManager()).toString():group;
             LinearLayout cell=Ui.column(activity);cell.setGravity(Gravity.CENTER);cell.setPadding(dp(6),dp(6),dp(6),dp(6));
             android.graphics.drawable.StateListDrawable bg=new android.graphics.drawable.StateListDrawable();
             bg.addState(new int[]{android.R.attr.state_selected},Ui.rounded(activity,0x386ee7c8,12));
@@ -38,11 +56,12 @@ final class DesktopShortcuts {
             bg.addState(new int[]{android.R.attr.state_hovered},Ui.rounded(activity,0x18ffffff,12));
             bg.addState(new int[]{android.R.attr.state_focused},Ui.rounded(activity,0x30ffffff,12));
             bg.addState(new int[]{},Ui.rounded(activity,Color.TRANSPARENT,12));cell.setBackground(bg);
-            ImageView icon=new ImageView(activity);icon.setImageDrawable(AppIcons.forApp(activity,component,info.loadIcon(activity.getPackageManager())));cell.addView(icon,new LinearLayout.LayoutParams(dp(44),dp(44)));
+            ImageView icon=new ImageView(activity);icon.setImageDrawable(group==null?AppIcons.forApp(activity,component,info.loadIcon(activity.getPackageManager())):activity.getDrawable(R.drawable.ic_start_folder));cell.addView(icon,new LinearLayout.LayoutParams(dp(44),dp(44)));
             TextView name=Ui.text(activity,label,13,0xffe7edf5);name.setGravity(Gravity.CENTER);name.setMaxLines(2);name.setEllipsize(android.text.TextUtils.TruncateAt.END);name.setShadowLayer(dp(2),0,dp(1),0xaa000000);cell.addView(name,new LinearLayout.LayoutParams(-1,-2));
             cell.setContentDescription(label);cell.setFocusable(true);cell.setTooltipText(label);
-            cell.setOnClickListener(v->{if(moving==cell){cancelMove();return;}Launches.app(activity,component,display);});
-            View.OnLongClickListener menu=v->{cancelMove();AppContextMenu.show(activity,cell,component,display,()->{},null,null,()->{moving=cell;cell.setSelected(true);cell.requestFocus();Ui.message(activity,activity.getString(R.string.ui_drag_this_icon_to_place_it_tap_or_press_back_to_cancel));});return true;};
+            cell.setOnClickListener(v->{if(moving==cell){cancelMove();return;}if(group==null)Launches.app(activity,component,display);else openGroup(group);});
+            View.OnLongClickListener menu=v->{cancelMove();Runnable move=()->{moving=cell;cell.setSelected(true);cell.requestFocus();Ui.message(activity,activity.getString(R.string.ui_drag_this_icon_to_place_it_tap_or_press_back_to_cancel));};
+                if(group==null)AppContextMenu.show(activity,cell,component,display,()->{},null,null,move);else groupOptions(cell,component,move);return true;};
             cell.setOnLongClickListener(menu);cell.setOnContextClickListener(v->menu.onLongClick(v));
             cell.setOnKeyListener((v,key,event)->{if(moving!=cell||event.getAction()!=KeyEvent.ACTION_DOWN)return false;
                 if(key==KeyEvent.KEYCODE_ESCAPE){cancelMove();return true;}

@@ -1,6 +1,8 @@
 package net.fuyumori.stellashell;
 
 import android.app.KeyguardManager;
+import android.app.NotificationManager;
+import android.content.ComponentName;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
@@ -14,14 +16,20 @@ public final class ShellNotifications extends NotificationListenerService {
     private static volatile ShellNotifications connected;
     private static final Set<Runnable> observers=new CopyOnWriteArraySet<>();
     private static final Handler main=new Handler(Looper.getMainLooper());
+    private static final Runnable notifyObservers=()->{for(Runnable observer:observers)observer.run();};
     static void observe(Runnable observer){observers.add(observer);}
     static void unobserve(Runnable observer){observers.remove(observer);}
-    private static void changed(){main.post(()->{for(Runnable observer:observers)observer.run();});}
-    static boolean ready(){return connected!=null;}
+    private static void changed(){main.removeCallbacks(notifyObservers);main.post(notifyObservers);}
+    static boolean ready(Context context){
+        if(connected==null)return false;
+        NotificationManager manager=context.getSystemService(NotificationManager.class);
+        try{return manager!=null&&manager.isNotificationListenerAccessGranted(new ComponentName(context,ShellNotifications.class));}
+        catch(SecurityException|IllegalStateException e){return false;}
+    }
     static boolean locked(Context c){KeyguardManager keyguard=c.getSystemService(KeyguardManager.class);return keyguard!=null&&keyguard.isDeviceLocked();}
     static List<StatusBarNotification> current(Context context){
         ShellNotifications service=connected;
-        if(service==null||locked(context))return Collections.emptyList();
+        if(service==null||locked(context)||!ready(context))return Collections.emptyList();
         try{
             StatusBarNotification[] active=service.getActiveNotifications();
             List<StatusBarNotification> result=new ArrayList<>();
@@ -31,7 +39,7 @@ public final class ShellNotifications extends NotificationListenerService {
         }catch(SecurityException|IllegalStateException e){return Collections.emptyList();}
     }
     static boolean dismiss(Context context,String key){
-        ShellNotifications service=connected;if(service==null||locked(context))return false;
+        ShellNotifications service=connected;if(service==null||locked(context)||!ready(context))return false;
         try{for(StatusBarNotification item:current(context))if(item.getKey().equals(key)&&item.isClearable()){service.cancelNotification(key);return true;}}
         catch(SecurityException|IllegalStateException ignored){}return false;
     }
