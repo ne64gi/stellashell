@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_time_now">たった今</string>
+    <plurals name="notification_time_minutes">
+        <item quantity="other">%d分前</item>
+    </plurals>
+    <string name="notification_time_yesterday">昨日 %1$s</string>
+    <string name="notification_time_date">%1$s %2$s</string>
+</resources>

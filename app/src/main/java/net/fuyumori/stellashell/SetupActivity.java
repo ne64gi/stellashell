@@ -105,9 +105,6 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
             public void onProgressChanged(SeekBar bar,int value,boolean fromUser){if(fromUser)Launches.prefs(SetupActivity.this).edit().putInt("sidebar_height",value).apply();}
             public void onStartTrackingTouch(SeekBar bar){} public void onStopTrackingTouch(SeekBar bar){}
         });card.addView(sidebarHeight);DashboardUi.divider(card);
-        toggle(card,R.string.phone_window_management,"phone_window_management",false,checked->{
-            Launches.prefs(this).edit().putBoolean("phone_window_management",checked).apply();
-        });
         Ui.note(card,getString(R.string.phone_workspace_note));
         DashboardUi.section(root,getString(R.string.dashboard_workspace));card=DashboardUi.card(root);
         final Switch[] workspace={null};workspace[0]=toggle(card,R.string.workspace_enable,"compact_workspace",false,checked->{

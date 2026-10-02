@@ -10,26 +10,42 @@ import android.view.View;
 
 /** Device checks against real Android drawing and inverse input transforms; no desktop changes. */
 public final class WidgetRenderInstrumentation extends Instrumentation {
-    private int widgetEditDisplay=-1;private int phoneProfileDisplay=-1;private int phoneTaskDisplay=-1;
-    private boolean organizationOnly,polishPauseShell,homeChecks;private int polishDisplay=-1;
-    @Override public void onCreate(Bundle arguments){super.onCreate(arguments);if(arguments!=null&&arguments.containsKey("phone_task_display"))phoneTaskDisplay=Integer.parseInt(arguments.getString("phone_task_display"));if(arguments!=null&&arguments.containsKey("phone_profile_display"))phoneProfileDisplay=Integer.parseInt(arguments.getString("phone_profile_display"));if(arguments!=null&&arguments.containsKey("widget_edit_display"))widgetEditDisplay=Integer.parseInt(arguments.getString("widget_edit_display"));pinChecks=arguments!=null&&"true".equals(arguments.getString("pin_checks"));if(arguments!=null&&arguments.containsKey("icon_ui_display"))iconUiDisplay=Integer.parseInt(arguments.getString("icon_ui_display"));iconChecks=arguments!=null&&"true".equals(arguments.getString("icon_checks"));homeChecks=arguments!=null&&"true".equals(arguments.getString("home_checks"));polishPauseShell=arguments!=null&&"true".equals(arguments.getString("polish_pause_shell"));if(arguments!=null&&arguments.containsKey("polish_display"))polishDisplay=Integer.parseInt(arguments.getString("polish_display"));organizationOnly=arguments!=null&&"true".equals(arguments.getString("organization_only"));start();}
+    private int homeExternalDisplay=-1;private int widgetEditDisplay=-1;private int phoneProfileDisplay=-1;private int phoneTaskDisplay=-1;
+    private boolean organizationOnly,polishPauseShell,homeChecks,workspaceChecks,notificationChecks,phoneSidebarChecks,taskCloseChecks;private int polishDisplay=-1;
+    @Override public void onCreate(Bundle arguments){super.onCreate(arguments);taskCloseChecks=arguments!=null&&"true".equals(arguments.getString("task_close_checks"));phoneSidebarChecks=arguments!=null&&"true".equals(arguments.getString("phone_sidebar_checks"));notificationChecks=arguments!=null&&"true".equals(arguments.getString("notification_group_checks"));workspaceChecks=arguments!=null&&"true".equals(arguments.getString("workspace_transfer_checks"));if(arguments!=null&&arguments.containsKey("home_external_display"))homeExternalDisplay=Integer.parseInt(arguments.getString("home_external_display"));if(arguments!=null&&arguments.containsKey("phone_task_display"))phoneTaskDisplay=Integer.parseInt(arguments.getString("phone_task_display"));if(arguments!=null&&arguments.containsKey("phone_profile_display"))phoneProfileDisplay=Integer.parseInt(arguments.getString("phone_profile_display"));if(arguments!=null&&arguments.containsKey("widget_edit_display"))widgetEditDisplay=Integer.parseInt(arguments.getString("widget_edit_display"));pinChecks=arguments!=null&&"true".equals(arguments.getString("pin_checks"));if(arguments!=null&&arguments.containsKey("icon_ui_display"))iconUiDisplay=Integer.parseInt(arguments.getString("icon_ui_display"));iconChecks=arguments!=null&&"true".equals(arguments.getString("icon_checks"));homeChecks=arguments!=null&&"true".equals(arguments.getString("home_checks"));polishPauseShell=arguments!=null&&"true".equals(arguments.getString("polish_pause_shell"));if(arguments!=null&&arguments.containsKey("polish_display"))polishDisplay=Integer.parseInt(arguments.getString("polish_display"));organizationOnly=arguments!=null&&"true".equals(arguments.getString("organization_only"));start();}
     private boolean pinChecks;private boolean iconChecks;private int iconUiDisplay=-1;
     @Override public void onStart(){
         Bundle result=new Bundle();
         try{
+            if(notificationChecks){
+                Throwable[] failure={null};
+                runOnMainSync(()->{try{NotificationGroupChecks.run(this);NotificationContentChecks.run(this);NotificationIndicatorChecks.run(this);}catch(Throwable e){failure[0]=e;}});
+                if(failure[0]!=null)throw failure[0];
+                result.putString("stream","Notification polish: app/user groups + compact expansion + stable updates + sender/time content + presence indicator + individual actions + EN/JA rendering passed (synthetic only)\n");
+                finish(-1,result);return;
+            }
+            if(taskCloseChecks){new TaskCloseChecks(this).run();result.putString("stream","Phone task navigation + strict identity + same-task floating/fullscreen round trip + target task removal + unrelated task preservation passed (disposable fixtures only)\n");finish(-1,result);return;}
+            if(phoneSidebarChecks){
+                Throwable[] failure={null};
+                runOnMainSync(()->{try{PhoneSidebarChecks.run(this);}catch(Throwable e){failure[0]=e;}});
+                if(failure[0]!=null)throw failure[0];
+                result.putString("stream","Phone sidebar: Start/pins/active ordering + long-press/right-click task menu + float/fullscreen/close identity + bounded lifecycle feed + stale-reply cleanup passed (synthetic only)\n");
+                finish(-1,result);return;
+            }
+            if(workspaceChecks){new WorkspaceTransferChecks(this).run();result.putString("stream","Workspace queued handoff + rollback-all + post-move error + stranded identity recovery passed (synthetic backend)\n");finish(-1,result);return;}
             if(phoneTaskDisplay>0){new PhoneTaskChecks(this).run(phoneTaskDisplay);result.putString("stream","Phone ordinary fullscreen + explicit floating + owned-only external handoff/return passed\n");finish(-1,result);return;}
             if(phoneProfileDisplay>0){Throwable[] failure={null};runOnMainSync(()->{try{PhoneProfileChecks.run(this,phoneProfileDisplay);}catch(Throwable e){failure[0]=e;}});if(failure[0]!=null)throw failure[0];result.putString("stream","Phone profile migration/isolation + standard Android launch/HOME passed\n");finish(-1,result);return;}
-            if(widgetEditDisplay>=0){new WidgetEditorChecks(this).run(widgetEditDisplay);result.putString("stream","Widget editor: hold/scroll/tap cancellation + body drag + cancel + sidebar adjustment/collapse/side + unchanged content bounds + persistence + Back passed\n");finish(-1,result);return;}
+            if(widgetEditDisplay>=0){new WidgetEditorChecks(this).run(widgetEditDisplay);result.putString("stream","Widget editor: explicit edit only, hold/scroll input + text/image/background persistence + body drag + cancel + sidebar adjustment/collapse/side + unchanged content bounds + persistence + Back passed\n");finish(-1,result);return;}
             if(pinChecks){TaskPinChecks.run();result.putString("stream","Window pin ownership + minimize/restore + multiple pins + fullscreen + stale task identity + cleanup/retry checks passed\n");finish(-1,result);return;}
             if(iconChecks){IconThemeChecks.run(this);if(iconUiDisplay>=0)IconThemeChecks.ui(this,iconUiDisplay);result.putString("stream","Icon pack discovery + asset mappings + manual index + override precedence + fallback + bounded alpha-preserving image import checks passed\n");finish(-1,result);return;}
-            if(homeChecks){new HomeLauncherChecks(this).run();result.putString("stream","HOME candidate + disconnected basic home + app drawer + extension stop checks passed (default unchanged)\n");finish(-1,result);return;}
+            if(homeChecks){new HomeLauncherChecks(this).run(homeExternalDisplay);result.putString("stream","HOME candidate + disconnected basic home + app drawer + extension stop checks passed (default unchanged)\n");finish(-1,result);return;}
             if(polishDisplay>=0){new DesktopPolishChecks(this,polishDisplay,polishPauseShell).run();result.putString("stream","Desktop polish fixture checks passed on display "+polishDisplay+"\n");finish(-1,result);return;}
             Throwable[] failure={null};
             runOnMainSync(()->{try{workAreas();transparentIcons();if(organizationOnly){organization();widgetRouting();appearance();return;}check(400,300,200,100);check(100,120,200,100);check(200,100,200,100);iconPreview();locales();organization();widgetRouting();appearance();}catch(Throwable error){failure[0]=error;}});
             if(failure[0]!=null)throw failure[0];
             if(!organizationOnly)wallpaperDecode();
             result.putString("stream",organizationOnly?"App organization + RemoteViews routing + appearance passed\n":"Adaptive icon transparency + WidgetViewport: 3 rendering/input scenarios + bounded wallpaper decoding + locale + app organization checks passed\n");finish(-1,result);
-        }catch(Throwable error){result.putString("stream","FAILED: "+error+"\n");finish(0,result);}
+        }catch(Throwable error){result.putString("stream","FAILED: "+android.util.Log.getStackTraceString(error)+"\n");finish(0,result);}
     }
     private void transparentIcons(){
         android.graphics.drawable.Drawable foreground=new android.graphics.drawable.InsetDrawable(new android.graphics.drawable.ColorDrawable(Color.RED),.4f);

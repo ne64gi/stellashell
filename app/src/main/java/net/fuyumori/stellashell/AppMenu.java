@@ -31,7 +31,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     private EditText search;
     private String openGroup;
     private View folderAnchor;
-    private boolean hiddenMode,loaded,renderQueued;
+    private boolean hiddenMode,loaded,renderQueued,folderOnly;
     private int menuWidth,menuHeight;
     private PopupMenu activePopup;private long outsideDown=-1;
     void toggle(ExecutorService loader,long downTime){if(downTime>0&&downTime==outsideDown)return;open(loader);}
@@ -54,11 +54,14 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         if(activePopup!=null)activePopup.dismiss();activePopup=null;
         for(android.app.AlertDialog dialog:new HashSet<>(dialogs))dialog.dismiss();dialogs.clear();
         if(root!=null)try{windows.removeViewImmediate(root);}catch(RuntimeException ignored){}
-        root=null;folderLayer=null;openGroup=null;folderAnchor=null;renderQueued=false;
+        folderOnly=false;root=null;folderLayer=null;openGroup=null;folderAnchor=null;renderQueued=false;
+    }
+    void openGroup(ExecutorService loader,String group){
+        if(isOpen())close();open(loader);folderOnly=true;main.setVisibility(View.GONE);root.setBackgroundColor(android.graphics.Color.TRANSPARENT);openGroup=group;buildFolder();
     }
     void open(ExecutorService loader){
         if(isOpen()){close();return;}
-        if(!activityHosted)Displays.require(context,displayId);StartPins.initialize(context);
+        if(displayId!=0)Displays.require(context,displayId);StartPins.initialize(context);
         AppOrganization.prefs(context).registerOnSharedPreferenceChangeListener(this);
         Launches.prefs(context).registerOnSharedPreferenceChangeListener(this);
         hiddenMode=false;loaded=false;all.clear();
@@ -72,13 +75,24 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         search.setHint(R.string.ui_search_by_name);search.setContentDescription(context.getString(R.string.ui_search_apps));
         search.setPadding(dp(14),0,dp(14),0);search.setBackground(Ui.rounded(context,Ui.BG,12));
         heading.addView(search,new LinearLayout.LayoutParams(0,dp(48),1));
-        Button settings=smallButton("⚙",context.getString(R.string.launcher_tools));settings.setOnClickListener(v->tools(settings));heading.addView(settings,new LinearLayout.LayoutParams(dp(48),dp(48)));
+        Button settings=smallButton("⚙",context.getString(R.string.launcher_tools));settings.setTextSize(28);settings.setBackground(null);settings.setStateListAnimator(null);settings.setElevation(0);settings.setOnClickListener(v->tools(settings));heading.addView(settings,new LinearLayout.LayoutParams(dp(48),dp(48)));
         main.addView(heading);
         if(Workspace.compact(context,displayId))
             main.addView(Ui.text(context,context.getString(R.string.workspace_roles_hint),12,Ui.MUTED));
         scroll=new ScrollView(context);scroll.setFillViewport(false);scroll.setClipToPadding(false);scroll.setPadding(0,dp(8),0,0);
         content=Ui.column(context);scroll.addView(content);main.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        TextView hint=Ui.text(context,context.getString(R.string.ui_right_click_or_long_press_for_launch_settings),12,Ui.MUTED);hint.setPadding(0,dp(8),0,0);main.addView(hint);
+        LinearLayout footer=new LinearLayout(context);footer.setGravity(Gravity.CENTER_VERTICAL);
+        TextView hint=Ui.text(context,context.getString(R.string.ui_right_click_or_long_press_for_launch_settings),12,Ui.MUTED);hint.setPadding(0,dp(8),0,0);footer.addView(hint,new LinearLayout.LayoutParams(0,-2,1));
+        if(displayId!=0){
+            ImageButton power=new ImageButton(context);power.setImageResource(R.drawable.ic_session_power);power.setColorFilter(Ui.TEXT);
+            power.setBackground(null);power.setStateListAnimator(null);power.setElevation(0);power.setPadding(dp(15),dp(15),dp(15),dp(15));
+            power.setContentDescription(context.getString(R.string.exit_desktop));power.setTooltipText(context.getString(R.string.exit_desktop));
+            power.setOnClickListener(v->showDialog(new android.app.AlertDialog.Builder(context).setTitle(R.string.exit_desktop)
+                    .setMessage(R.string.exit_desktop_session_note).setNegativeButton(R.string.ui_cancel,null)
+                    .setPositiveButton(R.string.exit_desktop,(dialog,which)->{close();DockService.stop(context);}).create()));
+            footer.addView(power,new LinearLayout.LayoutParams(dp(48),dp(48)));
+        }
+        main.addView(footer);
         View.OnKeyListener back=(v,key,event)->{
             if((key==KeyEvent.KEYCODE_ESCAPE||key==KeyEvent.KEYCODE_BACK)&&event.getAction()==KeyEvent.ACTION_UP){back();return true;}return false;
         };
@@ -121,7 +135,11 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         if(!hiddenMode&&query.isEmpty()){
             heading(content,context.getString(R.string.start_pinned_heading));
             List<View> pins=new ArrayList<>();
-            for(String component:StartPins.get(context))for(Launches.App app:all)if(component.equals(app.component)&&!AppOrganization.hidden(context,component)){pins.add(appTile(app));break;}
+            for(String component:StartPins.get(context)){
+                String group=GroupEntries.name(context,component);
+                if(group!=null){pins.add(groupTile(group));continue;}
+                for(Launches.App app:all)if(component.equals(app.component)&&!AppOrganization.hidden(context,component)){pins.add(appTile(app));break;}
+            }
             if(pins.isEmpty())note(content,R.string.start_pins_empty);else content.addView(grid(pins,columns));
         }
         heading(content,context.getString(hiddenMode?R.string.launcher_hidden:query.isEmpty()?R.string.launcher_all:R.string.start_search_results));
@@ -176,6 +194,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         tile.setOnLongClickListener(v->{groupTools(tile,group);return true;});tile.setOnContextClickListener(v->{groupTools(tile,group);return true;});return tile;
     }
     private void closeFolder(){
+        if(folderOnly){close();return;}
         // Search changes also call this. With no folder open, leave the editor's
         // focus and composing span alone instead of focusing the menu root.
         if(folderLayer==null&&openGroup==null)return;
@@ -213,6 +232,9 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     }
     private void groupTools(View anchor,String group){
         PopupMenu popup=new PopupMenu(context,anchor);activePopup=popup;
+        String reference=GroupEntries.reference(context,group);
+        popup.getMenu().add(Launches.desktop(context).contains(reference)?R.string.ui_remove_from_desktop:R.string.ui_add_to_desktop).setOnMenuItemClickListener(item->{Launches.toggleDesktop(context,reference);return true;});
+        popup.getMenu().add(StartPins.get(context).contains(reference)?R.string.start_unpin:R.string.start_pin).setOnMenuItemClickListener(item->{StartPins.toggle(context,reference);return true;});
         popup.getMenu().add(R.string.apps_group_manage).setOnMenuItemClickListener(item->{selectApps(group);return true;});
         popup.getMenu().add(R.string.launcher_rename_group).setOnMenuItemClickListener(item->{groupDialog(group);return true;});
         popup.getMenu().add(R.string.launcher_delete_group).setOnMenuItemClickListener(item->{
@@ -221,21 +243,39 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     }
     private void tools(View anchor){
         PopupMenu popup=new PopupMenu(context,anchor);activePopup=popup;Menu menu=popup.getMenu();
-        int[] labels={R.string.ui_wallpaper,R.string.ui_add_widget,R.string.widget_edit_toggle,R.string.ui_new_shortcut,R.string.ui_snap_icons_to_grid,R.string.ui_display_settings,R.string.ui_desktop_settings};int[] actions={3,6,7,2,1,4,5};
-        SubMenu desktop=menu.addSubMenu(context.getString(R.string.launcher_desktop_tools));
-        for(int i=0;i<labels.length;i++){int action=actions[i];desktop.add(context.getString(labels[i])).setOnMenuItemClickListener(item->{close();Launches.desktopAction(context,displayId,action);return true;});}
-        menu.add(R.string.appearance_title).setOnMenuItemClickListener(item->{close();AppearanceActivity.open(context,displayId);return true;});
-        menu.add(R.string.apps_visible_title).setOnMenuItemClickListener(item->{selectApps(null);return true;});
-        menu.add(R.string.launcher_new_group).setOnMenuItemClickListener(item->{groupDialog(null);return true;});
-        menu.add(hiddenMode?R.string.launcher_all:R.string.launcher_hidden).setOnMenuItemClickListener(item->{hiddenMode=!hiddenMode;closeFolder();render();return true;});
-        menu.add(R.string.launcher_hide_homes).setOnMenuItemClickListener(item->{
+        SubMenu desktop=menu.addSubMenu(R.string.menu_desktop);
+        SubMenu widgets=desktop.addSubMenu(R.string.menu_widgets);
+        desktopAction(widgets,R.string.ui_add_widget,6);desktopAction(widgets,R.string.widget_edit_toggle,7);
+        desktopAction(desktop,R.string.ui_wallpaper,3);
+        SubMenu customize=menu.addSubMenu(R.string.menu_customize);
+        customize.add(R.string.appearance_title).setOnMenuItemClickListener(item->{close();AppearanceActivity.open(context,displayId);return true;});
+        SubMenu apps=customize.addSubMenu(R.string.apps_visible_title);
+        apps.add(R.string.apps_visible_title).setOnMenuItemClickListener(item->{selectApps(null);return true;});
+        apps.add(hiddenMode?R.string.launcher_all:R.string.launcher_hidden).setOnMenuItemClickListener(item->{hiddenMode=!hiddenMode;closeFolder();render();return true;});
+        SubMenu groups=customize.addSubMenu(R.string.menu_groups);
+        groups.add(R.string.launcher_new_group).setOnMenuItemClickListener(item->{groupDialog(null);return true;});
+        for(String group:AppOrganization.groups(context))groups.add(group).setOnMenuItemClickListener(item->{groupTools(anchor,group);return true;});
+        desktopAction(customize,R.string.ui_new_shortcut,2);
+        desktopAction(customize,R.string.ui_snap_icons_to_grid,1);
+        SubMenu settings=menu.addSubMenu(R.string.menu_settings);
+        settings.add(R.string.menu_android_settings).setOnMenuItemClickListener(item->{
+            close();
+            try{
+                context.startActivity(new android.content.Intent(android.provider.Settings.ACTION_SETTINGS).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                        android.app.ActivityOptions.makeBasic().setLaunchDisplayId(Display.DEFAULT_DISPLAY).toBundle());
+                if(displayId!=Display.DEFAULT_DISPLAY)Toast.makeText(context,R.string.opening_on_phone,Toast.LENGTH_SHORT).show();
+            }catch(RuntimeException e){Launches.problem(context,e.getMessage());}
+            return true;
+        });
+        settings.add(R.string.menu_stella_settings).setOnMenuItemClickListener(item->{close();Launches.settings(context,displayId);return true;});
+        apps.add(R.string.launcher_hide_homes).setOnMenuItemClickListener(item->{
             Set<String> packages=new HashSet<>();for(android.content.pm.ResolveInfo info:context.getPackageManager().queryIntentActivities(new android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_HOME),0))if(info.activityInfo!=null)packages.add(info.activityInfo.packageName);
             for(Launches.App app:all)if(packages.contains(android.content.ComponentName.unflattenFromString(app.component).getPackageName()))AppOrganization.hide(context,app.component,true);
             hiddenMode=true;closeFolder();render();return true;
         });
-        menu.add(R.string.reset_connection).setOnMenuItemClickListener(item->{close();DockService.resetConnection(context);return true;});
-        menu.add(R.string.exit_desktop).setOnMenuItemClickListener(item->{close();DockService.stop(context);return true;});popup.show();
+        popup.show();
     }
+    private void desktopAction(Menu target,int label,int action){target.add(label).setOnMenuItemClickListener(item->{close();Launches.desktopAction(context,displayId,action);return true;});}
     private void showDialog(android.app.AlertDialog dialog){if(!activityHosted)dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);dialogs.add(dialog);dialog.setOnDismissListener(d->dialogs.remove(dialog));dialog.show();}
     private void groupDialog(String old){
         EditText input=new EditText(context);input.setSingleLine();input.setHint(R.string.launcher_group_name);input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(40)});if(old!=null)input.setText(old);

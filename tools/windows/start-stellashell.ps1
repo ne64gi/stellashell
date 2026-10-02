@@ -1,17 +1,90 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Requires Windows PowerShell 5.1 or PowerShell 7.
 [CmdletBinding()]
-param([string]$Device)
+param([string]$Device, [switch]$Setup, [switch]$NonInteractive)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
+
+function Test-StellaEndpoint([string]$Value) {
+    if ($Value -notmatch '^(?:[A-Za-z0-9][A-Za-z0-9.-]*|\[[0-9a-fA-F:]+\]):([0-9]{1,5})$') { return $false }
+    return ([int]$Matches[1] -ge 1 -and [int]$Matches[1] -le 65535)
+}
+function Read-StellaEndpoint([string]$Label) {
+    while ($true) {
+        $value = (Read-Host "$Label (IP:port, q = cancel)").Trim()
+        if ($value -eq 'q') { throw 'Connection cancelled.' }
+        if (Test-StellaEndpoint $value) { return $value }
+        Write-Host 'Enter an IP/hostname and port 1-65535. IPv6: [address]:port.'
+    }
+}
+function Invoke-StellaAdb([string[]]$Arguments) {
+    # Only fixed command words and validated endpoints are passed here.
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.FileName = $adb
+    $info.Arguments = $Arguments -join ' '
+    $info.UseShellExecute = $false
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $process = [System.Diagnostics.Process]::Start($info)
+    try {
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit(12000)) {
+            $process.Kill()
+            return @{ Code = 124; Text = 'ADB timed out. Check Wi-Fi / VPN and the current port.' }
+        }
+        return @{ Code = $process.ExitCode; Text = ($stdout.Result + $stderr.Result).Trim() }
+    } finally { $process.Dispose() }
+}
+function Connect-StellaEndpoint([string]$Endpoint) {
+    if (-not (Test-StellaEndpoint $Endpoint)) { return $false }
+    $result = Invoke-StellaAdb -Arguments @('connect', $Endpoint)
+    Write-Host $result.Text
+    if ($result.Code -ne 0) { return $false }
+    $state = Invoke-StellaAdb -Arguments @('-s', $Endpoint, 'get-state')
+    if ($state.Code -eq 0 -and $state.Text -eq 'device') { return $true }
+    Write-Host "Not ready: $($state.Text). Check the phone's authorization prompt."
+    return $false
+}
+function Resolve-StellaConnection([string]$Initial, [bool]$ForceSetup, [bool]$Batch) {
+    if (-not $ForceSetup -and (Connect-StellaEndpoint $Initial)) { return $Initial }
+    if ($Batch) { throw 'ADB unavailable. Run without -NonInteractive to pair/connect.' }
+    while ($true) {
+        Write-Host "`n=== Android wireless debugging ==="
+        Write-Host 'On Android 11+: Settings > Developer options > Wireless debugging > ON.'
+        Write-Host 'Use the same Wi-Fi, or a network/VPN that can reach the phone.'
+        Write-Host '1  Pair this PC (first time / pairing was removed)'
+        Write-Host '2  Already paired / TCP ADB ready: enter connection IP:port'
+        Write-Host 'q  Cancel'
+        $choice = Read-Host 'Choose 1 / 2 / q'
+        if ($choice -eq 'q') { throw 'Connection cancelled.' }
+        if ($choice -notin @('1','2')) { continue }
+        if ($choice -eq '1') {
+            Write-Host 'On the phone: Pair device with pairing code. Keep that dialog open.'
+            $pairAddress = Read-StellaEndpoint 'PAIRING address shown in that dialog'
+            Write-Host 'Enter the six-digit code when adb asks. It is not saved to configuration.'
+            $ErrorActionPreference = 'Continue'
+            & $adb pair $pairAddress | Out-Host
+            $pairExit = $LASTEXITCODE
+            $ErrorActionPreference = 'Stop'
+            if ($pairExit -ne 0) { Write-Host 'Pairing failed. Open a fresh pairing dialog and retry.'; continue }
+        }
+        Write-Host 'Return to the main Wireless debugging screen: use its IP address & port.'
+        Write-Host 'The CONNECTION port is different from the PAIRING port. No :5555 is required.'
+        $candidate = Read-StellaEndpoint 'CONNECTION address (or your existing TCP :5555 endpoint)'
+        if (Connect-StellaEndpoint $candidate) { return $candidate }
+    }
+}
 
 $previousIconPath = [Environment]::GetEnvironmentVariable('SCRCPY_ICON_PATH', 'Process')
 
 try {
     $configPath = Join-Path $PSScriptRoot 'stellashell.json'
     if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
-        throw "Missing $configPath. Copy stellashell.example.json to stellashell.json and edit the addresses."
+        if ($NonInteractive) { throw "Missing $configPath." }
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'stellashell.example.json') -Destination $configPath
+        Write-Host 'Created stellashell.json from the sample. Connection setup will follow.'
     }
     $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
     $scrcpy = Join-Path $PSScriptRoot 'scrcpy.exe'
@@ -32,10 +105,6 @@ try {
     $address = [string]$profile.address
     $resolution = [string]$profile.resolution
     $dpi = 0
-    if ($address -notmatch '^(?:[A-Za-z0-9][A-Za-z0-9.-]*|\[[0-9a-fA-F:]+\]):([0-9]{1,5})$') {
-        throw 'address must be host:port (IPv6: [address]:port).'
-    }
-    if ([int]$Matches[1] -lt 1 -or [int]$Matches[1] -gt 65535) { throw 'Invalid ADB port.' }
     if ($resolution -notmatch '^[1-9][0-9]*x[1-9][0-9]*$') { throw 'resolution must be WIDTHxHEIGHT.' }
     if (-not [int]::TryParse([string]$profile.dpi, [ref]$dpi) -or $dpi -le 0) { throw 'dpi must be a positive integer.' }
     $keyboard = [string]$config.scrcpy.keyboard
@@ -61,18 +130,14 @@ try {
     Write-Host "`n=== StellaShell session ==="
     Write-Host "Device: $Device / $address"
     Write-Host "Display: $resolution / $dpi dpi`n"
-    # PowerShell 5.1 may turn native stderr into terminating errors. Capture it
-    # with Continue, then explicitly check native exit codes on both PS versions.
-    $ErrorActionPreference = 'Continue'
-    $connectOutput = & $adb connect $address 2>&1
-    $connectExit = $LASTEXITCODE
-    $stateOutput = & $adb -s $address get-state 2>&1
-    $stateExit = $LASTEXITCODE
-    $ErrorActionPreference = 'Stop'
-    $connectOutput | Out-Host
-    if ($connectExit -ne 0 -or $stateExit -ne 0 -or (($stateOutput -join "`n").Trim() -ne 'device')) {
-        throw "ADB is not ready: $address. Check network, TCP ADB and the phone's authorization prompt. $stateOutput"
+    $address = Resolve-StellaConnection $address ([bool]$Setup) ([bool]$NonInteractive)
+    if ($address -ne [string]$profile.address -and -not $NonInteractive) {
+        if ((Read-Host 'Save this connection address in stellashell.json? [y/N]') -eq 'y') {
+            $profile.address = $address
+            $config | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $configPath -Encoding UTF8
+        }
     }
+    Write-Host "Connected: $address"
     $scrcpyArgs = @('-s', $address, "--keyboard=$keyboard",
         "--new-display=$resolution/$dpi", "--no-vd-destroy-content", "--display-ime-policy=$imePolicy", "--start-app=$package")
     if (-not $config.scrcpy.systemDecorations) { $scrcpyArgs += '--no-vd-system-decorations' }
@@ -109,14 +174,14 @@ public sealed class StellaMetaRelay : IDisposable {
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
     [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode)] static extern IntPtr GetModuleHandle(string name);
-    readonly int pid; readonly string adb, serial;
+    readonly int pid; readonly string adb, serial, package;
     readonly ManualResetEvent stopped=new ManualResetEvent(false), ready=new ManualResetEvent(false);
     readonly BlockingCollection<string> queue=new BlockingCollection<string>(16);
     readonly HashSet<uint> consumed=new HashSet<uint>();
     Thread inputThread, worker; Hook callback; IntPtr handle;
     Exception startError; bool altCaptured, chordUsed, gestureActive;
     volatile bool overflow, unsupported;
-    public StellaMetaRelay(int processId, string adbPath, string address) { pid=processId; adb=adbPath; serial=address; }
+    public StellaMetaRelay(int processId, string adbPath, string address, string appPackage) { pid=processId; adb=adbPath; serial=address; package=appPackage; }
     bool Focused() { uint current; GetWindowThreadProcessId(GetForegroundWindow(),out current); return current==(uint)pid; }
     public static int AndroidKey(uint key) {
         if(key>=0x41&&key<=0x5A)return (int)key-0x41+29;
@@ -142,7 +207,7 @@ public sealed class StellaMetaRelay : IDisposable {
         bool up=(key.flags&0x80)!=0;
         if(key.vk==0xA5) { // right Alt only; left Alt remains scrcpy's normal shortcut modifier
             if(up&&altCaptured) {
-                if(gestureActive&&!chordUsed&&Focused())Enqueue("keyevent 117");
+                if(gestureActive&&!chordUsed&&Focused())Enqueue("stella-start");
                 altCaptured=false;gestureActive=false;return new IntPtr(1);
             }
             if(!up&&(altCaptured||Focused())) {
@@ -189,7 +254,8 @@ public sealed class StellaMetaRelay : IDisposable {
             string keys;if(!queue.TryTake(out keys,50))continue;
             if(!Focused())continue; // don't send delayed shortcuts after switching applications
             try {
-                var info=new ProcessStartInfo(adb,"-s "+serial+" shell input "+keys);
+                string action=keys=="stella-start"?"am broadcast -n "+package+"/net.fuyumori.stellashell.StartMenuReceiver -a "+package+".TOGGLE_START":"input "+keys;
+                var info=new ProcessStartInfo(adb,"-s "+serial+" shell "+action);
                 info.UseShellExecute=false;info.CreateNoWindow=true;
                 using(var command=Process.Start(info)) {
                     int waited=0;
@@ -227,9 +293,9 @@ public sealed class StellaMetaRelay : IDisposable {
             $startInfo.Arguments = $scrcpyArgs -join ' '
             $startInfo.UseShellExecute = $false
             $session = [System.Diagnostics.Process]::Start($startInfo)
-            $relay = New-Object StellaMetaRelay($session.Id, $adb, $address)
+            $relay = New-Object StellaMetaRelay($session.Id, $adb, $address, $package)
             $relay.Start()
-            Write-Host 'Right Alt -> Android Meta (Win/Search). Right Alt + Space -> Meta + Space. Left Alt remains scrcpy MOD.'
+            Write-Host 'Right Alt alone -> Stella Start. Right Alt + Space -> Meta + Space. Left Alt remains scrcpy MOD.'
             while (-not $session.WaitForExit(100)) { }
             $sessionExit = $session.ExitCode
         } finally {

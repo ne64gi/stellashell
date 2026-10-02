@@ -107,6 +107,18 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
     @Override public synchronized String taskSnapshot(int displayId) {
         try{return tasks().snapshot(displayId);}catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}
     }
+    @Override public synchronized String phoneTaskSnapshot() {
+        try{return tasks().phoneSnapshot();}catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}
+    }
+    @Override public synchronized String focusPhoneTask(int taskId,String component) {
+        try{return tasks().focusPhoneTask(taskId,component);}catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}
+    }
+    @Override public synchronized String phoneTaskOperation(int taskId,String component,String action,int l,int t,int r,int b) {
+        try{
+            if("float".equals(action)&&!"1".equals(read(FREEFORM)))throw new IllegalStateException("Enable desktop features first");
+            return tasks().operatePhoneTask(taskId,component,action,l,t,r,b);
+        }catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}
+    }
     @Override public synchronized void setWorkArea(int displayId,int l,int t,int r,int b) {
         try{tasks().setWorkArea(displayId,new android.graphics.Rect(l,t,r,b));}catch(Exception e){throw new IllegalArgumentException(e);}
     }

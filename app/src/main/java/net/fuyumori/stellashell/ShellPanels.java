@@ -26,7 +26,16 @@ final class ShellPanels {
     }
     static void track(int display,Object owner,View panel){
         Runnable update=()->{if(panel.getWidth()>0&&panel.getHeight()>0){int[] xy=new int[2];panel.getLocationOnScreen(xy);bounds(display,owner,new Rect(xy[0],xy[1],xy[0]+panel.getWidth(),xy[1]+panel.getHeight()));}};
-        panel.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->update.run());panel.post(update);
+        panel.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->update.run());
+        // Translation animations do not cause layout. Sample before drawing so
+        // caption hit regions follow the panel throughout its slide, too.
+        android.view.ViewTreeObserver.OnPreDrawListener drawn=()->{update.run();return true;};
+        panel.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener(){
+            public void onViewAttachedToWindow(View v){v.getViewTreeObserver().addOnPreDrawListener(drawn);}
+            public void onViewDetachedFromWindow(View v){v.getViewTreeObserver().removeOnPreDrawListener(drawn);}
+        });
+        if(panel.isAttachedToWindow())panel.getViewTreeObserver().addOnPreDrawListener(drawn);
+        panel.post(update);
     }
     static boolean panelTask(String component){return component.equals("net.fuyumori.stellashell/net.fuyumori.stellashell.HubActivity")
             ||component.equals("net.fuyumori.stellashell/net.fuyumori.stellashell.QuickSettingsActivity")

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="phone_sidebar_pinned">Pinned</string>
+    <string name="phone_sidebar_active">Active</string>
+    <string name="phone_sidebar_running_task">%1$s, running</string>
+    <string name="phone_sidebar_focused_task">%1$s, current app</string>
+    <string name="phone_sidebar_task_window">%1$s, window %2$d</string>
+    <string name="phone_sidebar_focused">Current app</string>
+    <string name="phone_sidebar_running">Running app</string>
+    <string name="phone_sidebar_float_task">Make a subwindow</string>
+    <string name="phone_sidebar_close_task">Close task</string>
+    <string name="phone_sidebar_fullscreen_task">Return to main window</string>
+</resources>

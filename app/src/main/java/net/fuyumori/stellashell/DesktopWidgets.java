@@ -11,7 +11,7 @@ import java.util.*;
 
 /** Standard Android widgets. Binding/configuration remain system/provider-owned flows. */
 final class DesktopWidgets {
-    private static final int HOST=0x534f47, BIND=7101, CONFIGURE=7102;
+    private static final int HOST=0x534f47, BIND=7101, CONFIGURE=7102, IMAGE=7103;
     private final Activity activity;
     private final FrameLayout canvas;
     private final AppWidgetManager manager;
@@ -25,8 +25,13 @@ final class DesktopWidgets {
     private final TextView[] values=new TextView[4];
     private int step=8;
     private int pending=-1;
+    private boolean destroyed;
+    private AlertDialog contentDialog;
+    private final java.util.concurrent.ExecutorService importer=java.util.concurrent.Executors.newSingleThreadExecutor();
     private static final class Entry {
         int id,x,y,w,h,mode,baseW,baseH;
+        String kind="widget",text="",image="";
+        int background=0xff1c2636,opacity=0,textColor=0xffe7edf5,textSize=20,align=0;
         WidgetViewport viewport;
         FrameLayout frame;
         AppWidgetHostView view;
@@ -43,11 +48,14 @@ final class DesktopWidgets {
         try{
             JSONArray array=new JSONArray(prefs.getString("items","[]"));
             for(int i=0;i<array.length();i++){
-                JSONObject j=array.getJSONObject(i);Entry e=new Entry();e.id=j.getInt("id");e.x=j.optInt("x",24);e.y=j.optInt("y",140);e.w=Math.max(80,j.optInt("w",320));e.h=Math.max(60,j.optInt("h",180));e.mode=WidgetGeometry.mode(j.optInt("mode",0));e.baseW=j.optInt("baseW",0);e.baseH=j.optInt("baseH",0);entries.add(e);
+                JSONObject j=array.getJSONObject(i);Entry e=new Entry();e.id=j.getInt("id");e.x=j.optInt("x",24);e.y=j.optInt("y",140);e.w=Math.max(80,j.optInt("w",320));e.h=Math.max(60,j.optInt("h",180));e.mode=WidgetGeometry.mode(j.optInt("mode",0));e.baseW=j.optInt("baseW",0);e.baseH=j.optInt("baseH",0);
+                e.kind=j.optString("kind","widget");if(!e.kind.equals("text")&&!e.kind.equals("image"))e.kind="widget";
+                e.text=j.optString("text","");e.image=j.optString("image","");e.background=j.optInt("background",e.background);e.opacity=Math.max(0,Math.min(100,j.optInt("opacity",0)));
+                e.textColor=j.optInt("textColor",e.textColor);e.textSize=Math.max(10,Math.min(128,j.optInt("textSize",20)));e.align=Math.max(0,Math.min(2,j.optInt("align",0)));entries.add(e);
             }
         }catch(JSONException e){Ui.message(a,activity.getString(R.string.ui_could_not_load_saved_widgets));}
         // Reconcile only this host's unreferenced allocations, never other launchers' widgets.
-        Set<Integer> retained=new HashSet<>();for(Entry e:entries)retained.add(e.id);if(pending>=0)retained.add(pending);
+        Set<Integer> retained=new HashSet<>();for(Entry e:entries)if(e.kind.equals("widget"))retained.add(e.id);if(pending>=0)retained.add(pending);
         for(int id:host.getAppWidgetIds())if(!retained.contains(id))host.deleteAppWidgetId(id);
         canvas.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{if(r-l!=or-ol||b-t!=ob-ot)relayout();});
         // Empty-surface holds must not enter widget editing during window gestures.
@@ -55,7 +63,14 @@ final class DesktopWidgets {
     }
     void start(){try{host.startListening();}catch(RuntimeException e){Ui.message(activity,activity.getString(R.string.ui_widget_update)+e.getMessage());}}
     void stop(){host.stopListening();}
-    void destroy(){if(activity.isFinishing()&&pending>=0)cancel();}
+    void configurationChanged(){
+        // Pixel bounds may stay unchanged on a density-only display update.
+        // Recreate content too: text sizes, provider resources and edit chrome
+        // were resolved against the previous Resources configuration.
+        for(Entry e:entries)((WidgetEditFrame)e.frame).cancelEditingGesture();
+        rebuild();
+    }
+    void destroy(){destroyed=true;importer.shutdownNow();if(contentDialog!=null)contentDialog.dismiss();if(activity.isFinishing()&&pending>=0)cancel();}
     boolean isEditing(){return editing;}
     void onEditingChanged(Runnable listener){editingChanged=listener;}
     boolean finishEditing(){if(!editing)return false;setEditing(false);return true;}
@@ -129,7 +144,17 @@ final class DesktopWidgets {
             }
         }catch(RuntimeException e){cancel();Ui.message(activity,activity.getString(R.string.ui_could_not_add_widget)+e.getMessage());}
     }
-    boolean result(int request,int result){
+    boolean result(int request,int result){return result(request,result,null);}
+    boolean result(int request,int result,Intent data){
+        if(request==IMAGE){
+            if(result!=Activity.RESULT_OK||data==null||data.getData()==null)return true;
+            android.net.Uri uri=data.getData();Ui.message(activity,activity.getString(R.string.widget_importing_image));
+            importer.execute(()->{
+                try{String image=WidgetImages.copy(activity,uri);activity.runOnUiThread(()->{
+                    if(destroyed){WidgetImages.remove(activity,image);return;}Entry e=custom("image");e.image=image;addCustom(e);
+                });}catch(java.io.IOException|RuntimeException error){activity.runOnUiThread(()->{if(!destroyed)Ui.message(activity,activity.getString(R.string.widget_image_failed));});}
+            });return true;
+        }
         if(request!=BIND&&request!=CONFIGURE)return false;
         if(pending<0)return true;
         if(result!=Activity.RESULT_OK){cancel();return true;}
@@ -162,13 +187,38 @@ final class DesktopWidgets {
     private void cancel(){if(pending>=0)host.deleteAppWidgetId(pending);pending=-1;prefs.edit().remove("pending").apply();}
     private int pxToDp(int value){return Math.round(value/activity.getResources().getDisplayMetrics().density);}
     private int dp(int n){return Ui.dp(activity,n);}
+    private Entry custom(String kind){
+        Entry e=new Entry();e.kind=kind;int id=prefs.getInt("next_custom_id",-1);for(Entry item:entries)id=Math.min(id,item.id-1);e.id=id;prefs.edit().putInt("next_custom_id",id-1).apply();
+        e.x=24;e.y=24;e.w=320;e.h=kind.equals("text")?120:240;e.textColor=Ui.TEXT;return e;
+    }
+    private void addCustom(Entry e){entries.add(e);selected=e;editing=true;editorCollapsed=false;save();rebuild();editingChanged.run();}
+    void addText(){textDialog(custom("text"),true);}
+    void addImage(){
+        try{activity.startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE),IMAGE);}
+        catch(RuntimeException e){Ui.message(activity,activity.getString(R.string.widget_image_failed));}
+    }
+    private void textDialog(Entry e,boolean adding){
+        LinearLayout form=Ui.column(activity);form.setPadding(dp(20),dp(12),dp(20),0);
+        EditText text=new EditText(activity);text.setMinLines(3);text.setMaxLines(6);text.setGravity(Gravity.TOP);text.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);text.setText(e.text);text.setHint(R.string.widget_text);text.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(4000)});form.addView(text);
+        form.addView(Ui.text(activity,activity.getString(R.string.widget_text_size),14,Ui.TEXT));EditText size=new EditText(activity);size.setInputType(2);size.setText(String.valueOf(e.textSize));form.addView(size);
+        form.addView(Ui.text(activity,activity.getString(R.string.widget_text_color)+" (#RRGGBB)",14,Ui.TEXT));EditText color=new EditText(activity);color.setSingleLine();color.setText(String.format(Locale.ROOT,"#%06X",e.textColor&0xffffff));form.addView(color);
+        Spinner align=new Spinner(activity);align.setAdapter(new ArrayAdapter<>(activity,android.R.layout.simple_spinner_dropdown_item,new String[]{activity.getString(R.string.widget_align_left),activity.getString(R.string.widget_align_center),activity.getString(R.string.widget_align_right)}));align.setSelection(e.align);form.addView(align);
+        ScrollView scroll=new ScrollView(activity);scroll.addView(form);
+        AlertDialog dialog=new AlertDialog.Builder(activity).setTitle(adding?R.string.widget_add_text:R.string.widget_edit_text).setView(scroll).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_save,null).create();
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            int n;try{n=Integer.parseInt(size.getText().toString());if(n<10||n>128)throw new NumberFormatException();}catch(NumberFormatException ex){size.setError(activity.getString(R.string.widget_text_size_range));return;}
+            String hex=color.getText().toString().trim();if(!hex.matches("#[a-fA-F0-9]{6}")){color.setError(activity.getString(R.string.appearance_invalid_color));return;}
+            if(text.getText().toString().trim().isEmpty()){text.setError(activity.getString(R.string.widget_text_empty));return;}
+            e.text=text.getText().toString();e.textSize=n;e.textColor=android.graphics.Color.parseColor(hex);e.align=align.getSelectedItemPosition();if(adding)addCustom(e);else{save();rebuild();}dialog.dismiss();
+        }));contentDialog=dialog;dialog.show();
+    }
     private void save(){
-        JSONArray array=new JSONArray();for(Entry e:entries)try{array.put(new JSONObject().put("id",e.id).put("x",e.x).put("y",e.y).put("w",e.w).put("h",e.h).put("mode",e.mode).put("baseW",e.baseW).put("baseH",e.baseH));}catch(JSONException ignored){}
+        JSONArray array=new JSONArray();for(Entry e:entries)try{array.put(new JSONObject().put("id",e.id).put("x",e.x).put("y",e.y).put("w",e.w).put("h",e.h).put("mode",e.mode).put("baseW",e.baseW).put("baseH",e.baseH).put("kind",e.kind).put("text",e.text).put("image",e.image).put("background",e.background).put("opacity",e.opacity).put("textColor",e.textColor).put("textSize",e.textSize).put("align",e.align));}catch(JSONException ignored){}
         prefs.edit().putString("items",array.toString()).putInt("pending",pending).apply();
     }
     private void rebuild(){
         canvas.removeAllViews();editor=null;for(Entry e:entries){
-            e.info=manager.getAppWidgetInfo(e.id);
+            e.info=e.kind.equals("widget")?manager.getAppWidgetInfo(e.id):null;
             e.frame=new WidgetEditFrame(activity,new WidgetEditFrame.Actions(){
                 int x,y,w,h,originalX,originalY,originalW,originalH;boolean resizing;
                 public boolean editing(){return editing;}
@@ -192,14 +242,22 @@ final class DesktopWidgets {
 
             });
             e.frame.setContentDescription(activity.getString(R.string.ui_edit_widgets)+": "+label(e));
-            if(e.info!=null){
+            e.frame.setBackground(Ui.rounded(activity,WidgetItemBackground.color(e.background,e.opacity),12));
+            e.view=null;e.viewport=null;
+            if(e.kind.equals("text")){
+                TextView text=Ui.text(activity,e.text,e.textSize,e.textColor);text.setPadding(dp(12),dp(8),dp(12),dp(8));text.setGravity(Gravity.CENTER_VERTICAL|(e.align==0?Gravity.START:e.align==1?Gravity.CENTER_HORIZONTAL:Gravity.END));e.frame.addView(text,new FrameLayout.LayoutParams(-1,-1));
+            }else if(e.kind.equals("image")){
+                java.io.File file=WidgetImages.file(activity,e.image);
+                if(file!=null&&file.isFile()){ImageView image=new ImageView(activity);image.setScaleType(ImageView.ScaleType.FIT_CENTER);image.setImageURI(android.net.Uri.fromFile(file));image.setContentDescription(activity.getString(R.string.widget_image));e.frame.addView(image,new FrameLayout.LayoutParams(-1,-1));}
+                else e.frame.addView(Ui.text(activity,activity.getString(R.string.widget_image_failed),14,Ui.MUTED));
+            }else if(e.info!=null){
                 e.view=host.createView(new WidgetLaunchContext(activity),e.id,e.info);e.viewport=new WidgetViewport(activity);e.viewport.addView(e.view);e.frame.addView(e.viewport,new FrameLayout.LayoutParams(-1,-1));
             }else{e.view=null;TextView missing=Ui.text(activity,activity.getString(R.string.ui_widget_unavailable_remove_it_in_edit_mode),14,Ui.MUTED);e.frame.addView(missing);}
             canvas.addView(e.frame,new FrameLayout.LayoutParams(dp(e.w),dp(e.h)));layout(e);
         }
         updateSelection();showEditor();
     }
-    private String label(Entry e){return e.info==null?activity.getString(R.string.ui_widget)+" #"+e.id:e.info.loadLabel(activity.getPackageManager());}
+    private String label(Entry e){if(e.kind.equals("text"))return e.text.isEmpty()?activity.getString(R.string.widget_text):e.text.split("\\n",2)[0];if(e.kind.equals("image"))return activity.getString(R.string.widget_image);return e.info==null?activity.getString(R.string.ui_widget)+" #"+e.id:e.info.loadLabel(activity.getPackageManager());}
     private void showEditor(){
         if(editor!=null)canvas.removeView(editor);editor=null;Arrays.fill(values,null);if(!editing)return;
         if(editorCollapsed){
@@ -238,9 +296,13 @@ final class DesktopWidgets {
                 if(entry.mode==WidgetGeometry.SCALE)panel.addView(Ui.button(activity,activity.getString(R.string.ui_render_size),()->renderSize(entry)));
                 panel.addView(Ui.button(activity,activity.getString(R.string.ui_reset_to_recommended_size),()->{entry.w=defaultSize(entry.info,true);entry.h=defaultSize(entry.info,false);entry.baseW=entry.w;entry.baseH=entry.h;layout(entry);save();updateValues();}));
             }
-            panel.addView(Ui.button(activity,activity.getString(R.string.ui_remove_widget),()->new AlertDialog.Builder(activity).setMessage(R.string.ui_remove_this_widget).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_remove,(d,w)->{entries.remove(entry);selected=entries.isEmpty()?null:entries.get(entries.size()-1);save();host.deleteAppWidgetId(entry.id);rebuild();}).show()));
+            panel.addView(Ui.button(activity,activity.getString(R.string.widget_item_background),()->contentDialog=WidgetItemBackground.show(activity,entry.background,entry.opacity,(color,opacity)->{entry.background=color;entry.opacity=opacity;save();entry.frame.setBackground(Ui.rounded(activity,WidgetItemBackground.color(color,opacity),12));})));
+            if(entry.kind.equals("text"))panel.addView(Ui.button(activity,activity.getString(R.string.widget_edit_text),()->textDialog(entry,false)));
+            panel.addView(Ui.button(activity,activity.getString(R.string.ui_remove_widget),()->new AlertDialog.Builder(activity).setMessage(R.string.ui_remove_this_widget).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_remove,(d,w)->{entries.remove(entry);selected=entries.isEmpty()?null:entries.get(entries.size()-1);save();if(entry.kind.equals("widget"))host.deleteAppWidgetId(entry.id);else if(entry.kind.equals("image"))WidgetImages.remove(activity,entry.image);rebuild();}).show()));
         }
         panel.addView(Ui.button(activity,activity.getString(R.string.ui_add_widget),this::choose));
+        panel.addView(Ui.button(activity,activity.getString(R.string.widget_add_text),this::addText));
+        panel.addView(Ui.button(activity,activity.getString(R.string.widget_add_image),this::addImage));
         canvas.addView(scroll,editorBounds());updateValues();
     }
     private FrameLayout.LayoutParams editorBounds(){int available=canvas.getWidth()>0?canvas.getWidth():activity.getResources().getDisplayMetrics().widthPixels;return new FrameLayout.LayoutParams(Math.min(available,Math.min(dp(240),Math.max(dp(160),Math.round(available*.72f)))),-1,(editorLeft?Gravity.LEFT:Gravity.RIGHT)|Gravity.TOP);}

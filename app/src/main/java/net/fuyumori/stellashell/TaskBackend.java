@@ -11,7 +11,7 @@ import org.json.*;
 import java.lang.reflect.*;
 import java.util.*;
 
-/** Shell-UID backend. Every mutation re-reads the task and its external display. */
+/** Shell-UID backend. Every mutation re-reads the task and its permitted display. */
 final class TaskBackend {
     boolean primaryMode;
     private final Context context;
@@ -80,6 +80,62 @@ final class TaskBackend {
         throw new IllegalArgumentException("The window closed or moved to another display");
     }
     private boolean method(Class<?> cls,String name,Class<?>... types){try{cls.getMethod(name,types);return true;}catch(NoSuchMethodException e){return false;}}
+    private Display requirePhoneDisplay(){
+        Display phone=context.getSystemService(DisplayManager.class).getDisplay(Display.DEFAULT_DISPLAY);
+        if(phone==null||!phone.isValid())throw new IllegalStateException("The phone display is unavailable");
+        return phone;
+    }
+    /** Navigation only: listing Phone tasks does not enable main-display window management. */
+    String phoneSnapshot()throws Exception {
+        requirePhoneDisplay();JSONArray rows=new JSONArray();
+        for(FrameworkTaskAccess.Entry task:taskAccess.query(Display.DEFAULT_DISPLAY))
+            if(eligible(task,Display.DEFAULT_DISPLAY))rows.put(row(task));
+        return new JSONObject().put("tasks",rows).toString();
+    }
+    String focusPhoneTask(int taskId,String component)throws Exception {
+        FrameworkTaskAccess.Entry task=requirePhoneTask(taskId,component);
+        // Restore exactly the selected task, without launching another Activity,
+        // changing its windowing mode, or moving it off the phone display.
+        pins.resume(task);apply(change(task,"reorder",boolean.class,true));return "OK";
+    }
+    private FrameworkTaskAccess.Entry requirePhoneTask(int taskId,String component)throws Exception {
+        Policy.component(component);requirePhoneDisplay();
+        for(FrameworkTaskAccess.Entry task:taskAccess.query(Display.DEFAULT_DISPLAY)){
+            if(task.id!=taskId||!eligible(task,Display.DEFAULT_DISPLAY))continue;
+            if(!task.component.flattenToString().equals(component))break;
+            return task;
+        }
+        throw new IllegalArgumentException("The window closed or moved to another display");
+    }
+    /** Explicit sidebar actions do not enable automatic main-display task management. */
+    String operatePhoneTask(int taskId,String component,String action,int l,int top,int r,int bottom)throws Exception {
+        if(!"float".equals(action)&&!"fullscreen".equals(action)&&!"close".equals(action))throw new IllegalArgumentException("Unsupported phone operation");
+        try{
+            FrameworkTaskAccess.Entry task=requirePhoneTask(taskId,component);
+            if("close".equals(action))closeTask(task);
+            else{
+                boolean floating="float".equals(action);int wantedMode=floating?5:1;
+                if(floating){
+                    Point size=new Point();requirePhoneDisplay().getRealSize(size);
+                    Rect wanted=new Rect(l,top,r,bottom);
+                    if(wanted.isEmpty())throw new IllegalArgumentException("Invalid window bounds");
+                    wanted=WorkArea.clamp(wanted,new Rect(0,0,size.x,size.y));
+                    pins.resume(task);applyFreeform(task,wanted,true);
+                }else applyFullscreen(task,true);
+                long deadline=android.os.SystemClock.uptimeMillis()+1500;
+                FrameworkTaskAccess.Entry actual;
+                do{
+                    actual=requirePhoneTask(taskId,component);
+                    if(actual.windowMode==wantedMode)break;
+                    android.os.SystemClock.sleep(50);
+                }while(android.os.SystemClock.uptimeMillis()<deadline);
+                if(actual.windowMode!=wantedMode)throw new IllegalStateException("The app did not accept the requested window mode");
+                record("phone "+action+" task="+taskId+" via="+lastBoundsDispatch);
+                return new JSONObject().put("task",row(actual)).toString();
+            }
+            record("phone "+action+" task="+taskId);return "OK";
+        }catch(Exception e){record("FAILED phone "+action+" task="+taskId+" "+reason(e));throw e;}
+    }
     String snapshot(int id) throws Exception {
         try{pins.reconcile();}catch(Exception failure){record("pin reconciliation: "+reason(failure));}
         List<FrameworkTaskAccess.Entry> currentTasks=tasks(id);
@@ -230,26 +286,36 @@ final class TaskBackend {
         Object transitionToken=boundsTransition.invoke(organizer,6,tx);
         lastBoundsDispatch=transitionToken==null?"transition-api/legacy-no-player":"shell-transition";
     }
+    private void closeTask(FrameworkTaskAccess.Entry task)throws Exception {
+        if(!(Boolean)api.getMethod("removeTask",int.class).invoke(manager,task.id))throw new IllegalStateException("Could not close the window");
+        restoreBounds.remove(task.id);pins.closed(task.id);
+    }
+    private void applyFreeform(FrameworkTaskAccess.Entry task,Rect bounds,boolean focus)throws Exception {
+        Object tx=transaction.getConstructor().newInstance();
+        transaction.getMethod("setWindowingMode",token,int.class).invoke(tx,task.token,5);
+        transaction.getMethod("setBounds",token,Rect.class).invoke(tx,task.token,bounds);
+        if(focus)transaction.getMethod("reorder",token,boolean.class).invoke(tx,task.token,true);
+        if(task.windowMode!=5)applyMode(tx);else applyBounds(tx);
+    }
+    private void applyFullscreen(FrameworkTaskAccess.Entry task,boolean focus)throws Exception {
+        pins.fullscreen(task);restoreBounds.putIfAbsent(task.id,new Rect(task.bounds));
+        Object tx=transaction.getConstructor().newInstance();
+        transaction.getMethod("setWindowingMode",token,int.class).invoke(tx,task.token,1);
+        transaction.getMethod("setBounds",token,Rect.class).invoke(tx,task.token,(Object)null);
+        transaction.getMethod("setAppBounds",token,Rect.class).invoke(tx,task.token,(Object)null);
+        if(focus)transaction.getMethod("reorder",token,boolean.class).invoke(tx,task.token,true);
+        applyMode(tx);
+    }
     String operate(int id,int taskId,String action,int l,int top,int r,int bottom) throws Exception {
         try {
-            FrameworkTaskAccess.Entry t=requireTask(id,taskId);Object taskToken=t.token;
+            FrameworkTaskAccess.Entry t=requireTask(id,taskId);
             switch(action){
                 case "pin": requireStandalone(t);pins.set(t,true);break;
                 case "unpin": pins.set(t,false);break;
-                case "fullscreen": {
-                    pins.fullscreen(t);
-                    restoreBounds.putIfAbsent(taskId,new Rect(t.bounds));
-                    Object tx=transaction.getConstructor().newInstance();
-                    transaction.getMethod("setWindowingMode",token,int.class).invoke(tx,taskToken,1);
-                    transaction.getMethod("setBounds",token,Rect.class).invoke(tx,taskToken,(Object)null);
-                    transaction.getMethod("setAppBounds",token,Rect.class).invoke(tx,taskToken,(Object)null);
-                    applyMode(tx);break;
-                }
+                case "fullscreen":applyFullscreen(t,false);break;
                 case "focus": pins.resume(t);apply(change(t,"reorder",boolean.class,true));break;
                 case "minimize": pins.suspend(t);apply(change(t,"reorder",boolean.class,false));break;
-                case "close":
-                    if(!(Boolean)api.getMethod("removeTask",int.class).invoke(manager,taskId))throw new IllegalStateException("Could not close the window");
-                    restoreBounds.remove(taskId);pins.closed(taskId);break;
+                case "close":closeTask(t);break;
                 case "resize":
                     // A queued drag/IME reflow must never turn a newly promoted main into freeform.
                     if(t.windowMode!=5)return "OK: stale window resize ignored";
@@ -273,10 +339,7 @@ final class TaskBackend {
                         int middle=area.centerX();wanted=new Rect(action.equals("left")?area.left:middle,area.top,action.equals("left")?middle:area.right,area.bottom);
                     } else wanted=new Rect(l,top,r,bottom);
                     wanted=WorkArea.clamp(wanted,area);
-                    Object tx=transaction.getConstructor().newInstance();
-                    transaction.getMethod("setWindowingMode",token,int.class).invoke(tx,taskToken,5);
-                    transaction.getMethod("setBounds",token,Rect.class).invoke(tx,taskToken,wanted);
-                    if(t.windowMode!=5)applyMode(tx);else applyBounds(tx);
+                    applyFreeform(t,wanted,false);
                     // The result may be constrained further by the application's minimum size.
                     record(action+" task="+taskId+" via="+lastBoundsDispatch+" requested="+wanted+" actual="+new Rect(requireTask(id,taskId).bounds));
                     return "OK";

@@ -37,7 +37,7 @@ final class WorkArea {
     }
     static synchronized WorkArea get(Context c,int id){
         WorkArea area=areas.get(id);if(area!=null)return area;
-        Context dc=c.createDisplayContext(Displays.require(c,id)).createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,null);
+        Context dc=c.createDisplayContext(id==0?c.getSystemService(android.hardware.display.DisplayManager.class).getDisplay(0):Displays.require(c,id)).createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,null);
         return read(dc,dc.getSystemService(WindowManager.class).getCurrentWindowMetrics().getWindowInsets());
     }
     static synchronized void put(int id,WorkArea area){areas.put(id,area);}

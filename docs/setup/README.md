@@ -1,4 +1,4 @@
-# セットアップの入口（StellaShell 0.7）
+# セットアップの入口
 
 目的別に手順を分けています。**全部を実施する必要はありません。**
 
@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | 通常のStellaShellセットアップ | [① ShizukuとStellaShell](01-shizuku.md) | Shizuku接続済み・操作バー許可済み |
 | Android単体から自己ADBを使う（上級者・任意） | [② Termux / self-ADB :5555](02-termux-self-adb.md) | `127.0.0.1:5555` が `device` |
-| PCに独立したデスクトップを表示する | [③ scrcpy / Windows](03-scrcpy.md) | 本体とは別の画面にStellaShellのバー |
+| PCに独立したデスクトップを表示する | [③ scrcpy / Windows・Linux・macOS](03-scrcpy.md) | 本体とは別の画面にStellaShellのバー |
 
 - USBモニターを使う：① → モニター接続 → 外部画面で開始。
 - タブレット本体で使う：① → 本体画面で開始（実験的）。

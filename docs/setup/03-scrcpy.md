@@ -1,6 +1,6 @@
 # ③ scrcpyでStellaShellをPCに表示する
 
-[手順の入口](README.md) · Windows例 / StellaShell 0.7
+[手順の入口](README.md) · Windows / Linux / macOS
 
 ## 前提
 
@@ -61,7 +61,7 @@ StellaShellのバーと壁紙が見えれば画面作成は成功です。電卓
 
 [仮想画面の公式仕様](https://github.com/Genymobile/scrcpy/blob/v3.3.1/doc/virtual_display.md)。
 
-## 3. 毎回のコマンドを省略（Windows用PS1）
+## 3. 毎回のコマンドを省略（Windows / Linux / macOS）
 
 [Windowsセッションランチャー](../../tools/windows/README.md)の手順で、PS1とJSONをscrcpyのフォルダーへ配置します。
 
@@ -70,7 +70,15 @@ StellaShellのバーと壁紙が見えれば画面作成は成功です。電卓
 .\start-stellashell.ps1 -Device redmagic
 ```
 
-サンプルJSONのIPを書き換えて使用します。このPS1はTCP接続用です。USBシリアルで使う場合は上の直接コマンドを使ってください。
+Windows版は接続先未設定／接続失敗時にワイヤレスデバッグのペア設定・接続メニューを表示します。5555は必須ではありません。
+
+Linux／macOSでは [シェル版](../../tools/unix/README.md) を使えます。
+
+```bash
+bash tools/unix/start-stellashell.sh
+```
+
+どちらもネットワーク接続用です。USBシリアルで使う場合は上の直接コマンドを使ってください。
 
 ## 日本語入力・終了・困ったとき
 

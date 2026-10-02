@@ -16,9 +16,27 @@ public final class DockService extends Service implements DisplayManager.Display
     private static boolean alive;
     private static DockService instance;
     private static boolean homeVisible;
-    static void homeVisible(boolean visible){homeVisible=visible;if(instance!=null){instance.positionDock();instance.positionHandles();}}
+    private static final java.util.Set<Runnable> navigationObservers=new java.util.HashSet<>();
+    static void observeNavigation(Runnable observer){navigationObservers.add(observer);}
+    static void unobserveNavigation(Runnable observer){navigationObservers.remove(observer);}
+    static boolean phoneNavigationReady(){return instance!=null&&instance.phoneSidebar!=null&&instance.phoneSidebar.ready();}
+    private void syncPhoneSidebar(){
+        boolean wanted=!destroyed&&Launches.prefs(this).getBoolean("phone_sidebar",true)&&Settings.canDrawOverlays(this);
+        if(!wanted&&phoneSidebar!=null){phoneSidebar.close();phoneSidebar=null;}
+        else if(wanted&&phoneSidebar==null)try{phoneSidebar=new PhoneSidebar(this,()->{if(displayId==0&&tasks!=null)tasks.areaChanged();});phoneSidebar.homeVisible(homeVisible);}
+        catch(RuntimeException e){Launches.problem(this,e.getMessage());}
+        navigationChanged();
+    }
+    private static void navigationChanged(){for(Runnable observer:new java.util.ArrayList<>(navigationObservers))observer.run();}
+    static void homeVisible(boolean visible){homeVisible=visible;if(instance!=null){instance.positionDock();instance.positionHandles();if(instance.phoneSidebar!=null)instance.phoneSidebar.homeVisible(visible);}}
     private boolean sidebarAllowed(){return displayId!=0||Launches.prefs(this).getBoolean("phone_sidebar_over_apps",true)||homeVisible;}
     static boolean running(){return alive;}
+    private PhoneSidebar phoneSidebar;
+    static boolean toggleStart(int requestedDisplay){
+        if(requestedDisplay==0&&instance!=null&&instance.phoneSidebar!=null){instance.phoneSidebar.toggleStart();return true;}
+        if(instance==null||instance.destroyed||instance.menu==null||requestedDisplay>=0&&requestedDisplay!=instance.displayId)return false;
+        instance.toggleMenu();return true;
+    }
     private static final String STOP="net.fuyumori.stellashell.STOP";
     private static final String RESET="net.fuyumori.stellashell.RESET_CONNECTION";
     private boolean resetting,destroyed;
@@ -41,7 +59,7 @@ public final class DockService extends Service implements DisplayManager.Display
         if(chrome!=null&&tasks!=null)chrome.update(tasks.tasks());
     }
     private void positionDock(){
-        if(dock==null||windows==null)return;
+        if(displayId==0||dock==null||windows==null)return;
         WorkArea a=WorkArea.get(this,displayId);Context c=dock.getContext();
         WindowManager.LayoutParams p=(WindowManager.LayoutParams)dock.getLayoutParams();
         p.gravity=Gravity.TOP|Gravity.LEFT;p.setFitInsetsTypes(0);
@@ -144,7 +162,9 @@ public final class DockService extends Service implements DisplayManager.Display
     static void start(Context c,int target) {start(c,target,true);}
     static void start(Context c,int target,boolean showHome) {
         if(!Settings.canDrawOverlays(c)){Ui.message(c,c.getString(R.string.ui_allow_the_taskbar_overlay_first));return;}
-        Launches.prefs(c).edit().putInt("preferred_display",target).remove("active_display").apply();
+        // A request is not an output transition. The running service owns this
+        // cache; keep its actual target until onStartCommand publishes the next one.
+        Launches.prefs(c).edit().putInt("preferred_display",target).apply();
         enableHome(c,true);Launches.prefs(c).edit().putBoolean("enabled",true).apply();
         try {c.startForegroundService(new Intent(c,DockService.class).putExtra("show_home",showHome));}
         catch(RuntimeException e){Launches.prefs(c).edit().putBoolean("enabled",false).apply();enableHome(c,false);Launches.problem(c,e.getMessage());}
@@ -229,11 +249,12 @@ public final class DockService extends Service implements DisplayManager.Display
         if(menu!=null)menu.close();menu=null;
         if(dock!=null && windows!=null)try{windows.removeViewImmediate(dock);}catch(RuntimeException ignored){}
         for(View handle:edgeHandles)if(windows!=null)try{windows.removeViewImmediate(handle);}catch(RuntimeException ignored){}edgeHandles.clear();
-        dock=null;batteryText=null;if(!keepChrome)windows=null;
+        dock=null;batteryText=null;if(!keepChrome)windows=null;navigationChanged();
     }
     private void update(boolean openHome) {update(openHome,false);}
     private void update(boolean openHome,boolean keepDashboard) {
         if(resetting || destroyed)return;
+        syncPhoneSidebar();
         int preferred=displayId>0?displayId:Launches.prefs(this).getInt("preferred_display",-1);
         int next=Displays.target(this,preferred);
         Launches.prefs(this).edit().putInt("active_display",next).apply();
@@ -245,7 +266,7 @@ public final class DockService extends Service implements DisplayManager.Display
         if(tasks==null)tasks=new TaskSession(this,next,this::tasksChanged,()->menu!=null&&menu.isOpen());
         if(dock==null)attachDock();
         if(dock==null){getSystemService(NotificationManager.class).notify(41,notification(this.getString(R.string.ui_could_not_show_the_taskbar_check_permissions)));return;}
-        if(dock!=null && !keepDashboard && (changed || openHome))Launches.home(this,next);
+        if(dock!=null && !keepDashboard && (openHome || changed&&next>0))Launches.home(this,next);
         getSystemService(NotificationManager.class).notify(41,notification(this.getString(Displays.primary(this)?R.string.primary_running:R.string.ui_running_on_an_external_display_tap_for_settings)));
     }
     private void attachDock() {
@@ -253,6 +274,13 @@ public final class DockService extends Service implements DisplayManager.Display
             Context c=createDisplayContext(Displays.require(this,displayId)).createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,null);
             c=new android.view.ContextThemeWrapper(c,Appearance.theme());
             windows=c.getSystemService(WindowManager.class);
+            if(displayId==0){
+                renderedCompact=true;syncPhoneSidebar();menu=phoneSidebar==null?new AppMenu(c,windows,0):phoneSidebar.menu;
+                if(chrome==null)chrome=new WindowChrome(c,windows,tasks);
+                dock=new View(c);dock.setVisibility(View.GONE);
+                WindowManager.LayoutParams placeholder=new WindowManager.LayoutParams(1,1,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,PixelFormat.TRANSLUCENT);
+                windows.addView(dock,placeholder);return;
+            }
             if(areaObserver==null||observedDisplay!=displayId){closeAreaObserver();observedDisplay=displayId;areaObserver=new WorkAreaObserver(c,displayId,this::areaChanged);}
             menu=new AppMenu(c,windows,displayId);
             if(chrome==null)chrome=new WindowChrome(c,windows,tasks);
@@ -297,7 +325,7 @@ public final class DockService extends Service implements DisplayManager.Display
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,PixelFormat.TRANSLUCENT);
             p.gravity=Gravity.BOTTOM|Gravity.LEFT;p.setFitInsetsTypes(displayId==0?WindowInsets.Type.navigationBars():0);p.y=Ui.dp(c,4);p.setTitle("StellaShell dock");
             windows.addView(row,p);dock=row;positionDock();displayGeometry=geometry(displayId);
-        }catch(RuntimeException e){removeDock();Launches.problem(this,this.getString(R.string.ui_could_not_show_the_taskbar)+e.getMessage());}
+        }catch(RuntimeException e){removeDock();Launches.problem(this,this.getString(R.string.ui_could_not_show_the_taskbar)+e.getMessage());}finally{navigationChanged();}
     }
     private void tasksChanged(){
         if(tasks==null||displayId<0)return;
@@ -350,16 +378,16 @@ public final class DockService extends Service implements DisplayManager.Display
         if(id==displayId && !geometry(id).equals(displayGeometry)){closeAreaObserver();removeDock();update(false);}
     }
     @Override public void onSharedPreferenceChanged(SharedPreferences p,String key){
-        if("sidebar_height".equals(key)||"phone_sidebar_over_apps".equals(key)){positionDock();positionHandles();return;}
+        if("sidebar_height".equals(key)||"phone_sidebar_over_apps".equals(key)){positionDock();positionHandles();if(phoneSidebar!=null)phoneSidebar.relayout();return;}
         if("enabled".equals(key) && !p.getBoolean("enabled",false)){stopSelf();return;}
-        if("phone_sidebar".equals(key)&&!p.getBoolean(key,true)&&displayId==0&&WorkspaceProfile.standard(this,0)){stop(this,false);return;}
+        if("phone_sidebar".equals(key)){syncPhoneSidebar();if(displayId==0){removeDock();attachDock();}return;}
         if("phone_window_management".equals(key)){closeAreaObserver();removeDock();if(tasks!=null)tasks.close();tasks=null;update(false,true);return;}
         if("shell_layout".equals(key)){if(areaObserver!=null)areaObserver.refresh();areaChanged();return;}
         if(Appearance.KEY.equals(key))Appearance.load(this);
-        if(WorkspaceProfile.changed(key,"pinned")||Appearance.KEY.equals(key)||IconTheme.changed(key)){removeDock();if(displayId>=0)attachDock();}
+        if(WorkspaceProfile.changed(key,"pinned")||Appearance.KEY.equals(key)||IconTheme.changed(key)){if(phoneSidebar!=null)phoneSidebar.rebuild();removeDock();if(displayId>=0)attachDock();}
     }
     @Override public void onDestroy(){
-        destroyed=true;alive=false;if(instance==this)instance=null;ShellPanels.unobserve(panelsChanged);ShellPanels.dismiss(displayId);Launches.prefs(this).edit().remove("active_display").apply();closeAreaObserver();Bridge.get(this).mouseDisplay(-1);
+        destroyed=true;if(phoneSidebar!=null){phoneSidebar.close();phoneSidebar=null;}alive=false;if(instance==this)instance=null;ShellPanels.unobserve(panelsChanged);ShellPanels.dismiss(displayId);Launches.prefs(this).edit().remove("active_display").apply();closeAreaObserver();Bridge.get(this).mouseDisplay(-1);
         if(batteryRegistered){unregisterReceiver(batteryReceiver);batteryRegistered=false;}
         if(displays!=null)displays.unregisterDisplayListener(this);
         Launches.prefs(this).unregisterOnSharedPreferenceChangeListener(this);if(tasks!=null)tasks.close();removeDock();menuLoader.shutdownNow();super.onDestroy();

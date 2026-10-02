@@ -29,8 +29,11 @@ final class AppOrganization {
     static void addGroup(Context c,String name){Set<String> groups=new HashSet<>(groups(c));groups.add(name);prefs(c).edit().putStringSet("groups",groups).apply();}
     static void renameGroup(Context c,String old,String name){
         Set<String> groups=new HashSet<>(groups(c));groups.remove(old);if(!name.isEmpty())groups.add(name);
-        SharedPreferences.Editor editor=prefs(c).edit().putStringSet("groups",groups);
+        String id=prefs(c).getString("id."+old,"");
+        SharedPreferences.Editor editor=prefs(c).edit().putStringSet("groups",groups).remove("id."+old);
+        if(!name.isEmpty()&&!id.isEmpty())editor.putString("id."+name,id);
         for(Map.Entry<String,?> entry:prefs(c).getAll().entrySet())if(entry.getKey().startsWith("group.")&&old.equals(entry.getValue()))editor.putString(entry.getKey(),name);
         editor.apply();
+        if(name.isEmpty())GroupEntries.removeReferences(c,id);
     }
 }

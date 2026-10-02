@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_time_now">Just now</string>
+    <plurals name="notification_time_minutes">
+        <item quantity="one">%d min ago</item>
+        <item quantity="other">%d min ago</item>
+    </plurals>
+    <string name="notification_time_yesterday">Yesterday, %1$s</string>
+    <string name="notification_time_date">%1$s, %2$s</string>
+</resources>

@@ -14,7 +14,7 @@ final class StartPins {
         return value.isEmpty()?new ArrayList<>():new ArrayList<>(Arrays.asList(value.split("\\n")));
     }
     static void toggle(Context context,String component){
-        Policy.component(component);initialize(context);List<String> items=get(context);
+        GroupEntries.validate(context,component);initialize(context);List<String> items=get(context);
         if(!items.remove(component))items.add(component);
         Launches.prefs(context).edit().putString(WorkspaceProfile.key(context,KEY),String.join("\n",items)).apply();
     }
