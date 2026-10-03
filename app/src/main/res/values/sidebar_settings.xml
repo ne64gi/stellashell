@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sidebar_settings_title">Dock</string>
+    <string name="sidebar_settings_summary">Visibility, position and size on each screen</string>
+    <string name="sidebar_settings_back">‹ Back to settings</string>
+    <string name="sidebar_settings_immediate">Changes apply immediately.</string>
+    <string name="sidebar_settings_phone">Built-in screen</string>
+    <string name="sidebar_settings_desktop">External screen</string>
+    <string name="sidebar_settings_show_phone">Show on built-in screen</string>
+    <string name="sidebar_settings_show_desktop">Show on external screen</string>
+    <string name="sidebar_settings_show">Show sidebar</string>
+    <string name="sidebar_settings_call_side">Open from</string>
+    <string name="sidebar_settings_edge">Edge</string>
+    <string name="sidebar_settings_edge_note">Choosing an edge moves the sidebar there. Use either slider to adjust its position, including inward from the edge.</string>
+    <string name="sidebar_settings_horizontal">Position (horizontal)</string>
+    <string name="sidebar_settings_vertical">Position (vertical)</string>
+    <string name="sidebar_settings_both">Both sides</string>
+    <string name="sidebar_settings_left">Left</string>
+    <string name="sidebar_settings_right">Right</string>
+    <string name="sidebar_settings_top">Top</string>
+    <string name="sidebar_settings_bottom">Bottom</string>
+    <string name="sidebar_settings_choice">%1$s: %2$s</string>
+    <string name="sidebar_settings_percent">%1$s: %2$d%%</string>
+    <string name="sidebar_settings_size">Size</string>
+    <string name="sidebar_settings_smaller">Smaller</string>
+    <string name="sidebar_settings_larger">Larger</string>
+    <string name="sidebar_settings_size_note">Changes Dock size only.</string>
+    <string name="sidebar_settings_start_note">When the taskbar is shown on the same screen, open Start from the taskbar.</string>
+    <string name="setup_desktop_title">Desktop</string>
+    <string name="setup_desktop_screen">Screen</string>
+    <string name="setup_desktop_choose_note">Choose a screen to start the desktop.</string>
+    <string name="setup_desktop_open_note">Open the desktop on this screen.</string>
+    <string name="setup_desktop_connect_note">Connect an external screen to start the desktop.</string>
+    <string name="setup_desktop_disconnected_note">The selected screen is disconnected. Connect it or choose another screen.</string>
+    <string name="setup_desktop_reconnect_note">The desktop screen is disconnected. Reconnect it, or stop the desktop to choose another screen.</string>
+    <string name="setup_external_screen_later">External screen (connect later)</string>
+    <string name="setup_screen_disconnected">Selected screen (disconnected)</string>
+    <string name="setup_desktop_start">Start desktop</string>
+    <string name="setup_desktop_start_on_connection">Start when connected</string>
+    <string name="setup_desktop_open">Open desktop</string>
+    <string name="setup_desktop_stop">Stop desktop</string>
+    <string name="setup_displays_note">Manage connected screens</string>
+    <string name="setup_screen_numbered">%1$s · %2$d</string>
+</resources>

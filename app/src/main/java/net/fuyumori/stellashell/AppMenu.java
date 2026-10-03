@@ -43,8 +43,13 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         menuWidth=Math.max(1,Math.min(dp(640),area.application.width()-dp(24)));
         menuHeight=Math.max(1,Math.min(dp(720),area.application.height()-dp(24)));
         WindowManager.LayoutParams p=(WindowManager.LayoutParams)root.getLayoutParams();p.width=menuWidth;p.height=menuHeight;
-        p.x=area.application.left+dp(12);p.y=Math.max(area.application.top,area.application.bottom-menuHeight-dp(12));windows.updateViewLayout(root,p);
+        position(area,p);windows.updateViewLayout(root,p);
         ShellPanels.bounds(displayId,this,new android.graphics.Rect(p.x,p.y,p.x+p.width,p.y+p.height));
+    }
+    private void position(WorkArea area,WindowManager.LayoutParams p){
+        int[] point=DockPlacement.menu(area.application.left,area.application.top,area.application.right,area.application.bottom,
+            menuWidth,menuHeight,dp(12),Launches.prefs(context).getString("dock_edge","bottom"),displayId==0?null:DockService.navigationBounds(displayId));
+        p.x=point[0];p.y=point[1];
     }
     void back(){if(openGroup!=null)closeFolder();else close();}
     void close(){
@@ -104,7 +109,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         });
         WindowManager.LayoutParams params=new WindowManager.LayoutParams(menuWidth,menuHeight,activityHosted?WindowManager.LayoutParams.TYPE_APPLICATION_PANEL:WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL|WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,PixelFormat.TRANSLUCENT);
-        params.gravity=Gravity.TOP|Gravity.LEFT;params.setFitInsetsTypes(0);params.x=area.application.left+dp(12);params.y=Math.max(area.application.top,area.application.bottom-menuHeight-dp(12));
+        params.gravity=Gravity.TOP|Gravity.LEFT;params.setFitInsetsTypes(0);position(area,params);
         params.softInputMode=WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN|WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
         params.setTitle("StellaShell app menu");
         ShellPanels.activate(displayId,this,this::close);

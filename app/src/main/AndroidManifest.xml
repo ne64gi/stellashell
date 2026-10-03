@@ -25,6 +25,12 @@
         <activity android:name=".DisplayManagementActivity" android:exported="false" />
         <activity android:name=".AppearanceActivity" android:exported="false" android:resizeableActivity="true"
             android:launchMode="singleTask" android:taskAffinity="net.fuyumori.stellashell.appearance" android:excludeFromRecents="true" />
+        <activity android:name=".SidebarSettingsActivity" android:exported="false" android:resizeableActivity="true"
+            android:launchMode="singleTask" android:taskAffinity="net.fuyumori.stellashell.sidebarsettings" android:excludeFromRecents="true" />
+        <activity android:name=".TaskbarSettingsActivity" android:exported="false" android:resizeableActivity="true"
+            android:launchMode="singleTask" android:taskAffinity="net.fuyumori.stellashell.taskbarsettings" android:excludeFromRecents="true" />
+        <activity android:name=".DisplaySettingsActivity" android:exported="false" android:resizeableActivity="true"
+            android:launchMode="singleTask" android:taskAffinity="net.fuyumori.stellashell.displaysettings" android:excludeFromRecents="true" />
         <activity android:name=".SetupActivity" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="display_settings_title">ディスプレイ設定</string>
+    <string name="display_settings_summary">画面ごとのアプリ・文字・ウィンドウの大きさ</string>
+    <string name="display_settings_back">‹ 設定に戻る</string>
+    <string name="display_settings_note">選んだ画面全体のアプリ・文字・ウィンドウの大きさを変更します。解像度は変更しません。</string>
+    <string name="display_settings_screen">画面</string>
+    <string name="display_settings_screen_choice">画面：%1$s  ▾</string>
+    <string name="display_settings_screen_numbered">%1$s · %2$d</string>
+    <string name="display_settings_dimensions">%1$d × %2$d</string>
+    <string name="display_settings_current">現在の大きさ：%1$d%%</string>
+    <string name="display_settings_size">大きさ</string>
+    <string name="display_settings_percent">大きさ：%1$d%%</string>
+    <string name="display_settings_smaller">小さく：%1$d%%</string>
+    <string name="display_settings_larger">大きく：%1$d%%</string>
+    <string name="display_settings_apply_note">大きさを選んで「適用」を押してください。Dockとタスクバーの大きさは、それぞれの設定でも調整できます。</string>
+    <string name="display_settings_apply">適用</string>
+    <string name="display_settings_reset">標準に戻す</string>
+    <string name="display_settings_reload">再読み込み</string>
+    <string name="display_settings_permissions">接続と権限を確認</string>
+    <string name="display_settings_disconnected">画面が未接続です</string>
+    <string name="display_settings_disconnected_note">選んだ画面を接続するか、別の画面を選んでください。</string>
+    <string name="display_settings_changed">選んだ画面が変わりました。適用する画面を選び直してください。</string>
+    <string name="display_settings_connect_note">大きさを変更するには、接続と画面設定の許可を確認してください。</string>
+    <string name="display_settings_loading">画面設定を読み込み中…</string>
+    <string name="display_settings_applying">適用中…</string>
+    <string name="display_settings_applied">大きさを変更しました。</string>
+    <string name="display_settings_unavailable">画面設定を読み込めませんでした。画面と接続を確認し、再読み込みしてください。</string>
+    <string name="display_settings_apply_failed">大きさを変更できませんでした。画面を確認し、再読み込みしてからお試しください。</string>
+</resources>

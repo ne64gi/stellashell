@@ -42,6 +42,28 @@ final class Launches {
         }
         prefs(c).edit().putString(WorkspaceProfile.key(c,"pinned"),String.join("\n",pins)).apply();
     }
+    static List<String> taskbarPins(Context c){
+        if(!WorkspaceProfile.phone(c))return pins(c);
+        String value=prefs(c).getString("phone_taskbar_pinned","");
+        return value.isEmpty()?new ArrayList<>():new ArrayList<>(Arrays.asList(value.split("\\n")));
+    }
+    static void toggleTaskbarPin(Context c,String component){
+        Policy.component(component);if(!WorkspaceProfile.phone(c)){togglePin(c,component);return;}
+        List<String> items=taskbarPins(c);
+        if(!items.remove(component)){if(items.size()>=6){Ui.message(c,c.getString(R.string.ui_you_can_pin_up_to_6_apps));return;}items.add(component);}
+        prefs(c).edit().putString("phone_taskbar_pinned",String.join("\n",items)).apply();
+    }
+    /** The added Dock has its own Desktop pins; legacy taskbar's six slots stay separate. */
+    static List<String> dockPins(Context c){
+        if(WorkspaceProfile.phone(c))return pins(c);
+        String value=prefs(c).getString("dock_pinned","");
+        return value.isEmpty()?new ArrayList<>():new ArrayList<>(Arrays.asList(value.split("\\n")));
+    }
+    static void toggleDockPin(Context c,String component){
+        Policy.component(component);if(WorkspaceProfile.phone(c)){togglePin(c,component);return;}
+        List<String> items=dockPins(c);if(!items.remove(component))items.add(component);
+        prefs(c).edit().putString("dock_pinned",String.join("\n",items)).apply();
+    }
     static List<String> desktop(Context c) {
         String value=prefs(c).getString(WorkspaceProfile.key(c,"desktop_shortcuts"),"");
         return value.isEmpty()?new ArrayList<>():new ArrayList<>(Arrays.asList(value.split("\\n")));
@@ -60,12 +82,37 @@ final class Launches {
         return WorkspaceProfile.standard(c,display)||display==0&&c instanceof HomeActivity&&!HomeActivity.extensions(c);
     }
     static void normalApp(Context c,String component){
-        Policy.component(component);
-        Intent intent=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-                .setComponent(ComponentName.unflattenFromString(component))
+        Intent intent=normalAppIntent(c,component)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
         c.startActivity(intent,ActivityOptions.makeBasic().setLaunchDisplayId(0).toBundle());
         remember(c,component);
+    }
+    /** Stored shortcuts can name an internal task Activity, not a public launcher entry. */
+    static Intent normalAppIntent(Context c,String component){
+        Policy.component(component);
+        ComponentName requested=ComponentName.unflattenFromString(component);
+        PackageManager pm=c.getPackageManager();
+        Intent query=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(requested.getPackageName());
+        ComponentName firstAccessible=null;
+        for(ResolveInfo entry:pm.queryIntentActivities(query,0)){
+            ActivityInfo activity=entry.activityInfo;
+            if(activity==null||!accessible(c,activity))continue;
+            ComponentName launcher=new ComponentName(activity.packageName,activity.name);
+            if(requested.equals(launcher))return new Intent(query).setComponent(requested);
+            if(firstAccessible==null)firstAccessible=launcher;
+        }
+        // Keep an explicitly selected launcher alias; only obsolete/internal entries fall back.
+        Intent fallback=pm.getLaunchIntentForPackage(requested.getPackageName());
+        if(fallback!=null&&fallback.getComponent()!=null)try{
+            if(accessible(c,pm.getActivityInfo(fallback.getComponent(),0)))return new Intent(fallback);
+        }catch(PackageManager.NameNotFoundException ignored){}
+        if(firstAccessible!=null)return new Intent(query).setComponent(firstAccessible);
+        throw new ActivityNotFoundException("No accessible launcher for "+requested.getPackageName());
+    }
+    private static boolean accessible(Context c,ActivityInfo activity){
+        return activity.enabled&&activity.applicationInfo!=null&&activity.applicationInfo.enabled
+                &&(activity.exported||activity.applicationInfo.uid==android.os.Process.myUid())
+                &&(activity.permission==null||c.checkSelfPermission(activity.permission)==PackageManager.PERMISSION_GRANTED);
     }
     static void settings(Context c,int displayId) {
         if(c instanceof HomeActivity||WorkspaceProfile.standard(c,displayId)){c.startActivity(new Intent(c,SetupActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle());return;}
@@ -102,6 +149,7 @@ final class Launches {
     }
     static void focus(Context c,TaskSession.Task task,int display,TaskSession session){
         enqueue(()->{
+            if(TaskModes.pictureInPicture(task.mode)){session.action(task,"fullscreen");appDone();return;}
             if(Workspace.compact(c,display)&&Workspace.needsPrimary()&&!task.alwaysOnTop)
                 Workspace.role(c,task.id,display,true,Launches::appDone);
             else{session.action(task,"focus");appDone();}

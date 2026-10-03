@@ -85,14 +85,14 @@ final class TaskSession {
     }
     void action(Task task,String action){
         if(closed)return;
-        Bridge.get(context).call(s->{WorkArea.get(context,displayId).sync(s,displayId);String before=s.taskSnapshot(displayId);String answer=s.taskOperation(displayId,task.id,action,0,0,0,0);return answer.startsWith("ERROR:")?answer:before;},(result,error)->{
+        Bridge.get(context).call(s->{WorkArea.get(context,displayId).sync(s,displayId);String before=s.taskSnapshot(displayId);String answer=s.checkedTaskOperation(displayId,task.id,task.component,action,0,0,0,0);return answer.startsWith("ERROR:")?answer:before;},(result,error)->{
             if(error==null){Profiles.rememberSnapshot(context,result,task.id,displayId);if("focus".equals(action))Workspace.focused(context,task,displayId);}if(closed)return;if(error!=null)Launches.problem(context,error);refresh();
         });
     }
     void resize(Task task,Rect bounds){if(closed)return;dragTask=task;pendingBounds=new Rect(bounds);flushDrag();}
     void focusForDrag(Task task,java.util.function.Consumer<Boolean> reply){
         if(closed){reply.accept(false);return;}
-        Bridge.get(context).call(s->{String answer=s.taskOperation(displayId,task.id,"focus",0,0,0,0);return answer.startsWith("ERROR:")?answer:s.taskSnapshot(displayId);},(result,error)->{
+        Bridge.get(context).call(s->{String answer=s.checkedTaskOperation(displayId,task.id,task.component,"focus",0,0,0,0);return answer.startsWith("ERROR:")?answer:s.taskSnapshot(displayId);},(result,error)->{
             boolean focused=false;
             if(!closed&&error==null)try{JSONArray rows=new JSONObject(result).getJSONArray("tasks");for(int i=0;i<rows.length();i++){JSONObject t=rows.getJSONObject(i);if(t.getInt("id")==task.id&&t.getBoolean("focused"))focused=true;}}catch(JSONException ignored){}
             if(error!=null&&!closed)Launches.problem(context,error);reply.accept(focused);refresh();
@@ -101,7 +101,7 @@ final class TaskSession {
     private void flushDrag(){
         if(closed||busy||pendingBounds==null||Workspace.isBusy()||Launches.pending())return;
         Rect b=pendingBounds;Task t=dragTask;pendingBounds=null;busy=true;
-        Bridge.get(context).call(s->{WorkArea.get(context,displayId).sync(s,displayId);return s.taskOperation(displayId,t.id,"resize",b.left,b.top,b.right,b.bottom);},(result,error)->{
+        Bridge.get(context).call(s->{WorkArea.get(context,displayId).sync(s,displayId);return s.checkedTaskOperation(displayId,t.id,t.component,"resize",b.left,b.top,b.right,b.bottom);},(result,error)->{
             busy=false;if(closed)return;
             if(error!=null){pendingBounds=null;Launches.problem(context,error);}else if(pendingBounds!=null)flushDrag();else refresh();
         });

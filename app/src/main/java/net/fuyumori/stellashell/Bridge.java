@@ -30,7 +30,9 @@ public final class Bridge {
     public void mouseDisplay(int displayId){
         int next=displayId>0?displayId:-1;
         if(mouseDisplay==next)return;
-        mouseDisplay=next;if(next<0)screenOff=false;call(s->{if(next<0)s.syncPrimaryScreen(-1,false,mouseOwner);return "OK";},(result,error)->{});
+        mouseDisplay=next;if(next<0)screenOff=false;
+        // A stop/display change must release input even if task/pin work is unavailable.
+        call(s->{if(mouseDisplay<0)s.syncPrimaryScreen(-1,false,mouseOwner);return "OK";},(result,error)->{},false);
     }
     public void resetMouseRouting(Reply reply){
         mouseDisplay=-1;screenOff=false;
@@ -39,7 +41,7 @@ public final class Bridge {
             String result=s.syncMouseRouting(-1,mouseOwner);
             if(!"inactive".equals(result))throw new IllegalStateException(result);
             return "OK";
-        },reply);
+        },reply,false);
     }
     private boolean binding;
     private String error = "";
@@ -52,7 +54,7 @@ public final class Bridge {
     private Bridge(Context context) {
         this.context=context;
         args = new Shizuku.UserServiceArgs(new ComponentName(context, DesktopBridgeService.class))
-                .daemon(false).processNameSuffix("desktop_bridge").debuggable(false).version(27);
+                .daemon(false).processNameSuffix("desktop_bridge").debuggable(false).version(31);
         Shizuku.addBinderReceivedListenerSticky(this::connect);
         Shizuku.addBinderDeadListener(() -> { service = null; screenOff=false; binding = false; changed(); });
         Shizuku.addRequestPermissionResultListener((code, result) -> { if (result == PackageManager.PERMISSION_GRANTED) connect(); changed(); });
@@ -88,15 +90,15 @@ public final class Bridge {
             main.postDelayed(() -> { if (binding && !ready()) { binding = false; error = context.getString(R.string.ui_retry_the_connection); changed(); } }, 6000);
         } catch (RuntimeException e) { binding = false; error = e.getMessage(); changed(); }
     }
-    public void call(Work work, Reply reply) {
+    public void call(Work work, Reply reply) {call(work,reply,true);}
+    private void call(Work work,Reply reply,boolean syncPins) {
         worker.execute(() -> {
             String value = null, failure = null;
             try {
                 IDesktopBridge current = service;
                 if (current == null || !current.asBinder().isBinderAlive()) throw new IllegalStateException(status());
                 current.setPrimaryMode(Displays.primaryActive(context));
-                String pins=current.syncWindowPins(Launches.prefs(context).getBoolean("enabled",false),mouseOwner);
-                if(pins.startsWith("ERROR:"))throw new IllegalStateException(pins);
+                // Input restoration must not be gated by an unrelated pin cleanup failure.
                 String routing;
                 try{routing=current.syncMouseRouting(Launches.prefs(context).getBoolean("enabled",false)&&(!Displays.primary(context)||Workspace.target(context)>0)?mouseDisplay:-1,mouseOwner);}
                 catch(Exception e){routing="unavailable: "+e.getClass().getSimpleName();}
@@ -111,6 +113,10 @@ public final class Bridge {
                 if(!java.util.Objects.equals(imeStatus,ime)){
                     imeStatus=ime;String diagnostic=ime;
                     main.post(()->Launches.prefs(context).edit().putString("ime_diagnostics",diagnostic).apply());
+                }
+                if(syncPins){
+                    String pins=current.syncWindowPins(Launches.prefs(context).getBoolean("enabled",false),mouseOwner);
+                    if(pins.startsWith("ERROR:"))throw new IllegalStateException(pins);
                 }
                 value = work.run(current);
                 if (value == null || value.startsWith("ERROR:")) throw new IllegalStateException(value);

@@ -19,7 +19,7 @@ public final class DockService extends Service implements DisplayManager.Display
     private static final java.util.Set<Runnable> navigationObservers=new java.util.HashSet<>();
     static void observeNavigation(Runnable observer){navigationObservers.add(observer);}
     static void unobserveNavigation(Runnable observer){navigationObservers.remove(observer);}
-    static boolean phoneNavigationReady(){return instance!=null&&instance.phoneSidebar!=null&&instance.phoneSidebar.ready();}
+    static boolean phoneNavigationReady(){return instance!=null&&(instance.phoneSidebar!=null&&instance.phoneSidebar.ready()||instance.phoneTaskbar!=null&&instance.phoneTaskbar.ready());}
     private void syncPhoneSidebar(){
         boolean wanted=!destroyed&&Launches.prefs(this).getBoolean("phone_sidebar",true)&&Settings.canDrawOverlays(this);
         if(!wanted&&phoneSidebar!=null){phoneSidebar.close();phoneSidebar=null;}
@@ -28,12 +28,28 @@ public final class DockService extends Service implements DisplayManager.Display
         navigationChanged();
     }
     private static void navigationChanged(){for(Runnable observer:new java.util.ArrayList<>(navigationObservers))observer.run();}
-    static void homeVisible(boolean visible){homeVisible=visible;if(instance!=null){instance.positionDock();instance.positionHandles();if(instance.phoneSidebar!=null)instance.phoneSidebar.homeVisible(visible);}}
-    private boolean sidebarAllowed(){return displayId!=0||Launches.prefs(this).getBoolean("phone_sidebar_over_apps",true)||homeVisible;}
+    static void homeVisible(boolean visible){homeVisible=visible;if(instance!=null){instance.positionDock();if(instance.phoneSidebar!=null)instance.phoneSidebar.homeVisible(visible);}}
     static boolean running(){return alive;}
-    private PhoneSidebar phoneSidebar;
+    static int[] navigationBounds(int id){
+        return instance!=null&&instance.displayId==id&&instance.desktopDock!=null?instance.desktopDock.bounds():null;
+    }
+    private PhoneSidebar phoneSidebar;private PhoneTaskbar phoneTaskbar;
+    private void syncPhoneTaskbar(){
+        boolean wanted=!destroyed&&Launches.prefs(this).getBoolean("phone_taskbar",false)&&Settings.canDrawOverlays(this);
+        if(!wanted&&phoneTaskbar!=null){phoneTaskbar.close();phoneTaskbar=null;}
+        else if(wanted&&phoneTaskbar==null)try{phoneTaskbar=new PhoneTaskbar(this,this::phoneAreaChanged);}
+        catch(RuntimeException failure){Launches.problem(this,failure.getMessage());}
+        navigationChanged();
+    }
+    private void phoneAreaChanged(){
+        if(phoneSidebar!=null)phoneSidebar.relayout();
+        if(displayId==0&&tasks!=null){tasks.areaChanged();if(chrome!=null)chrome.update(tasks.tasks());}
+    }
     static boolean toggleStart(int requestedDisplay){
-        if(requestedDisplay==0&&instance!=null&&instance.phoneSidebar!=null){instance.phoneSidebar.toggleStart();return true;}
+        if(requestedDisplay==0&&instance!=null){
+            if(instance.phoneTaskbar!=null){instance.phoneTaskbar.toggleStart();return true;}
+            if(instance.phoneSidebar!=null){instance.phoneSidebar.toggleStart();return true;}
+        }
         if(instance==null||instance.destroyed||instance.menu==null||requestedDisplay>=0&&requestedDisplay!=instance.displayId)return false;
         instance.toggleMenu();return true;
     }
@@ -42,18 +58,18 @@ public final class DockService extends Service implements DisplayManager.Display
     private boolean resetting,destroyed;
     private String displayGeometry="";
     private DisplayManager displays; private WindowManager windows; private View dock; private int displayId=-1;
-    private AppMenu menu;private boolean collapsed;private long startDownTime;
+    private DesktopDock desktopDock;private AppMenu menu;private boolean collapsed;private long startDownTime;
     private final Runnable panelsChanged=this::updatePanelChrome;
     private void updatePanelChrome(){if(chrome!=null&&tasks!=null)try{chrome.update(tasks.tasks());}catch(RuntimeException e){chrome.clear();Launches.problem(this,e.getMessage());}}
     private void watchStart(View view){view.setOnTouchListener((v,e)->{if(e.getActionMasked()==MotionEvent.ACTION_DOWN)startDownTime=e.getDownTime();return false;});}
-    private WorkAreaObserver areaObserver;private int observedDisplay=-1;private boolean compactShown,compactRight=true,renderedCompact;
-    private final java.util.List<View> edgeHandles=new java.util.ArrayList<>();
+    private WorkAreaObserver areaObserver;private int observedDisplay=-1;private boolean renderedCompact;
     private void closeAreaObserver(){if(areaObserver!=null){areaObserver.close();areaObserver=null;}observedDisplay=-1;}
     private void areaChanged(){
         if(destroyed||displayId<0)return;
         WorkArea area=WorkArea.get(this,displayId);
         if(area.compact!=renderedCompact){removeDock();attachDock();}
-        else {positionDock();positionHandles();}
+        else positionDock();
+        if(desktopDock!=null)desktopDock.position();
         if(menu!=null)menu.relayout();
         if(tasks!=null)tasks.areaChanged();
         if(chrome!=null&&tasks!=null)chrome.update(tasks.tasks());
@@ -63,67 +79,10 @@ public final class DockService extends Service implements DisplayManager.Display
         WorkArea a=WorkArea.get(this,displayId);Context c=dock.getContext();
         WindowManager.LayoutParams p=(WindowManager.LayoutParams)dock.getLayoutParams();
         p.gravity=Gravity.TOP|Gravity.LEFT;p.setFitInsetsTypes(0);
-        if(a.compact){
-            if(!sidebarAllowed())compactShown=false;
-            int width=Ui.dp(c,76),height=Math.min(Ui.dp(c,500),a.usable.height());
-            if(dock instanceof ScrollView){View content=((ScrollView)dock).getChildAt(0);android.view.ViewGroup.LayoutParams child=content.getLayoutParams();int h=Math.max(Ui.dp(c,176),height);if(child.height!=h){child.height=h;content.setLayoutParams(child);}}
-            p.width=compactShown?width:1;p.height=compactShown?height:1;
-            p.x=compactRight?a.usable.right-width:a.usable.left;p.y=a.usable.bottom-height;
-            dock.setVisibility(compactShown?View.VISIBLE:View.GONE);
-        }else{
-            p.width=collapsed?Ui.dp(c,144):a.usable.width();p.height=Ui.dp(c,52);
-            p.x=a.usable.left;p.y=Math.max(a.usable.top,a.usable.bottom-Ui.dp(c,56));
-        }
+        // Presentation changes app/workspace behavior, never external Taskbar visibility.
+        p.width=collapsed?Math.min(taskbarDp(c,144),a.usable.width()):a.usable.width();p.height=Math.min(taskbarDp(c,52),a.usable.height());
+        p.x=a.usable.left;p.y=Math.max(a.usable.top,a.usable.bottom-taskbarDp(c,56));dock.setVisibility(View.VISIBLE);
         windows.updateViewLayout(dock,p);
-    }
-    private void positionHandles(){
-        if(windows==null||displayId<0)return;WorkArea a=WorkArea.get(this,displayId);
-        for(int i=0;i<edgeHandles.size();i++){
-            View v=edgeHandles.get(i);WindowManager.LayoutParams p=(WindowManager.LayoutParams)v.getLayoutParams();
-            p.x=i==0?Math.max(a.usable.left,a.gestureLeft)+Ui.dp(v.getContext(),8):Math.min(a.usable.right,a.physical.right-a.gestureRight)-Ui.dp(v.getContext(),24);
-            int travel=Math.max(0,a.usable.height()-p.height);
-            int percent=Math.max(0,Math.min(100,Launches.prefs(this).getInt("sidebar_height",80)));
-            p.y=a.usable.top+Math.round(travel*percent/100f);
-            v.setVisibility(sidebarAllowed()?View.VISIBLE:View.GONE);windows.updateViewLayout(v,p);
-        }
-    }
-    private void showCompact(boolean right){if(!sidebarAllowed())return;compactRight=right;compactShown=true;positionDock();}
-    private void attachCompact(Context c){
-        renderedCompact=true;
-        LinearLayout column=Ui.column(c);column.setGravity(Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);
-        TextClock clock=new TextClock(c);clock.setTypeface(Appearance.face);clock.setTextColor(Ui.TEXT);clock.setTextSize(16);clock.setFormat24Hour("HH:mm");clock.setFormat12Hour("HH:mm");clock.setGravity(Gravity.CENTER);clock.setContentDescription(getString(R.string.hub_title));
-        clock.setOnClickListener(v->{compactShown=false;positionDock();HubActivity.open(this,displayId);});column.addView(clock,new LinearLayout.LayoutParams(-1,Ui.dp(c,44)));
-        column.addView(batteryView(c),new LinearLayout.LayoutParams(-1,Ui.dp(c,44)));
-        ScrollView scroll=new ScrollView(c);LinearLayout entries=Ui.column(c);entries.setGravity(Gravity.CENTER_HORIZONTAL);scroll.addView(entries);
-        java.util.List<TaskSession.Task> running=tasks.tasks();java.util.Set<Integer> used=new java.util.HashSet<>();
-        for(String component:Launches.pins(c)){
-            TaskSession.Task match=null;for(TaskSession.Task t:running)if(t.packageName().equals(ComponentName.unflattenFromString(component).getPackageName())){match=t;break;}
-            addEntry(c,entries,component,match,true);if(match!=null)used.add(match.id);
-        }
-        for(TaskSession.Task t:running)if(!used.contains(t.id))addEntry(c,entries,t.component,t,false);
-        column.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        Button home=Ui.toolbarButton(c,"▱",()->{compactShown=false;positionDock();Launches.home(this,displayId);});
-        home.setContentDescription(getString(R.string.ui_show_desktop));home.setTooltipText(getString(R.string.ui_show_desktop));
-        column.addView(home,new LinearLayout.LayoutParams(-1,Ui.dp(c,48)));
-        ImageButton start=new ImageButton(c);start.setImageResource(R.mipmap.ic_launcher);start.setScaleType(ImageView.ScaleType.FIT_CENTER);start.setBackground(Ui.toolbarBackground(c,12));start.setPadding(Ui.dp(c,12),Ui.dp(c,5),Ui.dp(c,12),Ui.dp(c,5));start.setContentDescription(getString(R.string.ui_app_menu));
-        watchStart(start);start.setOnClickListener(v->{compactShown=false;positionDock();toggleMenu();});column.addView(start,new LinearLayout.LayoutParams(-1,Ui.dp(c,48)));
-        column.addView(Ui.toolbarButton(c,"×",()->{compactShown=false;positionDock();}),new LinearLayout.LayoutParams(-1,Ui.dp(c,40)));
-        WindowManager.LayoutParams p=new WindowManager.LayoutParams(1,1,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN|WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,PixelFormat.TRANSLUCENT);
-        p.setFitInsetsTypes(0);p.setTitle("StellaShell edge dock");
-        ScrollView viewport=new ScrollView(c){@Override public boolean dispatchTouchEvent(MotionEvent event){if(event.getActionMasked()==MotionEvent.ACTION_OUTSIDE){compactShown=false;positionDock();return true;}return super.dispatchTouchEvent(event);}};
-        viewport.setFillViewport(true);viewport.setClipToOutline(true);viewport.setBackground(Appearance.surface(c,18));viewport.addView(column,new FrameLayout.LayoutParams(-1,Ui.dp(c,500)));
-        windows.addView(viewport,p);dock=viewport;positionDock();
-        for(int side=0;side<2;side++){
-            final boolean right=side==1;View handle=new View(c){@Override public boolean performClick(){super.performClick();return true;}private final android.graphics.Paint paint=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);@Override protected void onDraw(android.graphics.Canvas canvas){paint.setColor((Ui.TEXT&0xffffff)|0x66000000);float half=Ui.dp(getContext(),1),length=Ui.dp(getContext(),16);canvas.drawRoundRect(getWidth()/2f-half,getHeight()/2f-length,getWidth()/2f+half,getHeight()/2f+length,half,half,paint);}};handle.setContentDescription(getString(R.string.edge_dock_open));
-            handle.setOnClickListener(v->showCompact(right));handle.setOnTouchListener(new View.OnTouchListener(){float x,y;public boolean onTouch(View v,MotionEvent e){
-                if(e.getActionMasked()==MotionEvent.ACTION_DOWN){x=e.getRawX();y=e.getRawY();return true;}
-                if(e.getActionMasked()==MotionEvent.ACTION_MOVE){float dx=e.getRawX()-x;if((right?-dx:dx)>Ui.dp(c,16)&&Math.abs(dx)>Math.abs(e.getRawY()-y))showCompact(right);return true;}
-                if(e.getActionMasked()==MotionEvent.ACTION_UP){float dx=e.getRawX()-x;if(Math.abs(dx)<Ui.dp(c,8)&&Math.abs(e.getRawY()-y)<Ui.dp(c,8))v.performClick();else if((right?-dx:dx)>Ui.dp(c,16))showCompact(right);return true;}return true;
-            }});
-            WindowManager.LayoutParams h=new WindowManager.LayoutParams(Ui.dp(c,16),Ui.dp(c,64),WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,PixelFormat.TRANSLUCENT);
-            h.gravity=Gravity.TOP|Gravity.LEFT;h.setFitInsetsTypes(0);h.setTitle("StellaShell edge handle "+side);windows.addView(handle,h);edgeHandles.add(handle);
-        }
-        positionHandles();displayGeometry=geometry(displayId);
     }
     private TextView batteryText;private int batteryPercent=-1;private boolean batteryCharging,backPending,batteryRegistered;
     private final BroadcastReceiver batteryReceiver=new BroadcastReceiver(){public void onReceive(Context context,Intent intent){
@@ -139,7 +98,7 @@ public final class DockService extends Service implements DisplayManager.Display
         String description=batteryPercent<0?label:getString(batteryCharging?R.string.battery_charging:R.string.battery_remaining,batteryPercent);
         batteryText.setContentDescription(description);batteryText.setTooltipText(description);
     }
-    private View batteryView(Context c){batteryText=Ui.text(c,"",13,Ui.TEXT);batteryText.setGravity(Gravity.CENTER);batteryText.setBackground(Ui.toolbarBackground(c,12));updateBattery();batteryText.setOnClickListener(v->{compactShown=false;positionDock();if(menu!=null)menu.close();QuickSettingsActivity.open(this,displayId);});return batteryText;}
+    private View batteryView(Context c){batteryText=Ui.text(c,"",13,Ui.TEXT);batteryText.setGravity(Gravity.CENTER);batteryText.setBackground(Ui.toolbarBackground(c,12));updateBattery();batteryText.setOnClickListener(v->{if(menu!=null)menu.close();QuickSettingsActivity.open(this,displayId);});return batteryText;}
     private void back(){
         if(menu!=null&&menu.isOpen()){menu.back();return;}
         if(backPending)return;
@@ -193,7 +152,7 @@ public final class DockService extends Service implements DisplayManager.Display
         c.stopService(new Intent(c,DockService.class));enableHome(c,false);Workspace.reset(c);
     }
     @Override public void onConfigurationChanged(android.content.res.Configuration configuration){
-        super.onConfigurationChanged(configuration);closeAreaObserver();removeDock();update(false);
+        super.onConfigurationChanged(configuration);if(phoneTaskbar!=null){phoneTaskbar.rebuild();phoneTaskbar.refreshArea();}closeAreaObserver();removeDock();update(false);
     }
     @Override public void onCreate() {
         super.onCreate();alive=true;instance=this;ShellPanels.observe(panelsChanged);
@@ -245,16 +204,15 @@ public final class DockService extends Service implements DisplayManager.Display
         removeDock(false);
     }
     private void removeDock(boolean keepChrome) {
-        if(!keepChrome){if(chrome!=null)chrome.clear();chrome=null;}
+        if(!keepChrome){if(desktopDock!=null)desktopDock.close();desktopDock=null;if(chrome!=null)chrome.clear();chrome=null;}
         if(menu!=null)menu.close();menu=null;
         if(dock!=null && windows!=null)try{windows.removeViewImmediate(dock);}catch(RuntimeException ignored){}
-        for(View handle:edgeHandles)if(windows!=null)try{windows.removeViewImmediate(handle);}catch(RuntimeException ignored){}edgeHandles.clear();
         dock=null;batteryText=null;if(!keepChrome)windows=null;navigationChanged();
     }
     private void update(boolean openHome) {update(openHome,false);}
     private void update(boolean openHome,boolean keepDashboard) {
         if(resetting || destroyed)return;
-        syncPhoneSidebar();
+        syncPhoneSidebar();syncPhoneTaskbar();
         int preferred=displayId>0?displayId:Launches.prefs(this).getInt("preferred_display",-1);
         int next=Displays.target(this,preferred);
         Launches.prefs(this).edit().putInt("active_display",next).apply();
@@ -275,64 +233,82 @@ public final class DockService extends Service implements DisplayManager.Display
             c=new android.view.ContextThemeWrapper(c,Appearance.theme());
             windows=c.getSystemService(WindowManager.class);
             if(displayId==0){
-                renderedCompact=true;syncPhoneSidebar();menu=phoneSidebar==null?new AppMenu(c,windows,0):phoneSidebar.menu;
+                renderedCompact=true;syncPhoneSidebar();menu=phoneTaskbar!=null?phoneTaskbar.menu:phoneSidebar!=null?phoneSidebar.menu:new AppMenu(c,windows,0);
                 if(chrome==null)chrome=new WindowChrome(c,windows,tasks);
                 dock=new View(c);dock.setVisibility(View.GONE);
                 WindowManager.LayoutParams placeholder=new WindowManager.LayoutParams(1,1,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,PixelFormat.TRANSLUCENT);
-                windows.addView(dock,placeholder);return;
+                windows.addView(dock,placeholder);
+                // Main-display overlays need the same baseline as external docks:
+                // refresh-rate/brightness-only events must not close Start.
+                displayGeometry=geometry(displayId);return;
             }
             if(areaObserver==null||observedDisplay!=displayId){closeAreaObserver();observedDisplay=displayId;areaObserver=new WorkAreaObserver(c,displayId,this::areaChanged);}
             menu=new AppMenu(c,windows,displayId);
             if(chrome==null)chrome=new WindowChrome(c,windows,tasks);
-            if(WorkArea.get(this,displayId).compact){attachCompact(c);return;}
-            renderedCompact=false;
-            LinearLayout row=new LinearLayout(c);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(Ui.dp(c,6),Ui.dp(c,4),Ui.dp(c,6),Ui.dp(c,4));
+            syncDesktopDock(c);
+            // Keep this baseline aligned with presentation, not Taskbar shape,
+            // so observer callbacks do not repeatedly rebuild a Compact screen.
+            renderedCompact=WorkArea.get(this,displayId).compact;
+            LinearLayout row=new LinearLayout(c);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(taskbarDp(c,6),taskbarDp(c,4),taskbarDp(c,6),taskbarDp(c,4));
             row.setBackground(Appearance.surface(c,18));
-            int widthDp=Math.round(c.getResources().getDisplayMetrics().widthPixels/c.getResources().getDisplayMetrics().density);
             ImageButton apps=new ImageButton(c);apps.setImageResource(R.mipmap.ic_launcher);apps.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            apps.setBackgroundTintList(null);apps.setBackground(Ui.toolbarBackground(c,12));apps.setPadding(Ui.dp(c,7),Ui.dp(c,4),Ui.dp(c,7),Ui.dp(c,4));
-            watchStart(apps);apps.setOnClickListener(v->{if(collapsed){collapsed=false;removeDock();update(false);}toggleMenu();});
+            apps.setBackgroundTintList(null);apps.setBackground(Ui.toolbarBackground(c,12));apps.setPadding(taskbarDp(c,7),taskbarDp(c,4),taskbarDp(c,7),taskbarDp(c,4));
+            watchStart(apps);apps.setOnClickListener(v->{if(collapsed){collapsed=false;removeDock(true);attachDock();}toggleMenu();});
             apps.setContentDescription(getString(R.string.ui_app_menu));apps.setTooltipText(getString(R.string.start_menu_label));
-            row.addView(apps,new LinearLayout.LayoutParams(Ui.dp(c,56),Ui.dp(c,44)));
+            row.addView(apps,new LinearLayout.LayoutParams(taskbarDp(c,56),taskbarDp(c,44)));
             if(!collapsed){
             Button back=Ui.toolbarButton(c,"‹",this::back);back.setContentDescription(getString(R.string.external_back));back.setTooltipText(getString(R.string.external_back));
-            row.addView(back,new LinearLayout.LayoutParams(Ui.dp(c,44),Ui.dp(c,44)));
+            row.addView(back,new LinearLayout.LayoutParams(taskbarDp(c,44),taskbarDp(c,44)));
             Button home=Ui.toolbarButton(c,"▱",()->Launches.home(this,displayId));home.setContentDescription(this.getString(R.string.ui_show_desktop));home.setTooltipText(this.getString(R.string.ui_show_desktop));
-            row.addView(home,new LinearLayout.LayoutParams(Ui.dp(c,48),Ui.dp(c,44)));
-            android.widget.HorizontalScrollView strip=new android.widget.HorizontalScrollView(c);strip.setHorizontalScrollBarEnabled(false);
-            LinearLayout entries=new LinearLayout(c);entries.setGravity(Gravity.CENTER_VERTICAL);strip.addView(entries);
+            row.addView(home,new LinearLayout.LayoutParams(taskbarDp(c,48),taskbarDp(c,44)));
+            LinearLayout entries=new LinearLayout(c);entries.setGravity(Gravity.CENTER_VERTICAL);
             java.util.List<TaskSession.Task> running=tasks==null?new java.util.ArrayList<>():tasks.tasks();
             java.util.Set<Integer> represented=new java.util.HashSet<>();
             for(String component:Launches.pins(c)){
-                String pkg=ComponentName.unflattenFromString(component).getPackageName();
+                ComponentName name=ComponentName.unflattenFromString(component);if(name==null)continue;
+                String pkg=name.getPackageName();
                 TaskSession.Task match=null;for(TaskSession.Task t:running)if(t.packageName().equals(pkg)){match=t;break;}
                 addEntry(c,entries,component,match,true);if(match!=null)represented.add(match.id);
             }
             for(TaskSession.Task t:running)if(!represented.contains(t.id))addEntry(c,entries,t.component,t,false);
-            row.addView(strip,new LinearLayout.LayoutParams(0,Ui.dp(c,44),1));
+            row.addView(entries,new LinearLayout.LayoutParams(-2,taskbarDp(c,44)));
+            row.addView(new View(c),new LinearLayout.LayoutParams(0,1,1));
 
-            Button shot=Ui.toolbarButton(c,"▣",()->{if(menu!=null)menu.close();DesktopScreenshot.take(this,displayId);});shot.setContentDescription(getString(R.string.screenshot_take));shot.setTooltipText(getString(R.string.screenshot_take));row.addView(shot,new LinearLayout.LayoutParams(Ui.dp(c,44),Ui.dp(c,44)));
-            row.addView(batteryView(c),new LinearLayout.LayoutParams(Ui.dp(c,76),Ui.dp(c,44)));
-            TextView connection=Ui.text(c,Bridge.get(this).ready()?"●":"○",12,Bridge.get(this).ready()?Ui.ACCENT:Ui.MUTED);
-            connection.setBackground(Ui.toolbarBackground(c,12));connection.setGravity(Gravity.CENTER);connection.setContentDescription(Bridge.get(this).status());connection.setTooltipText(Bridge.get(this).status());
-            connection.setOnClickListener(v->Launches.settings(this,displayId));row.addView(connection,new LinearLayout.LayoutParams(Ui.dp(c,28),-1));
-            {TextClock clock=new TextClock(c);clock.setBackground(Ui.toolbarBackground(c,12));clock.setTypeface(Appearance.face);clock.setFormat24Hour("HH:mm");clock.setFormat12Hour("HH:mm");clock.setTextColor(Ui.TEXT);clock.setTextSize(16);clock.setContentDescription(getString(R.string.hub_title));clock.setTooltipText(getString(R.string.hub_title));clock.setOnClickListener(v->{if(menu!=null)menu.close();HubActivity.open(this,displayId);});row.addView(clock,new LinearLayout.LayoutParams(Ui.dp(c,58),-2));}
-            Button hide=Ui.toolbarButton(c,"−",()->{collapsed=true;removeDock();update(false);});hide.setContentDescription(this.getString(R.string.ui_collapse_taskbar));
-            row.addView(hide,new LinearLayout.LayoutParams(Ui.dp(c,44),Ui.dp(c,44)));
+            Button shot=Ui.toolbarButton(c,"▣",()->{if(menu!=null)menu.close();DesktopScreenshot.take(this,displayId);});shot.setContentDescription(getString(R.string.screenshot_take));shot.setTooltipText(getString(R.string.screenshot_take));row.addView(shot,new LinearLayout.LayoutParams(taskbarDp(c,44),taskbarDp(c,44)));
+            row.addView(batteryView(c),new LinearLayout.LayoutParams(taskbarDp(c,76),taskbarDp(c,44)));
+            Button settings=Ui.toolbarButton(c,"⚙",()->Launches.settings(this,displayId));settings.setContentDescription(getString(R.string.menu_stella_settings));settings.setTooltipText(getString(R.string.menu_stella_settings));row.addView(settings,new LinearLayout.LayoutParams(taskbarDp(c,44),taskbarDp(c,44)));
+            {TextClock clock=new TextClock(c);clock.setBackground(Ui.toolbarBackground(c,12));clock.setTypeface(Appearance.face);clock.setFormat24Hour("HH:mm");clock.setFormat12Hour("HH:mm");clock.setTextColor(Ui.TEXT);clock.setTextSize(16);clock.setContentDescription(getString(R.string.hub_title));clock.setTooltipText(getString(R.string.hub_title));clock.setOnClickListener(v->{if(menu!=null)menu.close();HubActivity.open(this,displayId);});row.addView(clock,new LinearLayout.LayoutParams(taskbarDp(c,58),-2));}
+            Button hide=Ui.toolbarButton(c,"−",()->{collapsed=true;removeDock(true);attachDock();});hide.setContentDescription(this.getString(R.string.ui_collapse_taskbar));
+            row.addView(hide,new LinearLayout.LayoutParams(taskbarDp(c,44),taskbarDp(c,44)));
             }
-            if(collapsed)row.addView(batteryView(c),new LinearLayout.LayoutParams(Ui.dp(c,76),Ui.dp(c,44)));
+            if(collapsed)row.addView(batteryView(c),new LinearLayout.LayoutParams(taskbarDp(c,76),taskbarDp(c,44)));
             WindowManager.LayoutParams p=new WindowManager.LayoutParams(collapsed?-2:-1,-2,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,PixelFormat.TRANSLUCENT);
-            p.gravity=Gravity.BOTTOM|Gravity.LEFT;p.setFitInsetsTypes(displayId==0?WindowInsets.Type.navigationBars():0);p.y=Ui.dp(c,4);p.setTitle("StellaShell dock");
-            windows.addView(row,p);dock=row;positionDock();displayGeometry=geometry(displayId);
+            p.gravity=Gravity.BOTTOM|Gravity.LEFT;p.setFitInsetsTypes(displayId==0?WindowInsets.Type.navigationBars():0);p.y=taskbarDp(c,4);p.setTitle("StellaShell taskbar");
+            scaleTaskbarWidgets(c,row);
+            HorizontalScrollView viewport=new HorizontalScrollView(c);viewport.setFillViewport(true);viewport.setBackground(Appearance.surface(c,18));viewport.setClipToOutline(true);viewport.addView(row,new FrameLayout.LayoutParams(-2,-1));
+            windows.addView(viewport,p);dock=viewport;positionDock();displayGeometry=geometry(displayId);
         }catch(RuntimeException e){removeDock();Launches.problem(this,this.getString(R.string.ui_could_not_show_the_taskbar)+e.getMessage());}finally{navigationChanged();}
+    }
+    private int taskbarDp(Context c,int value){return NavigationScale.pixels(c.getResources().getDisplayMetrics().density,value,Launches.prefs(this).getInt(NavigationScale.key(false,true),NavigationScale.DEFAULT));}
+    private void scaleTaskbarWidgets(Context c,View view){
+        float factor=NavigationScale.factor(Launches.prefs(this).getInt(NavigationScale.key(false,true),NavigationScale.DEFAULT));
+        if(view instanceof TextView){TextView text=(TextView)view;text.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,text.getTextSize()*factor);}
+        if(view instanceof Button){Button button=(Button)view;button.setPadding(0,0,0,0);button.setMinHeight(taskbarDp(c,48));}
+        if(view instanceof ViewGroup){ViewGroup group=(ViewGroup)view;for(int i=0;i<group.getChildCount();i++)scaleTaskbarWidgets(c,group.getChildAt(i));}
+    }
+    private void syncDesktopDock(Context c){
+        if(Launches.prefs(this).getBoolean("desktop_dock",false)){
+            if(desktopDock==null)desktopDock=new DesktopDock(c,windows,displayId,tasks,downTime->{startDownTime=downTime;toggleMenu();});
+            else desktopDock.position();
+        }else if(desktopDock!=null){desktopDock.close();desktopDock=null;}
     }
     private void tasksChanged(){
         if(tasks==null||displayId<0)return;
         StringBuilder signature=new StringBuilder(Bridge.get(this).ready()?"ready":"offline");signature.append(Workspace.primary());
         for(TaskSession.Task t:tasks.tasks())signature.append(t.id).append(t.component).append(t.focused).append(t.visible).append(t.alwaysOnTop).append(Workspace.label(this,t));
         boolean menuOpen=menu!=null&&menu.isOpen();
-        if(!signature.toString().equals(taskSignature)&&!menuOpen){taskSignature=signature.toString();removeDock(true);attachDock();}
+        if(!signature.toString().equals(taskSignature)&&!menuOpen){taskSignature=signature.toString();if(desktopDock!=null)desktopDock.rebuild();removeDock(true);attachDock();}
         if(chrome!=null)try{chrome.update(tasks.tasks());}catch(RuntimeException e){chrome.clear();Launches.problem(this,e.getMessage());}
     }
     private void addEntry(Context c,LinearLayout row,String component,TaskSession.Task task,boolean pinned){
@@ -340,12 +316,12 @@ public final class DockService extends Service implements DisplayManager.Display
             ComponentName name=ComponentName.unflattenFromString(component);
             android.content.pm.ApplicationInfo info=getPackageManager().getApplicationInfo(name.getPackageName(),0);
             CharSequence label=info.loadLabel(getPackageManager());
-            LinearLayout item=Ui.column(c);item.setGravity(Gravity.CENTER);item.setPadding(Ui.dp(c,7),Ui.dp(c,3),Ui.dp(c,7),0);
+            LinearLayout item=Ui.column(c);item.setGravity(Gravity.CENTER);item.setPadding(taskbarDp(c,7),taskbarDp(c,3),taskbarDp(c,7),0);
             item.setBackground(Ui.toolbarBackground(c,9));item.setSelected(task!=null&&task.focused);
-            ImageView icon=new ImageView(c);icon.setImageDrawable(AppIcons.forApp(c,component,info.loadIcon(getPackageManager())));item.addView(icon,new LinearLayout.LayoutParams(Ui.dp(c,29),Ui.dp(c,29)));
+            ImageView icon=new ImageView(c);icon.setImageDrawable(AppIcons.forApp(c,component,info.loadIcon(getPackageManager())));item.addView(icon,new LinearLayout.LayoutParams(taskbarDp(c,29),taskbarDp(c,29)));
             String role=task!=null&&Workspace.compact(this,displayId)?Workspace.label(c,task):"";
             if(task!=null&&task.alwaysOnTop)role+=(role.isEmpty()?"":" · ")+c.getString(R.string.window_pin);
-            TextView mark=Ui.text(c,task!=null&&task.alwaysOnTop?"↑":!role.isEmpty()?c.getString(task.id==Workspace.primary()?R.string.workspace_primary_badge:R.string.workspace_secondary_badge):task==null?"":task.visible?"━":"·",10,Ui.ACCENT);mark.setGravity(Gravity.CENTER);mark.setSingleLine(true);mark.setIncludeFontPadding(false);item.addView(mark,new LinearLayout.LayoutParams(-1,Ui.dp(c,11)));
+            TextView mark=Ui.text(c,task!=null&&task.alwaysOnTop?"↑":!role.isEmpty()?c.getString(task.id==Workspace.primary()?R.string.workspace_primary_badge:R.string.workspace_secondary_badge):task==null?"":task.visible?"━":"·",10,Ui.ACCENT);mark.setGravity(Gravity.CENTER);mark.setSingleLine(true);mark.setIncludeFontPadding(false);item.addView(mark,new LinearLayout.LayoutParams(-1,taskbarDp(c,11)));
             item.setContentDescription(label+(task!=null?this.getString(R.string.ui_running):this.getString(R.string.ui_pinned))+(role.isEmpty()?"":" · "+role));item.setTooltipText(role.isEmpty()?label:label+" · "+role);
             item.setOnClickListener(v->{ShellPanels.dismiss(displayId);if(task!=null){
                 if(Workspace.compact(this,displayId)){Launches.focus(this,task,displayId,tasks);return;}
@@ -357,7 +333,7 @@ public final class DockService extends Service implements DisplayManager.Display
                 ShellPanels.dismiss(displayId);AppContextMenu.show(c,item,component,displayId,()->{},task,tasks);return true;
             });
             item.setOnContextClickListener(v->v.performLongClick());
-            row.addView(item,new LinearLayout.LayoutParams(Ui.dp(c,48),Ui.dp(c,44)));
+            row.addView(item,new LinearLayout.LayoutParams(taskbarDp(c,48),taskbarDp(c,44)));
         }catch(Exception ignored){}
     }
     private void toggleMenu(){try{long downTime=startDownTime;startDownTime=0;if(menu!=null)menu.toggle(menuLoader,downTime);}catch(RuntimeException e){Launches.problem(this,this.getString(R.string.ui_could_not_open_the_app_menu)+e.getMessage());}}
@@ -378,16 +354,44 @@ public final class DockService extends Service implements DisplayManager.Display
         if(id==displayId && !geometry(id).equals(displayGeometry)){closeAreaObserver();removeDock();update(false);}
     }
     @Override public void onSharedPreferenceChanged(SharedPreferences p,String key){
-        if("sidebar_height".equals(key)||"phone_sidebar_over_apps".equals(key)){positionDock();positionHandles();if(phoneSidebar!=null)phoneSidebar.relayout();return;}
+        if("sidebar_height".equals(key)||"phone_sidebar_side".equals(key)||"phone_sidebar_over_apps".equals(key)){if(phoneSidebar!=null)phoneSidebar.relayout();return;}
         if("enabled".equals(key) && !p.getBoolean("enabled",false)){stopSelf();return;}
         if("phone_sidebar".equals(key)){syncPhoneSidebar();if(displayId==0){removeDock();attachDock();}return;}
+        if("phone_taskbar".equals(key)){
+            syncPhoneTaskbar();if(phoneTaskbar!=null)phoneTaskbar.refreshArea();if(phoneSidebar!=null)phoneSidebar.rebuild();phoneAreaChanged();
+            if(displayId==0){removeDock();attachDock();}return;
+        }
+        if(NavigationScale.changed(key)){
+            if("phone_dock_scale".equals(key)){if(phoneSidebar!=null)phoneSidebar.rebuild();}
+            else if("phone_taskbar_scale".equals(key)){
+                if(phoneTaskbar!=null){phoneTaskbar.rebuild();phoneTaskbar.refreshArea();}
+                phoneAreaChanged();
+            }else if(displayId>0){
+                if(areaObserver!=null)areaObserver.refresh();
+                if("desktop_dock_scale".equals(key)){if(desktopDock!=null)desktopDock.rebuild();}
+                else {removeDock(true);attachDock();}
+                areaChanged();
+            }
+            return;
+        }
+        if("desktop_taskbar".equals(key))return; // External Taskbar is mandatory; ignore stale saved OFF.
+        if("phone_taskbar_pinned".equals(key)){if(phoneTaskbar!=null)phoneTaskbar.rebuild();return;}
         if("phone_window_management".equals(key)){closeAreaObserver();removeDock();if(tasks!=null)tasks.close();tasks=null;update(false,true);return;}
+        if("desktop_dock".equals(key)||"dock_edge".equals(key)||"dock_x".equals(key)||"dock_y".equals(key)){
+            if(displayId>0){
+                if(areaObserver!=null)areaObserver.refresh();
+                if("desktop_dock".equals(key)||"dock_edge".equals(key)){syncDesktopDock(dock.getContext());if("dock_edge".equals(key)&&desktopDock!=null)desktopDock.rebuild();}
+                areaChanged();
+            }
+            return;
+        }
+        if(WorkspaceProfile.changed(key,"dock_pinned")){if(desktopDock!=null)desktopDock.rebuild();return;}
         if("shell_layout".equals(key)){if(areaObserver!=null)areaObserver.refresh();areaChanged();return;}
         if(Appearance.KEY.equals(key))Appearance.load(this);
-        if(WorkspaceProfile.changed(key,"pinned")||Appearance.KEY.equals(key)||IconTheme.changed(key)){if(phoneSidebar!=null)phoneSidebar.rebuild();removeDock();if(displayId>=0)attachDock();}
+        if(WorkspaceProfile.changed(key,"pinned")||Appearance.KEY.equals(key)||IconTheme.changed(key)){if(phoneSidebar!=null)phoneSidebar.rebuild();if(phoneTaskbar!=null&&(Appearance.KEY.equals(key)||IconTheme.changed(key)))phoneTaskbar.rebuild();removeDock();if(displayId>=0)attachDock();}
     }
     @Override public void onDestroy(){
-        destroyed=true;if(phoneSidebar!=null){phoneSidebar.close();phoneSidebar=null;}alive=false;if(instance==this)instance=null;ShellPanels.unobserve(panelsChanged);ShellPanels.dismiss(displayId);Launches.prefs(this).edit().remove("active_display").apply();closeAreaObserver();Bridge.get(this).mouseDisplay(-1);
+        destroyed=true;if(phoneTaskbar!=null){phoneTaskbar.close();phoneTaskbar=null;}if(phoneSidebar!=null){phoneSidebar.close();phoneSidebar=null;}alive=false;if(instance==this)instance=null;ShellPanels.unobserve(panelsChanged);ShellPanels.dismiss(displayId);Launches.prefs(this).edit().remove("active_display").apply();closeAreaObserver();Bridge.get(this).mouseDisplay(-1);
         if(batteryRegistered){unregisterReceiver(batteryReceiver);batteryRegistered=false;}
         if(displays!=null)displays.unregisterDisplayListener(this);
         Launches.prefs(this).unregisterOnSharedPreferenceChangeListener(this);if(tasks!=null)tasks.close();removeDock();menuLoader.shutdownNow();super.onDestroy();

@@ -7,6 +7,7 @@ final class TaskPins {
     interface Access {
         List<FrameworkTaskAccess.Entry> all()throws Exception;
         void set(FrameworkTaskAccess.Entry task,boolean enabled)throws Exception;
+        default boolean supports(FrameworkTaskAccess.Entry task){return true;}
     }
     private static final class Pin {
         final int id;final Object token;final String component;boolean suspended;
@@ -46,7 +47,7 @@ final class TaskPins {
         for(Pin pin:new ArrayList<>(pins.values())){
             FrameworkTaskAccess.Entry task=live.get(pin.id);
             if(task==null||!pin.matches(task)){pins.remove(pin.id);continue;}
-            if(task.windowMode!=5){access.set(task,false);pins.remove(pin.id);continue;}
+            if(task.windowMode!=5||!access.supports(task)){access.set(task,false);pins.remove(pin.id);continue;}
             if(pin.suspended&&task.visible&&task.focused)resume(task);
             else if(!pin.suspended&&!task.alwaysOnTop)pins.remove(pin.id); // Respect external changes.
         }

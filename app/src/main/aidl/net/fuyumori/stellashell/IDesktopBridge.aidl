@@ -22,4 +22,7 @@ interface IDesktopBridge {
     String phoneTaskSnapshot() = 18;
     String focusPhoneTask(int taskId, String component) = 19;
     String phoneTaskOperation(int taskId, String component, String action, int left, int top, int right, int bottom) = 20;
+    String snapshotDisplayScale(int displayId) = 21;
+    String applyDisplayScale(int displayId, String identity, int percent) = 22;
+    String checkedTaskOperation(int displayId, int taskId, String component, String action, int left, int top, int right, int bottom) = 23;
 }

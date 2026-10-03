@@ -8,13 +8,13 @@ import java.util.*;
 /** Display-coordinate geometry shared by chrome, profiles and the task bridge. */
 final class WorkArea {
     private static final Map<Integer,WorkArea> areas=new HashMap<>();
-    final Rect physical,usable,application,content;
+    final Rect physical,usable,dockAvailable,application,content;
     final boolean compact;
     boolean imeVisible;int gestureLeft,gestureRight;
     final int caption;
     WorkArea(Rect physical,Rect usable,boolean compact,int caption,int dock){
         this.physical=new Rect(physical);this.usable=new Rect(usable);this.compact=compact;this.caption=caption;
-        application=new Rect(usable);application.bottom=Math.max(application.top+1,application.bottom-dock);
+        application=new Rect(usable);application.bottom=Math.max(application.top+1,application.bottom-dock);dockAvailable=new Rect(application);
         content=new Rect(application);content.top=Math.min(content.bottom-1,content.top+caption);
     }
     static WorkArea read(Context c,WindowInsets insets){
@@ -26,7 +26,13 @@ final class WorkArea {
         Rect stable=inset(physical,insets.getInsetsIgnoringVisibility(types));
         boolean compact=WorkspaceProfile.standard(c,c.getDisplay().getDisplayId())||ShellPresentation.compact(Launches.prefs(c).getString("shell_layout","auto"),stable.width()/density,stable.height()/density);
         Insets all=insets.getInsets(types|WindowInsets.Type.ime());
-        WorkArea result=new WorkArea(physical,inset(physical,all),compact,Math.round(32*density),compact?0:Math.round(60*density));
+        android.content.SharedPreferences prefs=Launches.prefs(c);
+        boolean main=c.getDisplay().getDisplayId()==0;
+        boolean taskbarShown=!main||prefs.getBoolean("phone_taskbar",false);
+        int taskbar=taskbarShown?NavigationScale.pixels(density,60,prefs.getInt(NavigationScale.key(main,true),NavigationScale.DEFAULT)):0;
+        WorkArea result=new WorkArea(physical,inset(physical,all),compact,Math.round(32*density),taskbar);
+        // The icon Dock overlays apps, including when it touches an edge. Only
+        // the taskbar reserves a workspace strip; Dock placement still avoids it.
         result.imeVisible=insets.isVisible(WindowInsets.Type.ime());
         Insets gestures=insets.getInsets(WindowInsets.Type.systemGestures());result.gestureLeft=gestures.left;result.gestureRight=gestures.right;
         return result;
@@ -48,6 +54,6 @@ final class WorkArea {
         return new Rect(v[0]+area.left,v[1]+area.top,v[2]+area.left,v[3]+area.top);
     }
     boolean maximized(Rect b){return Math.abs(b.left-content.left)<=2&&Math.abs(b.top-content.top)<=2&&Math.abs(b.right-content.right)<=2&&Math.abs(b.bottom-content.bottom)<=2;}
-    boolean same(WorkArea a){return a!=null&&physical.equals(a.physical)&&usable.equals(a.usable)&&application.equals(a.application)&&compact==a.compact&&caption==a.caption&&imeVisible==a.imeVisible&&gestureLeft==a.gestureLeft&&gestureRight==a.gestureRight;}
+    boolean same(WorkArea a){return a!=null&&physical.equals(a.physical)&&usable.equals(a.usable)&&application.equals(a.application)&&dockAvailable.equals(a.dockAvailable)&&compact==a.compact&&caption==a.caption&&imeVisible==a.imeVisible&&gestureLeft==a.gestureLeft&&gestureRight==a.gestureRight;}
     void sync(IDesktopBridge bridge,int id)throws android.os.RemoteException {bridge.setWorkArea(id,content.left,content.top,content.right,content.bottom);}
 }
