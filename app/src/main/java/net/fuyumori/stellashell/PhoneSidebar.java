@@ -15,28 +15,31 @@ final class PhoneSidebar implements AutoCloseable {
     final AppMenu menu;
     final List<View> handles=new ArrayList<>();
     private final WorkAreaObserver observer;
+    private final java.util.function.Supplier<WorkArea> area;
     private final PhoneRunningTasks running;
     private final PhoneTaskMenu taskMenu;
-    private LinearLayout activeTasks;
+    private LinearLayout activeTasks,activeSection;
     private View panel;
     private Float pullX;
     private HubActivity.SidebarDrag drag;
     private boolean shown,right=true,closed,home;
-    PhoneSidebar(Context service,Runnable areaChanged){
+    PhoneSidebar(Context service,Runnable areaChanged){this(service,areaChanged,null,null);}
+    PhoneSidebar(Context service,Runnable areaChanged,PhoneRunningTasks.Backend backend,java.util.function.Supplier<WorkArea> geometry){
         context=new android.view.ContextThemeWrapper(service.createDisplayContext(service.getSystemService(android.hardware.display.DisplayManager.class).getDisplay(0))
                 .createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,null),Appearance.theme());
         windows=context.getSystemService(WindowManager.class);
         menu=new AppMenu(context,windows,0);
         taskMenu=new PhoneTaskMenu(context);
-        running=new PhoneRunningTasks(context,this::renderRunning);
-        observer=new WorkAreaObserver(context,0,()->{relayout();areaChanged.run();});
+        running=backend==null?new PhoneRunningTasks(context,this::renderRunning):new PhoneRunningTasks(backend,this::renderRunning);
+        area=geometry==null?()->WorkArea.get(context,0):geometry;
+        observer=geometry==null?new WorkAreaObserver(context,0,()->{relayout();areaChanged.run();}):null;
         try{build();}catch(RuntimeException e){close();throw e;}
     }
     boolean ready(){return !closed&&panel!=null&&handles.size()==2;}
     void homeVisible(boolean visible){home=visible;relayout();}
     private boolean allowed(){return Launches.prefs(context).getBoolean("phone_sidebar_over_apps",true)||home;}
     void toggleStart(){hide();menu.toggle(loader,0);}
-    void show(boolean fromRight){if(!allowed())return;right=fromRight;shown=true;relayout();}
+    void show(boolean fromRight){if(!allowed())return;String side=Launches.prefs(context).getString("phone_sidebar_side","both");right="right".equals(side)||!"left".equals(side)&&fromRight;shown=true;relayout();}
     void hide(){taskMenu.close();shown=false;pullX=null;relayout();}
     private HubActivity.SidebarDrag pull(boolean fromRight,float distance){
         return HubActivity.beginPull(context,fromRight,distance,leading->{
@@ -47,10 +50,12 @@ final class PhoneSidebar implements AutoCloseable {
     void rebuild(){removeViews();build();}
     private void build(){
         LinearLayout column=Ui.column(context);column.setGravity(Gravity.CENTER_HORIZONTAL);
-        ImageButton start=new ImageButton(context);start.setImageResource(R.mipmap.ic_launcher);start.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        start.setBackground(null);start.setPadding(dp(14),dp(6),dp(14),dp(6));start.setContentDescription(context.getString(R.string.ui_app_menu));
-        start.setOnClickListener(v->toggleStart());column.addView(start,new LinearLayout.LayoutParams(-1,dp(48)));
-        sectionLabel(column,R.string.phone_sidebar_pinned);
+        if(!Launches.prefs(context).getBoolean("phone_taskbar",false)){
+            ImageButton start=new ImageButton(context);start.setImageResource(R.mipmap.ic_launcher);start.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            start.setBackground(null);start.setPadding(dp(14),dp(6),dp(14),dp(6));start.setContentDescription(context.getString(R.string.ui_app_menu));
+            start.setOnClickListener(v->toggleStart());column.addView(start,new LinearLayout.LayoutParams(-1,dp(48)));
+            partition(column);
+        }
         for(String component:Launches.pins(context))try{
             android.content.ComponentName name=android.content.ComponentName.unflattenFromString(component);
             if(name==null)continue;
@@ -63,11 +68,11 @@ final class PhoneSidebar implements AutoCloseable {
             icon.setOnGenericMotionListener((v,event)->{if(event.getActionMasked()==MotionEvent.ACTION_BUTTON_PRESS&&(event.getButtonState()&MotionEvent.BUTTON_SECONDARY)!=0){AppContextMenu.show(context,icon,component,0,this::hide,null,null);return true;}return false;});
             column.addView(icon,new LinearLayout.LayoutParams(-1,dp(52)));
         }catch(android.content.pm.PackageManager.NameNotFoundException|IllegalArgumentException ignored){}
-        View divider=new View(context);divider.setBackgroundColor(Ui.MUTED&0xffffff|0x33000000);
-        LinearLayout.LayoutParams line=new LinearLayout.LayoutParams(dp(44),dp(1));line.topMargin=dp(8);line.bottomMargin=dp(6);column.addView(divider,line);
-        sectionLabel(column,R.string.phone_sidebar_active);
-        activeTasks=Ui.column(context);column.addView(activeTasks,new LinearLayout.LayoutParams(-1,-2));renderRunning();
-        Button homeButton=Ui.toolbarButton(context,"▱",()->{hide();Launches.home(context,0);});homeButton.setContentDescription(context.getString(R.string.ui_show_desktop));column.addView(homeButton,new LinearLayout.LayoutParams(-1,dp(48)));
+        activeSection=Ui.column(context);column.addView(activeSection,new LinearLayout.LayoutParams(-1,-2));
+        partition(activeSection);
+        activeTasks=Ui.column(context);activeSection.addView(activeTasks,new LinearLayout.LayoutParams(-1,-2));renderRunning();
+        partition(column);
+        Button homeButton=Ui.toolbarButton(context,"▱",()->{hide();Launches.home(context,0);});homeButton.setTextSize(14*factor());homeButton.setMinHeight(dp(48));homeButton.setPadding(dp(16),dp(8),dp(16),dp(8));homeButton.setContentDescription(context.getString(R.string.home_open));homeButton.setTooltipText(context.getString(R.string.home_open));column.addView(homeButton,new LinearLayout.LayoutParams(-1,dp(48)));
         ScrollView scroll=new ScrollView(context){float x,y;boolean opening;
             @Override public boolean dispatchTouchEvent(MotionEvent e){
                 if(e.getActionMasked()==MotionEvent.ACTION_OUTSIDE){if(!taskMenu.showing())hide();return true;}
@@ -113,27 +118,51 @@ final class PhoneSidebar implements AutoCloseable {
         p.gravity=Gravity.TOP|Gravity.LEFT;p.setFitInsetsTypes(0);p.setTitle(title);return p;
     }
     void relayout(){
-        if(closed||panel==null)return;WorkArea area=WorkArea.get(context,0);
+        if(closed||panel==null)return;WorkArea bounds=area.get();android.graphics.Rect available=bounds.dockAvailable;
         if(!allowed())shown=false;
+        String side=Launches.prefs(context).getString("phone_sidebar_side","both");
+        if("left".equals(side))right=false;else if("right".equals(side))right=true;
         WindowManager.LayoutParams p=(WindowManager.LayoutParams)panel.getLayoutParams();
-        int width=dp(76),height=Math.min(dp(500),area.usable.height());p.width=shown?width:1;p.height=shown?height:1;
-        p.x=pullX==null?(right?area.usable.right-width:area.usable.left):Math.round(pullX);p.y=area.usable.bottom-height;panel.setVisibility(shown?View.VISIBLE:View.GONE);windows.updateViewLayout(panel,p);
+        int width=Math.min(dp(76),available.width()),height=Math.min(dp(500),available.height());p.width=shown?width:1;p.height=shown?height:1;
+        p.x=pullX==null?(right?available.right-width:available.left):Math.round(pullX);p.y=available.bottom-height;panel.setVisibility(shown?View.VISIBLE:View.GONE);windows.updateViewLayout(panel,p);
         int percent=Math.max(0,Math.min(100,Launches.prefs(context).getInt("sidebar_height",80)));
         for(int i=0;i<handles.size();i++){
             View handle=handles.get(i);WindowManager.LayoutParams h=(WindowManager.LayoutParams)handle.getLayoutParams();
-            h.x=i==0?Math.max(area.usable.left,area.gestureLeft)+dp(8):Math.min(area.usable.right,area.physical.right-area.gestureRight)-dp(24);
-            h.y=area.usable.top+Math.round(Math.max(0,area.usable.height()-h.height)*percent/100f);handle.setVisibility(allowed()?View.VISIBLE:View.GONE);windows.updateViewLayout(handle,h);
+            h.width=Math.min(dp(16),available.width());h.height=Math.min(dp(64),available.height());
+            h.x=i==0?Math.max(available.left,bounds.gestureLeft)+dp(8):Math.min(available.right,bounds.physical.right-bounds.gestureRight)-dp(24);
+            h.x=Math.max(available.left,Math.min(h.x,available.right-h.width));
+            h.y=available.top+Math.round(Math.max(0,available.height()-h.height)*percent/100f);handle.setVisibility(allowed()&&!(i==0?"right":"left").equals(side)?View.VISIBLE:View.GONE);windows.updateViewLayout(handle,h);
         }
         menu.relayout();
         if(shown)running.start();else{taskMenu.close();running.stop();}
     }
-    private void sectionLabel(LinearLayout column,int text){TextView label=Ui.text(context,context.getString(text),10,Ui.MUTED);label.setGravity(Gravity.CENTER);label.setPadding(0,dp(3),0,dp(3));column.addView(label,new LinearLayout.LayoutParams(-1,-2));}
-    private void renderRunning(){taskMenu.close();if(activeTasks!=null)renderTasks(context,activeTasks,running.tasks(),task->running.focus(task,this::hide,error->Launches.problem(context,error)),this::taskMenu);}
+    private void partition(LinearLayout column){
+        View divider=new View(context);divider.setBackgroundColor(Ui.MUTED&0xffffff|0x33000000);
+        LinearLayout.LayoutParams line=new LinearLayout.LayoutParams(dp(44),dp(1));line.topMargin=dp(8);line.bottomMargin=dp(6);column.addView(divider,line);
+    }
+    private void renderRunning(){
+        taskMenu.close();if(activeTasks==null)return;
+        List<TaskSession.Task> allTasks=running.tasks();
+        List<TaskSession.Task> tasks=running.state()==PhoneRunningTasks.State.READY?unpinnedTasks(allTasks,Launches.pins(context)):Collections.emptyList();
+        activeSection.setVisibility(tasks.isEmpty()?View.GONE:View.VISIBLE);
+        renderTasks(context,activeTasks,tasks,task->running.focus(task,this::hide,error->Launches.problem(context,error)),this::taskMenu);
+        for(int i=0;i<activeTasks.getChildCount();i++){
+            View icon=activeTasks.getChildAt(i);icon.setPadding(dp(14),dp(8),dp(14),dp(8));icon.setLayoutParams(new LinearLayout.LayoutParams(-1,dp(52)));
+        }
+    }
+    static List<TaskSession.Task> unpinnedTasks(List<TaskSession.Task> tasks,List<String> pins){
+        Set<String> packages=new HashSet<>();
+        for(String pin:pins){ComponentName name=ComponentName.unflattenFromString(pin);if(name!=null)packages.add(name.getPackageName());}
+        List<TaskSession.Task> visible=new ArrayList<>();
+        // Launcher aliases and internal task Activities can differ within the same app.
+        for(TaskSession.Task task:tasks)if(!packages.contains(task.packageName()))visible.add(task);
+        return visible;
+    }
     private void taskMenu(View anchor,TaskSession.Task task){
         if(closed||!shown)return;
-        taskMenu.show(anchor,task.mode==5,action->{
+        taskMenu.show(anchor,TaskModes.canReturnToMain(task.mode),action->{
             if(closed||!shown)return;
-            android.graphics.Rect bounds="float".equals(action)?PhoneTaskMenu.floatingBounds(WorkArea.get(context,0).content):new android.graphics.Rect();
+            android.graphics.Rect bounds="float".equals(action)?PhoneTaskMenu.floatingBounds(area.get().content):new android.graphics.Rect();
             running.operation(task,action,bounds,"close".equals(action)?running::refresh:this::hide,error->Launches.problem(context,error));
         });
     }
@@ -162,7 +191,9 @@ final class PhoneSidebar implements AutoCloseable {
             rows.addView(icon,new LinearLayout.LayoutParams(-1,Ui.dp(context,52)));
         }
     }
-    private int dp(int value){return Ui.dp(context,value);}
-    private void removeViews(){taskMenu.close();running.stop();activeTasks=null;menu.close();if(panel!=null){windows.removeViewImmediate(panel);panel=null;}for(View v:handles)windows.removeViewImmediate(v);handles.clear();}
-    @Override public void close(){if(closed)return;closed=true;if(drag!=null)drag.release(true);running.close();removeViews();observer.close();loader.shutdownNow();}
+    private int scale(){return Launches.prefs(context).getInt(NavigationScale.key(true,false),NavigationScale.DEFAULT);}
+    private float factor(){return NavigationScale.factor(scale());}
+    private int dp(int value){return NavigationScale.pixels(context.getResources().getDisplayMetrics().density,value,scale());}
+    private void removeViews(){taskMenu.close();running.stop();activeTasks=null;activeSection=null;menu.close();if(panel!=null){windows.removeViewImmediate(panel);panel=null;}for(View v:handles)windows.removeViewImmediate(v);handles.clear();}
+    @Override public void close(){if(closed)return;closed=true;if(drag!=null)drag.release(true);running.close();removeViews();if(observer!=null)observer.close();loader.shutdownNow();}
 }

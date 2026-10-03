@@ -23,6 +23,8 @@ final class TaskBackend {
     private String lastBoundsDispatch="none";
     private final TaskPins pins;
     private final boolean pinSupported;
+    private final TaskPinSupport.Route pinRoute;
+    private final Method rootPin;
     private final Map<Integer,Rect> workAreas=new HashMap<>();
     void setWorkArea(int id,Rect area)throws Exception {
         Point size=new Point();display(id).getRealSize(size);
@@ -50,14 +52,19 @@ final class TaskBackend {
         }catch(NoSuchMethodException ignored){}
         modeTransition=transitionMethod;
         boundsTransition=android.os.Build.VERSION.SDK_INT>=36?transitionMethod:null;
-        // Android 14 exposes the method but accepts DisplayAreas only; tasks need Android 15+.
-        // NX809J Android 16 terminates the caller on the first native pin request
-        // (isolated fixture probe). Do not expose an operation known to kill the bridge.
-        boolean incompatiblePin=android.os.Build.VERSION.SDK_INT==36&&"nubia".equalsIgnoreCase(android.os.Build.MANUFACTURER)&&"NX809J".equals(android.os.Build.MODEL);
-        pinSupported=android.os.Build.VERSION.SDK_INT>=35&&!incompatiblePin&&method(transaction,"setAlwaysOnTop",token,boolean.class);
+        // Android 14's WCT path only accepts DisplayAreas. SOG06's native popup
+        // instead uses the root-task API. Enable that path only on the tested OEM/OS;
+        // do not conflate Sony's separate, focus-changing freeform-pinning mode.
+        Method rootMethod=null;
+        try{rootMethod=api.getMethod("setRootTaskAlwaysOnTop",int.class,boolean.class);}catch(NoSuchMethodException ignored){}
+        rootPin=rootMethod;
+        pinRoute=TaskPinSupport.select(android.os.Build.VERSION.SDK_INT,android.os.Build.MANUFACTURER,android.os.Build.MODEL,
+                method(transaction,"setAlwaysOnTop",token,boolean.class),rootPin!=null);
+        pinSupported=pinRoute!=TaskPinSupport.Route.UNSUPPORTED;
         pins=new TaskPins(new TaskPins.Access(){
             public List<FrameworkTaskAccess.Entry> all()throws Exception{return taskAccess.query(-1);}
             public void set(FrameworkTaskAccess.Entry task,boolean enabled)throws Exception{setPinned(task,enabled);}
+            public boolean supports(FrameworkTaskAccess.Entry task){return TaskPinSupport.supportsDisplay(pinRoute,task.displayId);}
         });
     }
     private Display display(int id) {
@@ -95,8 +102,11 @@ final class TaskBackend {
     String focusPhoneTask(int taskId,String component)throws Exception {
         FrameworkTaskAccess.Entry task=requirePhoneTask(taskId,component);
         // Restore exactly the selected task, without launching another Activity,
-        // changing its windowing mode, or moving it off the phone display.
-        pins.resume(task);apply(change(task,"reorder",boolean.class,true));return "OK";
+        // moving it off the phone display. PiP must exit its OS-owned pinned mode;
+        // a reorder alone cannot expand that window. Ordinary freeform is unchanged.
+        if(TaskModes.pictureInPicture(task.windowMode)){applyFullscreen(task,true);awaitPhoneMode(taskId,component,1);}
+        else {pins.resume(task);apply(change(task,"reorder",boolean.class,true));}
+        return "OK";
     }
     private FrameworkTaskAccess.Entry requirePhoneTask(int taskId,String component)throws Exception {
         Policy.component(component);requirePhoneDisplay();
@@ -122,19 +132,22 @@ final class TaskBackend {
                     wanted=WorkArea.clamp(wanted,new Rect(0,0,size.x,size.y));
                     pins.resume(task);applyFreeform(task,wanted,true);
                 }else applyFullscreen(task,true);
-                long deadline=android.os.SystemClock.uptimeMillis()+1500;
-                FrameworkTaskAccess.Entry actual;
-                do{
-                    actual=requirePhoneTask(taskId,component);
-                    if(actual.windowMode==wantedMode)break;
-                    android.os.SystemClock.sleep(50);
-                }while(android.os.SystemClock.uptimeMillis()<deadline);
-                if(actual.windowMode!=wantedMode)throw new IllegalStateException("The app did not accept the requested window mode");
+                FrameworkTaskAccess.Entry actual=awaitPhoneMode(taskId,component,wantedMode);
                 record("phone "+action+" task="+taskId+" via="+lastBoundsDispatch);
                 return new JSONObject().put("task",row(actual)).toString();
             }
             record("phone "+action+" task="+taskId);return "OK";
         }catch(Exception e){record("FAILED phone "+action+" task="+taskId+" "+reason(e));throw e;}
+    }
+    private FrameworkTaskAccess.Entry awaitPhoneMode(int taskId,String component,int mode)throws Exception {
+        long deadline=android.os.SystemClock.uptimeMillis()+3000;
+        FrameworkTaskAccess.Entry actual;
+        do {
+            actual=requirePhoneTask(taskId,component);
+            if(actual.windowMode==mode)return actual;
+            android.os.SystemClock.sleep(50);
+        }while(android.os.SystemClock.uptimeMillis()<deadline);
+        throw new IllegalStateException("The app did not accept the requested window mode");
     }
     String snapshot(int id) throws Exception {
         try{pins.reconcile();}catch(Exception failure){record("pin reconciliation: "+reason(failure));}
@@ -153,7 +166,8 @@ final class TaskBackend {
                 .put("reorder",method(transaction,"reorder",token,boolean.class))
                 .put("bounds",method(transaction,"setBounds",token,Rect.class))
                 .put("windowingMode",method(transaction,"setWindowingMode",token,int.class))
-                .put("alwaysOnTop",pinSupported)
+                .put("alwaysOnTop",TaskPinSupport.supportsDisplay(pinRoute,id))
+                .put("pinRoute",TaskPinSupport.supportsDisplay(pinRoute,id)?pinRoute.name():TaskPinSupport.Route.UNSUPPORTED.name())
                 .put("boundsTransition",boundsTransition!=null)
                 .put("close",method(api,"removeTask",int.class));
         JSONArray stack=new JSONArray();boolean stackReliable=false;
@@ -244,6 +258,8 @@ final class TaskBackend {
             standalone=true;for(int child:root.children)if(child!=taskId)standalone=false;
         }
         if(!standalone)throw new IllegalStateException("Grouped tasks cannot be transferred");
+        // A main-display-only pin must not leak into an unsupported workspace.
+        if(pinSupported&&!TaskPinSupport.supportsDisplay(pinRoute,destination))pins.fullscreen(task);
         api.getMethod("moveRootTaskToDisplay",int.class,int.class).invoke(manager,taskId,destination);
         FrameworkTaskAccess.Entry moved=requireTask(destination,taskId);
         record("handoff task="+taskId+" from="+source+" to="+destination);
@@ -252,8 +268,14 @@ final class TaskBackend {
     void releasePins()throws Exception {pins.release();}
     private void setPinned(FrameworkTaskAccess.Entry task,boolean enabled)throws Exception {
         if(!pinSupported)throw new UnsupportedOperationException("Always-on-top unsupported on this system");
+        if(enabled&&!TaskPinSupport.supportsDisplay(pinRoute,task.displayId))throw new UnsupportedOperationException("Always-on-top unsupported on this display");
         if(enabled&&task.windowMode!=5)throw new IllegalArgumentException("Always-on-top requires a window");
-        apply(change(task,"setAlwaysOnTop",boolean.class,enabled));
+        if(pinRoute==TaskPinSupport.Route.SONY_ROOT){
+            // This API accepts an integer root id, not a task token. Revalidate
+            // identity and exclusive root ownership for cleanup as well as pin.
+            requireStandalone(task);
+            rootPin.invoke(manager,task.id,enabled);
+        }else apply(change(task,"setAlwaysOnTop",boolean.class,enabled));
         // A declared hidden API may be ignored by an OEM. Never report a successful pin on faith.
         FrameworkTaskAccess.Entry actual=null;
         for(FrameworkTaskAccess.Entry entry:taskAccess.query(task.displayId))if(entry.id==task.id&&entry.token.equals(task.token))actual=entry;
@@ -261,6 +283,7 @@ final class TaskBackend {
     }
     private void requireStandalone(FrameworkTaskAccess.Entry task)throws Exception {
         for(FrameworkTaskAccess.Root root:taskAccess.roots(task.displayId))if(root.task.id==task.id){
+            if(!root.task.token.equals(task.token)||root.task.userId!=task.userId||!Objects.equals(root.task.component,task.component))throw new IllegalArgumentException("The window identity changed");
             for(int child:root.children)if(child!=task.id)throw new IllegalArgumentException("Grouped windows cannot be pinned");
             return;
         }
@@ -303,17 +326,32 @@ final class TaskBackend {
         transaction.getMethod("setWindowingMode",token,int.class).invoke(tx,task.token,1);
         transaction.getMethod("setBounds",token,Rect.class).invoke(tx,task.token,(Object)null);
         transaction.getMethod("setAppBounds",token,Rect.class).invoke(tx,task.token,(Object)null);
+        if(TaskModes.pictureInPicture(task.windowMode)){
+            // PiP may retain an ActivityRecord override after the task mode changes.
+            // Inherit the fullscreen task mode instead of leaving the activity pinned.
+            transaction.getMethod("setActivityWindowingMode",token,int.class).invoke(tx,task.token,0);
+        }
         if(focus)transaction.getMethod("reorder",token,boolean.class).invoke(tx,task.token,true);
         applyMode(tx);
     }
-    String operate(int id,int taskId,String action,int l,int top,int r,int bottom) throws Exception {
+    String operateChecked(int id,int taskId,String component,String action,int l,int top,int r,int bottom)throws Exception {
+        Policy.component(component);
+        return operate(id,taskId,component,action,l,top,r,bottom);
+    }
+    String operate(int id,int taskId,String action,int l,int top,int r,int bottom)throws Exception {
+        return operate(id,taskId,null,action,l,top,r,bottom);
+    }
+    private String operate(int id,int taskId,String component,String action,int l,int top,int r,int bottom)throws Exception {
         try {
             FrameworkTaskAccess.Entry t=requireTask(id,taskId);
+            if(component!=null&&!t.component.flattenToString().equals(component))throw new IllegalArgumentException("The window closed or moved to another display");
             switch(action){
-                case "pin": requireStandalone(t);pins.set(t,true);break;
+                case "pin":
+                    if(!TaskPinSupport.supportsDisplay(pinRoute,id))throw new UnsupportedOperationException("Always-on-top unsupported on this display");
+                    requireStandalone(t);pins.set(t,true);break;
                 case "unpin": pins.set(t,false);break;
-                case "fullscreen":applyFullscreen(t,false);break;
-                case "focus": pins.resume(t);apply(change(t,"reorder",boolean.class,true));break;
+                case "fullscreen":applyFullscreen(t,TaskModes.pictureInPicture(t.windowMode));break;
+                case "focus": if(TaskModes.pictureInPicture(t.windowMode))applyFullscreen(t,true);else {pins.resume(t);apply(change(t,"reorder",boolean.class,true));}break;
                 case "minimize": pins.suspend(t);apply(change(t,"reorder",boolean.class,false));break;
                 case "close":closeTask(t);break;
                 case "resize":

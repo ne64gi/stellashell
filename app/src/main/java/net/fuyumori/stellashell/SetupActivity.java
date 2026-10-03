@@ -13,7 +13,7 @@ import java.util.*;
 /** Daily dashboard; onboarding and diagnostic tools are deliberately separate surfaces. */
 public final class SetupActivity extends Activity implements DisplayManager.DisplayListener,SharedPreferences.OnSharedPreferenceChangeListener {
     private int selectedOutput=0,selectedPage;
-    private TextView homeStatus,shizukuChip,enabledChip,sessionTitle,sessionNote,outputValue,detail;
+    private TextView homeStatus,sessionTitle,sessionNote,outputValue,detail;
     private LinearLayout outputSelector;private Button primaryAction,stop,transfer,enable,reset,restore;
     private final LinearLayout[] pages=new LinearLayout[3];private final Button[] tabs=new Button[2];
     private ScrollView pageScroll;private Bridge bridge;private DisplayManager displays;
@@ -47,11 +47,7 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         showPage(state==null?0:state.getInt("setup_page",0));
     }
     private void buildOverview(){
-        LinearLayout root=pages[0],health=new LinearLayout(this);health.setGravity(Gravity.CENTER_VERTICAL);
-        shizukuChip=DashboardUi.chip(this);enabledChip=DashboardUi.chip(this);
-        shizukuChip.setOnClickListener(v->openPrerequisites(true));shizukuChip.setFocusable(true);shizukuChip.setMinimumHeight(Ui.dp(this,48));
-        health.addView(shizukuChip,new LinearLayout.LayoutParams(0,-2,1));View gap=new View(this);health.addView(gap,new LinearLayout.LayoutParams(Ui.dp(this,8),1));health.addView(enabledChip,new LinearLayout.LayoutParams(0,-2,1));root.addView(health);
-        DashboardUi.space(root,18);LinearLayout home=DashboardUi.card(root);
+        LinearLayout root=pages[0],home=DashboardUi.card(root);
         home.addView(DashboardUi.title(this,getString(R.string.home_title),20));
         homeStatus=DashboardUi.text(this,"",14,Ui.MUTED);home.addView(homeStatus);
         home.addView(DashboardUi.action(this,getString(R.string.home_open),()->startActivity(new Intent(this,HomeActivity.class)),false));
@@ -60,17 +56,17 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         sessionTitle=DashboardUi.title(this,"",23);session.addView(sessionTitle);DashboardUi.space(session,6);
         sessionNote=DashboardUi.text(this,"",14,Ui.MUTED);session.addView(sessionNote);DashboardUi.space(session,20);
         outputSelector=Ui.column(this);outputSelector.setPadding(Ui.dp(this,16),Ui.dp(this,13),Ui.dp(this,16),Ui.dp(this,13));outputSelector.setBackground(Ui.rounded(this,Ui.BG,14));
-        outputSelector.addView(DashboardUi.text(this,getString(R.string.dashboard_output),12,Ui.MUTED));
+        outputSelector.addView(DashboardUi.text(this,getString(R.string.setup_desktop_screen),12,Ui.MUTED));
         outputValue=DashboardUi.title(this,"",16);outputValue.setPadding(0,Ui.dp(this,4),0,0);outputSelector.addView(outputValue);outputSelector.setOnClickListener(v->chooseOutput());outputSelector.setFocusable(true);session.addView(outputSelector);
         DashboardUi.space(session,16);primaryAction=DashboardUi.action(this,"",()->{
             if(Launches.prefs(this).getBoolean("enabled",false)){
                 int active=Launches.prefs(this).getInt("active_display",-1);if(active>=0)Launches.home(this,active);
             }else startDesktop();
         },true);session.addView(primaryAction);
-        DashboardUi.space(session,8);stop=DashboardUi.action(this,getString(R.string.dashboard_stop),()->{DockService.stop(this,false);refresh();},false);session.addView(stop);
+        DashboardUi.space(session,8);stop=DashboardUi.action(this,getString(R.string.setup_desktop_stop),()->{DockService.stop(this,false);refresh();},false);session.addView(stop);
         transfer=DashboardUi.action(this,getString(R.string.output_transfer),this::chooseTransfer,false);session.addView(transfer);
         DashboardUi.section(root,getString(R.string.dashboard_manage));LinearLayout manage=DashboardUi.card(root);
-        manage.addView(DashboardUi.row(this,android.R.drawable.ic_menu_slideshow,getString(R.string.displays_title),getString(R.string.dashboard_displays_note),()->DisplayManagementActivity.open(this)));
+        manage.addView(DashboardUi.row(this,android.R.drawable.ic_menu_slideshow,getString(R.string.displays_title),getString(R.string.setup_displays_note),()->DisplayManagementActivity.open(this)));
         DashboardUi.divider(manage);
         manage.addView(DashboardUi.row(this,android.R.drawable.ic_menu_edit,getString(R.string.appearance_title),getString(R.string.dashboard_appearance_note),()->AppearanceActivity.open(this,getDisplay()==null?0:getDisplay().getDisplayId())));
         DashboardUi.space(root,12);root.addView(DashboardUi.action(this,getString(R.string.dashboard_connection_help),()->new AlertDialog.Builder(this).setTitle(R.string.dashboard_connection_help).setMessage(R.string.external_start_note).setPositiveButton(android.R.string.ok,null).show(),false));
@@ -89,23 +85,16 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         DashboardUi.section(root,getString(R.string.setup_display_section));card=DashboardUi.card(root);
         card.addView(DashboardUi.row(this,android.R.drawable.ic_menu_edit,getString(R.string.appearance_title),getString(R.string.dashboard_appearance_note),()->AppearanceActivity.open(this,getDisplay()==null?0:getDisplay().getDisplayId())));
         DashboardUi.divider(card);
+        card.addView(DashboardUi.row(this,android.R.drawable.ic_menu_slideshow,getString(R.string.display_settings_title),getString(R.string.display_settings_summary),()->DisplaySettingsActivity.open(this,getDisplay()==null?0:getDisplay().getDisplayId())));
+        DashboardUi.divider(card);
+        card.addView(DashboardUi.row(this,android.R.drawable.ic_menu_sort_by_size,getString(R.string.sidebar_settings_title),getString(R.string.sidebar_settings_summary),()->SidebarSettingsActivity.open(this,getDisplay()==null?0:getDisplay().getDisplayId())));
+        DashboardUi.divider(card);
+        card.addView(DashboardUi.row(this,android.R.drawable.ic_menu_more,getString(R.string.taskbar_settings_title),getString(R.string.taskbar_settings_summary),()->TaskbarSettingsActivity.open(this,getDisplay()==null?0:getDisplay().getDisplayId())));
+        DashboardUi.divider(card);
         card.addView(DashboardUi.row(this,android.R.drawable.ic_menu_view,getString(R.string.shell_layout),getString(R.string.dashboard_layout_note),()->{
             String[] values={"auto","desktop","compact"};int selected=Arrays.asList(values).indexOf(Launches.prefs(this).getString("shell_layout","auto"));
             new AlertDialog.Builder(this).setTitle(R.string.shell_layout).setSingleChoiceItems(new String[]{getString(R.string.shell_layout_auto),getString(R.string.shell_layout_desktop),getString(R.string.shell_layout_compact)},Math.max(0,selected),(dialog,which)->{Launches.prefs(this).edit().putString("shell_layout",values[which]).apply();dialog.dismiss();}).setNegativeButton(R.string.ui_cancel,null).show();
         }));
-        DashboardUi.section(root,getString(R.string.phone_workspace));card=DashboardUi.card(root);
-        toggle(card,R.string.phone_sidebar,"phone_sidebar",true,checked->{
-            Launches.prefs(this).edit().putBoolean("phone_sidebar",checked).apply();
-            if(checked&&!Settings.canDrawOverlays(this))Ui.message(this,getString(R.string.ui_allow_the_taskbar_overlay_first));
-        });DashboardUi.divider(card);
-        toggle(card,R.string.phone_sidebar_over_apps,"phone_sidebar_over_apps",true,checked->Launches.prefs(this).edit().putBoolean("phone_sidebar_over_apps",checked).apply());
-        Ui.note(card,getString(R.string.sidebar_height));
-        SeekBar sidebarHeight=new SeekBar(this);sidebarHeight.setMax(100);sidebarHeight.setProgress(Launches.prefs(this).getInt("sidebar_height",80));sidebarHeight.setContentDescription(getString(R.string.sidebar_height));
-        sidebarHeight.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
-            public void onProgressChanged(SeekBar bar,int value,boolean fromUser){if(fromUser)Launches.prefs(SetupActivity.this).edit().putInt("sidebar_height",value).apply();}
-            public void onStartTrackingTouch(SeekBar bar){} public void onStopTrackingTouch(SeekBar bar){}
-        });card.addView(sidebarHeight);DashboardUi.divider(card);
-        Ui.note(card,getString(R.string.phone_workspace_note));
         DashboardUi.section(root,getString(R.string.dashboard_workspace));card=DashboardUi.card(root);
         final Switch[] workspace={null};workspace[0]=toggle(card,R.string.workspace_enable,"compact_workspace",false,checked->{
             if(checked==Launches.prefs(this).getBoolean("compact_workspace",false))return;
@@ -142,15 +131,19 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
     @Override public void onBackPressed(){if(selectedPage==2)showPage(1);else super.onBackPressed();}
     @Override public void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);state.putInt("setup_page",selectedPage);state.putInt("selected_output",selectedOutput);state.putBoolean("setup_open",setupOpen);}
     private String outputName(int id){
-        if(id<0)return getString(R.string.dashboard_wait_output);
-        Display display=displays.getDisplay(id);if(display==null)return getString(R.string.dashboard_output_disconnected,id);
-        return getString(R.string.output_display,id==0?getString(R.string.output_device):display.getName(),id);
+        if(id<0)return getString(R.string.setup_external_screen_later);
+        Display display=displays.getDisplay(id);if(display==null)return getString(R.string.setup_screen_disconnected);
+        if(id==0)return getString(R.string.output_device);
+        String name=display.getName();int count=0,ordinal=0;
+        for(Display other:Displays.available(this))if(name.equals(other.getName())){count++;if(other.getDisplayId()<=id)ordinal++;}
+        // Multiple scrcpy screens can share a name; number them without exposing backend IDs.
+        return count>1?getString(R.string.setup_screen_numbered,name,ordinal):name;
     }
     private void chooseOutput(){
         if(Launches.prefs(this).getBoolean("enabled",false))return;
         List<Integer> ids=new ArrayList<>();ids.add(0);ids.addAll(Displays.ids(this));if(ids.size()==1)ids.add(-1);
         String[] labels=new String[ids.size()];int checked=ids.indexOf(selectedOutput);for(int i=0;i<ids.size();i++)labels[i]=outputName(ids.get(i));
-        new AlertDialog.Builder(this).setTitle(R.string.dashboard_output).setSingleChoiceItems(labels,checked,(dialog,index)->{selectedOutput=ids.get(index);dialog.dismiss();refresh();}).setNegativeButton(R.string.ui_cancel,null).show();
+        new AlertDialog.Builder(this).setTitle(R.string.setup_desktop_screen).setSingleChoiceItems(labels,checked,(dialog,index)->{selectedOutput=ids.get(index);dialog.dismiss();refresh();}).setNegativeButton(R.string.ui_cancel,null).show();
     }
     private void chooseTransfer(){
         List<Integer> targets=Displays.allIds(this);targets.remove(Integer.valueOf(Workspace.target(this)));
@@ -225,14 +218,14 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         if(sessionTitle==null||isDestroyed()||isFinishing())return;
         homeStatus.setText(HomeRegistration.selected(this)?R.string.home_selected:R.string.home_available);
         boolean running=Launches.prefs(this).getBoolean("enabled",false);int active=Launches.prefs(this).getInt("active_display",-1);
-        DashboardUi.state(shizukuChip,getString(bridge.ready()?R.string.dashboard_shizuku_ready:R.string.dashboard_shizuku_connecting),bridge.ready());
-        DashboardUi.state(enabledChip,getString(running?R.string.dashboard_enabled:R.string.dashboard_disabled),running);
-        sessionTitle.setText(running?(active>=0?R.string.dashboard_running:R.string.dashboard_waiting):R.string.dashboard_ready);
-        sessionNote.setText(running?(active>=0?R.string.dashboard_running_note:R.string.dashboard_waiting_note):R.string.dashboard_ready_note);
+        sessionTitle.setText(R.string.setup_desktop_title);
+        List<Integer> available=Displays.allIds(this);boolean activeConnected=active>=0&&available.contains(active);
+        boolean disconnected=!running&&selectedOutput>=0&&!available.contains(selectedOutput);
+        sessionNote.setText(running?(activeConnected?R.string.setup_desktop_open_note:active>=0?R.string.setup_desktop_reconnect_note:R.string.setup_desktop_connect_note):(disconnected?R.string.setup_desktop_disconnected_note:R.string.setup_desktop_choose_note));
         String destination=outputName(running?active:selectedOutput);outputValue.setText(running?destination:getString(R.string.dashboard_output_choice,destination));
-        outputSelector.setEnabled(!running&&!busy);outputSelector.setContentDescription(getString(R.string.dashboard_output)+": "+destination);
-        primaryAction.setText(running?R.string.reopen_desktop:(selectedOutput<0?R.string.external_wait_explicit:R.string.dashboard_start));
-        primaryAction.setEnabled(!busy&&(running?active>=0:(selectedOutput<0||Displays.allIds(this).contains(selectedOutput))));
+        outputSelector.setEnabled(!running&&!busy);outputSelector.setContentDescription(getString(R.string.setup_desktop_screen)+": "+destination);
+        primaryAction.setText(running?R.string.setup_desktop_open:(selectedOutput<0?R.string.setup_desktop_start_on_connection:R.string.setup_desktop_start));
+        primaryAction.setEnabled(!busy&&(running?activeConnected:(selectedOutput<0||available.contains(selectedOutput))));
         stop.setVisibility(running?View.VISIBLE:View.GONE);stop.setEnabled(!busy);
         transfer.setVisibility(running&&Workspace.enabled(this)&&(Workspace.target(this)>0||!Displays.ids(this).isEmpty())?View.VISIBLE:View.GONE);transfer.setEnabled(!busy&&!Workspace.isBusy()&&(Workspace.target(this)>0||!Displays.ids(this).isEmpty()));
         enable.setEnabled(!busy&&bridge.ready());reset.setEnabled(running&&!busy&&bridge.ready());restore.setEnabled(!busy&&bridge.ready()&&Launches.prefs(this).contains("before_desktop"));

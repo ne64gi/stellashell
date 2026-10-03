@@ -23,12 +23,12 @@ final class PhoneSidebarChecks {
     private static void check(boolean value,String message){if(!value)throw new AssertionError(message);}
     /** Root invokes with existing fixture checks on the main thread. */
     static void run(Instrumentation test)throws Exception{
-        lifecycle();operations();fullscreen();
+        lifecycle();recovery();operations();fullscreen();pipFullscreen();
         Context base=test.getTargetContext();
         for(Locale locale:new Locale[]{Locale.ENGLISH,Locale.JAPANESE}){
             Configuration config=new Configuration(base.getResources().getConfiguration());config.setLocale(locale);
             Context context=new ContextThemeWrapper(base.createConfigurationContext(config),R.style.AppTheme);
-            rendering(context);menus(context);
+            rendering(context);menus(context);taskbarActions(context);
         }
     }
     private static TaskSession.Task task(int id,String component,boolean focused)throws Exception{
@@ -45,15 +45,34 @@ final class PhoneSidebarChecks {
         return new JSONObject().put("tasks",rows).toString();
     }
     private static final class FakeBackend implements PhoneRunningTasks.Backend {
-        boolean ready=true;int observed,removed,requests;Runnable observer;Bridge.Reply snapshot,focus;
+        boolean ready=true;int observed,removed,requests,connections;Runnable observer;Bridge.Reply snapshot,focus;
         TaskSession.Task focused,operated;int operations;String action;Rect bounds;Bridge.Reply operation;
         public boolean ready(){return ready;}
+        public void connect(){connections++;}
         public void observe(Runnable listener){observed++;observer=listener;}
         public void remove(Runnable listener){check(observer==listener,"removed different observer");removed++;observer=null;}
         public void snapshot(Bridge.Reply reply){requests++;check(snapshot==null,"overlapping snapshot request");snapshot=reply;}
         public void focus(TaskSession.Task task,Bridge.Reply reply){focused=task;focus=reply;}
         public void operation(TaskSession.Task task,String action,Rect bounds,Bridge.Reply reply){operations++;operated=task;this.action=action;this.bounds=new Rect(bounds);operation=reply;}
         void answer(String result,String error){Bridge.Reply reply=snapshot;check(reply!=null,"no pending snapshot");snapshot=null;reply.done(result,error);}
+    }
+    private static void recovery()throws Exception{
+        FakeBackend backend=new FakeBackend();backend.ready=false;int[] changes={0};
+        PhoneRunningTasks feed=new PhoneRunningTasks(backend,()->changes[0]++);
+        try{
+            feed.refresh();check(backend.connections==0,"hidden feed attempted reconnect");
+            feed.start();feed.refresh();
+            check(backend.connections==1&&backend.requests==0&&feed.state()==PhoneRunningTasks.State.UNAVAILABLE,"visible disconnected feed did not reconnect or distinguish unavailable");
+            int before=changes[0];feed.refresh();check(changes[0]==before,"unchanged connection state rebuilt sidebar");
+            backend.ready=true;backend.observer.run();backend.answer(snapshot(),null);
+            check(feed.state()==PhoneRunningTasks.State.READY&&feed.tasks().isEmpty()&&changes[0]>before,"successful empty snapshot still appeared disconnected");
+            feed.refresh();backend.answer(null,"synthetic snapshot failure");
+            check(feed.state()==PhoneRunningTasks.State.ERROR,"snapshot error appeared as a valid empty list");
+            feed.refresh();backend.answer(snapshot(task(801,"fixture.recovery/.Main",true)),null);
+            check(feed.state()==PhoneRunningTasks.State.READY&&feed.tasks().size()==1,"snapshot did not recover after failure");
+            feed.stop();int connections=backend.connections;backend.ready=false;feed.refresh();
+            check(backend.connections==connections,"hidden feed continued reconnecting");
+        }finally{feed.close();}
     }
     private static void lifecycle()throws Exception{
         FakeBackend backend=new FakeBackend();int[] changes={0},focused={0},failures={0};
@@ -151,6 +170,20 @@ final class PhoneSidebarChecks {
             check(backend.operations==3&&feed.tasks().isEmpty(),"permission loss allowed task action or retained tasks");
         }finally{feed.close();}
     }
+    private static void pipFullscreen()throws Exception{
+        FakeBackend backend=new FakeBackend();int[] completed={0};PhoneRunningTasks feed=new PhoneRunningTasks(backend,()->{});
+        TaskSession.Task pip=task(711,"fixture.video/.Player",true,2),main=task(711,"fixture.video/.Player",true,1),other=task(712,"fixture.mail/.Main",false,1);
+        try{
+            feed.start();feed.refresh();backend.answer(snapshot(pip,other),null);
+            feed.operation(pip,"fullscreen",null,()->completed[0]++,error->{throw new AssertionError(error);});
+            check(backend.operations==1&&backend.operated.id==711&&backend.operated.component.equals(pip.component)&&"fullscreen".equals(backend.action)&&backend.bounds.isEmpty(),"PiP return-to-main rejected or lost exact selected task identity");
+            backend.operation.done("OK",null);check(completed[0]==1,"PiP fullscreen callback missing");
+            feed.refresh();backend.answer(snapshot(main,other),null);
+            feed.operation(pip,"fullscreen",null,()->completed[0]++,error->{throw new AssertionError(error);});
+            check(backend.operations==1&&completed[0]==1&&backend.snapshot!=null,"Stale PiP return operated an already-main task instead of refreshing");
+            backend.answer(snapshot(main,other),null);check(feed.tasks().get(0).mode==1&&feed.tasks().get(1).id==712,"PiP return altered unrelated synthetic task");
+        }finally{feed.close();}
+    }
     private static void menus(Context context){
         List<PopupMenu> presented=new ArrayList<>();List<String> actions=new ArrayList<>();
         PhoneTaskMenu menu=new PhoneTaskMenu(context,presented::add);ImageButton anchor=new ImageButton(context);
@@ -166,7 +199,25 @@ final class PhoneSidebarChecks {
             menu.show(anchor,true,actions::add);Menu floating=presented.get(4).getMenu();
             check(floating.size()==2&&floating.findItem(PhoneTaskMenu.FLOAT).getTitle().equals(context.getString(R.string.phone_sidebar_fullscreen_task))&&floating.findItem(PhoneTaskMenu.CLOSE).getTitle().equals(context.getString(R.string.phone_sidebar_close_task)),"floating task lacks return-to-main menu");
             floating.performIdentifierAction(PhoneTaskMenu.FLOAT,0);check(actions.equals(Arrays.asList("float","close","fullscreen")),"return-to-main menu reused float action");
+            menu.show(anchor,TaskModes.canReturnToMain(2),actions::add);Menu pip=presented.get(5).getMenu();
+            check(pip.findItem(PhoneTaskMenu.FLOAT).getTitle().equals(context.getString(R.string.phone_sidebar_fullscreen_task)),"PiP menu labels return-to-main as float");
+            pip.performIdentifierAction(PhoneTaskMenu.FLOAT,0);check(actions.equals(Arrays.asList("float","close","fullscreen","fullscreen")),"PiP menu did not dispatch fullscreen");
         }finally{menu.close();}
+    }
+    /** Production legacy Taskbar commands, without constructing TaskSession or contacting the OS. */
+    private static void taskbarActions(Context context)throws Exception{
+        for(int mode:new int[]{1,2,5}){
+            TaskSession.Task selected=task(8800+mode,"fixture.taskbar/.Mode"+mode,true,mode);
+            PopupMenu popup=new PopupMenu(context,new ImageButton(context));List<String> commands=new ArrayList<>();
+            AppContextMenu.addTaskActions(context,popup.getMenu(),selected,action->commands.add(selected.id+"|"+selected.component+"|"+action));
+            Menu menu=popup.getMenu();
+            check(menu.findItem(AppContextMenu.CLOSE_TASK)!=null&&menu.findItem(AppContextMenu.CLOSE_TASK).getTitle().equals(context.getString(R.string.phone_sidebar_close_task)),"Legacy Taskbar lost direct localized task close");
+            check(menu.performIdentifierAction(AppContextMenu.CLOSE_TASK,0)&&commands.equals(Arrays.asList(selected.id+"|"+selected.component+"|close")),"Legacy Taskbar close callback lost exact selected task/action");
+            if(mode==2||mode==5){
+                check(menu.findItem(AppContextMenu.RETURN_TO_MAIN)!=null&&menu.findItem(AppContextMenu.RETURN_TO_MAIN).getTitle().equals(context.getString(R.string.phone_sidebar_fullscreen_task)),"PiP/floating Taskbar lacks localized return-to-main");
+                check(menu.performIdentifierAction(AppContextMenu.RETURN_TO_MAIN,0)&&commands.equals(Arrays.asList(selected.id+"|"+selected.component+"|close",selected.id+"|"+selected.component+"|fullscreen")),"Legacy Taskbar return callback lost exact selected task/action");
+            }else check(menu.findItem(AppContextMenu.RETURN_TO_MAIN)==null,"Already-main Taskbar exposed a redundant return action");
+        }
     }
     private static void rendering(Context context)throws Exception{
         List<TaskSession.Task> clicked=new ArrayList<>(),menuTasks=new ArrayList<>();

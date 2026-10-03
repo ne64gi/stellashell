@@ -160,7 +160,7 @@
     <string name="ui_restore_size" formatted="false">"元のサイズ"</string>
     <string name="ui_remove_from_desktop" formatted="false">"デスクトップから削除"</string>
     <string name="ui_add_to_desktop" formatted="false">"デスクトップに追加"</string>
-    <string name="ui_unpin_from_taskbar" formatted="false">"ピン留めを解除"</string>
+    <string name="ui_unpin_from_taskbar" formatted="false">タスクバーから解除</string>
     <string name="ui_pin_to_taskbar" formatted="false">"タスクバーにピン留め"</string>
     <string name="ui_app_info" formatted="false">"アプリ情報"</string>
     <string name="ui_width_px" formatted="false">"幅（px）"</string>
@@ -440,19 +440,19 @@
     <string name="widget_edit_scale">縦横比を保って拡縮</string>
     <string name="widget_edit_number">0〜10000の数値を入力してください</string>
     <string name="opening_on_phone">本体画面で開きます</string>
-    <string name="phone_workspace">サイドバー</string>
-    <string name="phone_sidebar">サイドバーを使う</string>
+    <string name="phone_workspace">Dock</string>
+    <string name="phone_sidebar">スマホでDockを表示</string>
     <string name="phone_window_management">スマホのアプリもStellaでウィンドウ管理する</string>
-    <string name="phone_workspace_note">通常タップは全画面で開きます。長押しから小窓で開けます。本体側のピン留め・ショートカット・壁紙はデスクトップと別です。サイドバーには重ねて表示の許可、小窓にはShizukuが必要です。</string>
+    <string name="phone_workspace_note">通常タップは全画面で開きます。長押しから小窓で開けます。本体側のピン留め・ショートカット・壁紙はデスクトップと別です。Dockには重ねて表示の許可、小窓にはShizukuが必要です。</string>
     <string name="wallpaper_position">壁紙の表示位置</string>
     <string name="wallpaper_horizontal">横方向の焦点位置</string>
     <string name="wallpaper_vertical">縦方向の焦点位置</string>
     <string name="wallpaper_drag">プレビューをドラッグして表示位置を調整できます。画面を埋める表示では、回転しても選んだ焦点位置を基準に切り抜きます。</string>
-    <string name="phone_pin">スマホのサイドバーにピン留め</string>
-    <string name="phone_unpin">スマホのサイドバーから外す</string>
+    <string name="phone_pin">Dockにピン留め</string>
+    <string name="phone_unpin">Dockから解除</string>
     <string name="phone_floating">小窓で開く</string>
-    <string name="phone_sidebar_over_apps">他のアプリ上でもサイドバーを表示</string>
-    <string name="sidebar_height">サイドバーの呼び出し位置（上 → 下）</string>
+    <string name="phone_sidebar_over_apps">他のアプリ上でもDockを表示</string>
+    <string name="sidebar_height">Dockの呼び出し位置（上 → 下）</string>
     <string name="menu_desktop">デスクトップ</string>
     <string name="menu_widgets">ウィジェット</string>
     <string name="menu_customize">カスタマイズ</string>

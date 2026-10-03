@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sidebar_settings_title">Dock</string>
+    <string name="sidebar_settings_summary">画面ごとの表示・位置・大きさ</string>
+    <string name="sidebar_settings_back">‹ 設定に戻る</string>
+    <string name="sidebar_settings_immediate">変更はすぐに反映されます。</string>
+    <string name="sidebar_settings_phone">本体</string>
+    <string name="sidebar_settings_desktop">外部画面</string>
+    <string name="sidebar_settings_show_phone">本体で表示する</string>
+    <string name="sidebar_settings_show_desktop">外部画面で表示する</string>
+    <string name="sidebar_settings_show">表示する</string>
+    <string name="sidebar_settings_call_side">呼び出し位置</string>
+    <string name="sidebar_settings_edge">端</string>
+    <string name="sidebar_settings_edge_note">端を選ぶと、その端へ移動します。スライダーで位置を調整でき、画面の内側にも動かせます。</string>
+    <string name="sidebar_settings_horizontal">位置（横）</string>
+    <string name="sidebar_settings_vertical">位置（縦）</string>
+    <string name="sidebar_settings_both">両サイド</string>
+    <string name="sidebar_settings_left">左</string>
+    <string name="sidebar_settings_right">右</string>
+    <string name="sidebar_settings_top">上</string>
+    <string name="sidebar_settings_bottom">下</string>
+    <string name="sidebar_settings_choice">%1$s：%2$s</string>
+    <string name="sidebar_settings_percent">%1$s：%2$d%%</string>
+    <string name="sidebar_settings_size">大きさ</string>
+    <string name="sidebar_settings_smaller">小さく</string>
+    <string name="sidebar_settings_larger">大きく</string>
+    <string name="sidebar_settings_size_note">Dockの大きさだけを変更します。</string>
+    <string name="sidebar_settings_start_note">同じ画面にタスクバーがあるときは、スタートをタスクバーから開きます。</string>
+    <string name="setup_desktop_title">デスクトップ</string>
+    <string name="setup_desktop_screen">画面</string>
+    <string name="setup_desktop_choose_note">画面を選んでデスクトップを開始します。</string>
+    <string name="setup_desktop_open_note">この画面でデスクトップを開けます。</string>
+    <string name="setup_desktop_connect_note">外部画面を接続するとデスクトップを開始します。</string>
+    <string name="setup_desktop_disconnected_note">選んだ画面が未接続です。接続するか、別の画面を選んでください。</string>
+    <string name="setup_desktop_reconnect_note">使用中の画面が未接続です。再接続するか、停止して画面を選び直してください。</string>
+    <string name="setup_external_screen_later">外部画面（あとで接続）</string>
+    <string name="setup_screen_disconnected">選んだ画面（未接続）</string>
+    <string name="setup_desktop_start">デスクトップを開始</string>
+    <string name="setup_desktop_start_on_connection">接続したら開始</string>
+    <string name="setup_desktop_open">デスクトップを開く</string>
+    <string name="setup_desktop_stop">デスクトップを停止</string>
+    <string name="setup_displays_note">接続している画面の管理</string>
+    <string name="setup_screen_numbered">%1$s · %2$d</string>
+</resources>

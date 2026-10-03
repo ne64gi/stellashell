@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="display_settings_title">Display settings</string>
+    <string name="display_settings_summary">App, text and window size on each screen</string>
+    <string name="display_settings_back">‹ Back to settings</string>
+    <string name="display_settings_note">Change the size of apps, text and windows across the selected screen. Resolution stays the same.</string>
+    <string name="display_settings_screen">Screen</string>
+    <string name="display_settings_screen_choice">Screen: %1$s  ▾</string>
+    <string name="display_settings_screen_numbered">%1$s · %2$d</string>
+    <string name="display_settings_dimensions">%1$d × %2$d</string>
+    <string name="display_settings_current">Current size: %1$d%%</string>
+    <string name="display_settings_size">Size</string>
+    <string name="display_settings_percent">Size: %1$d%%</string>
+    <string name="display_settings_smaller">Smaller: %1$d%%</string>
+    <string name="display_settings_larger">Larger: %1$d%%</string>
+    <string name="display_settings_apply_note">Choose a size, then Apply. Dock and taskbar also have separate size settings.</string>
+    <string name="display_settings_apply">Apply</string>
+    <string name="display_settings_reset">Reset to standard</string>
+    <string name="display_settings_reload">Refresh</string>
+    <string name="display_settings_permissions">Check connection and permissions</string>
+    <string name="display_settings_disconnected">Screen disconnected</string>
+    <string name="display_settings_disconnected_note">Connect the selected screen or choose another screen.</string>
+    <string name="display_settings_changed">The selected screen changed. Choose a screen again before applying.</string>
+    <string name="display_settings_connect_note">Connect and allow screen settings to change the size.</string>
+    <string name="display_settings_loading">Reading screen settings…</string>
+    <string name="display_settings_applying">Applying…</string>
+    <string name="display_settings_applied">Size updated.</string>
+    <string name="display_settings_unavailable">Screen settings could not be read. Check the screen and connection, then refresh.</string>
+    <string name="display_settings_apply_failed">The size could not be changed. Check the screen, then refresh and try again.</string>
+</resources>

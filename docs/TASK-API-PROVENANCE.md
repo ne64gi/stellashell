@@ -69,3 +69,23 @@ remain: the same Android task API necessarily has the same method names.
 - Not a full legal clearance or a reason to choose GPL for StellaShell.
 - Not a claim of verified behavior on every supported SDK/OEM. See the remediation
   report for actual build/device evidence and remaining limits.
+
+## 2026-10-03: SOG06 root-task pin compatibility
+
+The SOG06 Android 14 system's FreeformController and framework were inspected
+locally to identify the callable `IActivityTaskManager.setRootTaskAlwaysOnTop(int,
+boolean)` contract and its `MANAGE_ACTIVITY_TASKS` permission. The shell UID has
+that permission; a disposable-task probe confirmed pin/unpin and matching native
+task/root flags. Visual ordering and input verification are separate checks.
+
+The adapter invokes that API through the existing task boundary, revalidates the
+root token/user/component and rejects roots containing other tasks. It does not
+copy the vendor controller implementation, launch its service, or call Sony's
+separate `setFreeformPinningMode` operation, which changes focus behavior.
+This path is restricted to SOG06 / Android 14 / display 0, where solid-color
+fixtures passed overlap, touch on both windows, multiple pins, minimize/restore,
+fullscreen release and session cleanup. Secondary-display flags did not match
+the rendered ordering, so new pins there are rejected. Native unpin remains
+available for cleanup if an owned task moved displays. The NX809J guard remains.
+The Sony controller can adopt another freeform task while its own popup is active;
+coexistence is not supported. Probe runners must refuse that starting state.

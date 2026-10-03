@@ -31,17 +31,19 @@ final class AppContextMenu {
         launch.add(c.getString(R.string.ui_remember_position_and_size)).setCheckable(true).setChecked(p.rememberBounds).setOnMenuItemClickListener(m->{p.rememberBounds=!p.rememberBounds;Profiles.save(c,component,p);return true;});
         }
         if(task!=null&&session!=null){
+            addTaskActions(c,menu,task,action->{dismiss.run();session.action(task,action);});
             SubMenu window=menu.addSubMenu(1,0,11,c.getString(R.string.ui_current_window));
             boolean available=session!=null&&session.canPin()&&(task.mode==5||task.alwaysOnTop);
             window.add(!available?c.getString(!session.canPin()?R.string.window_pin_unsupported:R.string.window_pin_window_only):c.getString(R.string.window_pin))
                     .setCheckable(true).setChecked(task.alwaysOnTop).setEnabled(available)
                     .setOnMenuItemClickListener(m->{session.action(task,task.alwaysOnTop?"unpin":"pin");return true;});
-        String[] labels={c.getString(R.string.ui_minimize),c.getString(R.string.ui_maximized),c.getString(R.string.ui_restore_size),c.getString(R.string.ui_snap_left),c.getString(R.string.ui_snap_right),c.getString(R.string.task_close_window)};String[] actions={"minimize","maximize","restore","left","right","close"};for(int i=0;i<labels.length;i++){String action=actions[i];window.add(labels[i]).setOnMenuItemClickListener(m->{session.action(task,action);return true;});}}
+        String[] labels={c.getString(R.string.ui_minimize),c.getString(R.string.ui_maximized),c.getString(R.string.ui_restore_size),c.getString(R.string.ui_snap_left),c.getString(R.string.ui_snap_right)};String[] actions={"minimize","maximize","restore","left","right"};for(int i=0;i<labels.length;i++){String action=actions[i];window.add(labels[i]).setOnMenuItemClickListener(m->{session.action(task,action);return true;});}}
         SubMenu placement=menu.addSubMenu(1,0,20,c.getString(R.string.menu_placement));
         if(move!=null)placement.add(R.string.ui_move_2).setOnMenuItemClickListener(m->{move.run();return true;});
         placement.add(Launches.desktop(c).contains(component)?c.getString(R.string.ui_remove_from_desktop):c.getString(R.string.ui_add_to_desktop)).setOnMenuItemClickListener(m->{Launches.toggleDesktop(c,component);return true;});
         placement.add(StartPins.get(c).contains(component)?c.getString(R.string.start_unpin):c.getString(R.string.start_pin)).setOnMenuItemClickListener(m->{StartPins.toggle(c,component);return true;});
-        placement.add(Launches.pins(c).contains(component)?c.getString(WorkspaceProfile.phone(c)?R.string.phone_unpin:R.string.ui_unpin_from_taskbar):c.getString(WorkspaceProfile.phone(c)?R.string.phone_pin:R.string.ui_pin_to_taskbar)).setOnMenuItemClickListener(m->{Launches.togglePin(c,component);return true;});
+        placement.add(Launches.dockPins(c).contains(component)?R.string.phone_unpin:R.string.phone_pin).setOnMenuItemClickListener(m->{Launches.toggleDockPin(c,component);return true;});
+        placement.add(Launches.taskbarPins(c).contains(component)?R.string.ui_unpin_from_taskbar:R.string.ui_pin_to_taskbar).setOnMenuItemClickListener(m->{Launches.toggleTaskbarPin(c,component);return true;});
         SubMenu customize=menu.addSubMenu(1,0,30,c.getString(R.string.menu_customize));
         customize.add(R.string.icons_edit).setOnMenuItemClickListener(m->{dismiss.run();IconSettingsActivity.open(c,display,component);return true;});
         menu.add(2,0,40,c.getString(R.string.ui_app_info)).setOnMenuItemClickListener(m->{dismiss.run();try{c.startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+p.packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),ActivityOptions.makeBasic().setLaunchDisplayId(display).toBundle());}catch(RuntimeException e){Launches.problem(c,e.getMessage());}return true;});
@@ -50,6 +52,14 @@ final class AppContextMenu {
         for(String group:names)groups.add(group.isEmpty()?c.getString(R.string.launcher_ungrouped):group).setCheckable(true).setChecked(group.equals(AppOrganization.group(c,component))).setOnMenuItemClickListener(item->{AppOrganization.assign(c,component,group);return true;});
         customize.add(c.getString(AppOrganization.hidden(c,component)?R.string.launcher_show_app:R.string.launcher_hide_app)).setOnMenuItemClickListener(item->{AppOrganization.hide(c,component,!AppOrganization.hidden(c,component));return true;});
         menu.setGroupDividerEnabled(true);popup.show();
+    }
+    static final int RETURN_TO_MAIN=21001,CLOSE_TASK=21002;
+    /** Direct task commands, separate from launch/profile options. No package-wide stop. */
+    static void addTaskActions(Context c,Menu menu,TaskSession.Task task,java.util.function.Consumer<String> selected){
+        if(TaskModes.canReturnToMain(task.mode))menu.add(0,RETURN_TO_MAIN,1,R.string.phone_sidebar_fullscreen_task)
+                .setOnMenuItemClickListener(item->{selected.accept("fullscreen");return true;});
+        menu.add(0,CLOSE_TASK,2,R.string.phone_sidebar_close_task)
+                .setOnMenuItemClickListener(item->{selected.accept("close");return true;});
     }
     private static void customSize(Context c,String component,AppLaunchProfile p){
         LinearLayout form=Ui.column(c);form.setPadding(Ui.dp(c,20),0,Ui.dp(c,20),0);

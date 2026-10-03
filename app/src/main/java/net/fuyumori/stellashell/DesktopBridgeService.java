@@ -51,6 +51,14 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
         try{return displays().close(id,identity);}
         catch(Exception e){return "ERROR: "+e.getMessage();}
     }
+    private ScreenScaling screenScaling;
+    private ScreenScaling screenScaling(){if(screenScaling==null)screenScaling=new ScreenScaling(context,DesktopBridgeService::exec);return screenScaling;}
+    @Override public synchronized String snapshotDisplayScale(int displayId){
+        try{return screenScaling().snapshot(displayId);}catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}
+    }
+    @Override public synchronized String applyDisplayScale(int displayId,String identity,int percent){
+        try{return screenScaling().apply(displayId,identity,percent);}catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}
+    }
     private static String read(String key) throws Exception {
         String value = exec("/system/bin/settings", "get", "global", key); Policy.setting(value); return value;
     }
@@ -124,6 +132,9 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
     }
     @Override public synchronized String taskOperation(int displayId,int taskId,String action,int l,int t,int r,int b) {
         try{return tasks().operate(displayId,taskId,action,l,t,r,b);}catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}
+    }
+    @Override public synchronized String checkedTaskOperation(int displayId,int taskId,String component,String action,int l,int t,int r,int b){
+        try{return tasks().operateChecked(displayId,taskId,component,action,l,t,r,b);}catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}
     }
     @Override public synchronized String launchProfile(String component,String resolved,int displayId,int mode,int l,int t,int r,int b,boolean newWindow){
         try{return tasks().launchProfile(component,resolved,displayId,mode,l,t,r,b,newWindow);}catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}

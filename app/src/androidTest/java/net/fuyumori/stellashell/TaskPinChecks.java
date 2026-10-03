@@ -15,7 +15,8 @@ public final class TaskPinChecks {
         FrameworkTaskAccess.Entry entry(){TaskInfo info=new android.app.ActivityManager.RunningTaskInfo();info.taskId=id;info.baseActivity=new ComponentName("fixture.app","fixture.app.Window"+id);return new FrameworkTaskAccess.Entry(info,0,0,mode,1,visible,focused,top,token,new Rect(0,0,400,400));}
     }
     private static final class Store implements TaskPins.Access {
-        final Map<Integer,Window> live=new HashMap<>();int writes;int failId=-1;boolean failAfterWrite;
+        final Map<Integer,Window> live=new HashMap<>();int writes;int failId=-1;boolean failAfterWrite;boolean supported=true;
+        public boolean supports(FrameworkTaskAccess.Entry task){return supported;}
         public List<FrameworkTaskAccess.Entry> all(){List<FrameworkTaskAccess.Entry> out=new ArrayList<>();for(Window window:live.values())out.add(window.entry());return out;}
         public void set(FrameworkTaskAccess.Entry task,boolean enabled)throws Exception {
             Window window=live.get(task.id);if(window==null||window.token!=task.token)throw new IllegalStateException("stale task");
@@ -43,6 +44,9 @@ public final class TaskPinChecks {
         store.failId=-1;pins.release();require(!reused.top,"failed cleanup can retry");
         store.failId=1;store.failAfterWrite=true;failed=false;try{pins.set(reused.entry(),true);}catch(Exception expected){failed=true;}require(failed,"post-dispatch failure surfaced");
         store.failId=-1;pins.release();require(!reused.top,"failed pin dispatch remains recoverable");
+        pins.set(reused.entry(),true);two.top=true;store.supported=false;pins.reconcile();
+        require(!reused.top&&!pins.pinned(reused.entry())&&two.top,"unsupported destination clears owned pins, not foreign native pins");
+        store.supported=true;two.top=false;
         Window pip=new Window(3);pip.mode=2;pip.top=true;store.live.put(3,pip);require(!pins.pinned(pip.entry()),"PiP is not a user pin");
         TaskSession.Task picture=view(10,2,false),pinned=view(11,5,true),ordinary=view(12,5,false);
         List<TaskSession.Task> order=Arrays.asList(picture,pinned,ordinary);

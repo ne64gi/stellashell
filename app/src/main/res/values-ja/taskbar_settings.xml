@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="taskbar_settings_title">タスクバー</string>
+    <string name="taskbar_settings_summary">本体での表示・画面ごとの大きさ</string>
+    <string name="taskbar_settings_back">‹ 設定に戻る</string>
+    <string name="taskbar_settings_immediate">変更はすぐに反映されます。</string>
+    <string name="taskbar_settings_note">画面下部にスタートやアプリのボタンを表示するバーです。Dockとは別に設定できます。</string>
+    <string name="taskbar_settings_show_phone">本体で表示する</string>
+    <string name="taskbar_settings_phone">本体</string>
+    <string name="taskbar_settings_external">外部画面</string>
+    <string name="taskbar_settings_external_always">外部画面では常に表示します。</string>
+    <string name="taskbar_settings_size">大きさ</string>
+    <string name="taskbar_settings_smaller">小さく</string>
+    <string name="taskbar_settings_larger">大きく</string>
+    <string name="taskbar_settings_percent">%1$s：%2$d%%</string>
+    <string name="taskbar_settings_size_note">タスクバーの大きさだけを変更します。</string>
+</resources>

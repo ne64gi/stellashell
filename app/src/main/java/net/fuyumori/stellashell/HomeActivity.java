@@ -48,6 +48,9 @@ public final class HomeActivity extends DesktopActivity {
             });
             fallback.addView(handle,new FrameLayout.LayoutParams(Ui.dp(this,16),Ui.dp(this,64),Gravity.TOP|Gravity.LEFT));
         }
+        ImageButton homeApps=new ImageButton(this);homeApps.setImageResource(R.mipmap.ic_launcher);homeApps.setBackground(Ui.toolbarBackground(this,12));
+        homeApps.setPadding(Ui.dp(this,8),Ui.dp(this,8),Ui.dp(this,8),Ui.dp(this,8));homeApps.setContentDescription(getString(R.string.ui_app_menu));homeApps.setOnClickListener(v->openApps());
+        fallback.addView(homeApps,new FrameLayout.LayoutParams(Ui.dp(this,48),Ui.dp(this,48),Gravity.TOP|Gravity.LEFT));
         fallback.setOnApplyWindowInsetsListener((v,insets)->{positionHomeEdges(insets);return insets;});
         fallback.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->positionHomeEdges(getWindow().getDecorView().getRootWindowInsets()));
         Bridge.get(this).observe(bridgeChanged);DockService.observeNavigation(navigationChanged);updateFallback();
@@ -56,12 +59,17 @@ public final class HomeActivity extends DesktopActivity {
     private void positionHomeEdges(WindowInsets insets){
         if(fallback==null||insets==null)return;
         WorkArea area=WorkArea.read(this,insets);int percent=Math.max(0,Math.min(100,Launches.prefs(this).getInt("sidebar_height",80)));
-        for(int i=0;i<fallback.getChildCount();i++){
+        boolean enabled=Launches.prefs(this).getBoolean("phone_sidebar",true);String side=Launches.prefs(this).getString("phone_sidebar_side","both");
+        for(int i=0;i<2;i++){
             View child=fallback.getChildAt(i);FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)child.getLayoutParams();
+            child.setVisibility(enabled&&!(i==0?"right":"left").equals(side)?View.VISIBLE:View.GONE);
             int x=i==0?Math.max(area.usable.left,area.gestureLeft)+Ui.dp(this,8):Math.min(area.usable.right,area.physical.right-area.gestureRight)-Ui.dp(this,24);
             int y=area.usable.top+Math.round(Math.max(0,area.usable.height()-p.height)*percent/100f);
             if(p.leftMargin!=x||p.topMargin!=y){p.leftMargin=x;p.topMargin=y;child.setLayoutParams(p);}
         }
+        View appsButton=fallback.getChildAt(2);appsButton.setVisibility(enabled?View.GONE:View.VISIBLE);
+        FrameLayout.LayoutParams appParams=(FrameLayout.LayoutParams)appsButton.getLayoutParams();
+        appParams.leftMargin=area.usable.left+Math.max(0,(area.usable.width()-appParams.width)/2);appParams.topMargin=Math.max(area.usable.top,area.usable.bottom-appParams.height-Ui.dp(this,8));appsButton.setLayoutParams(appParams);
     }
     private void updateFallback(){
         if(fallback==null||isFinishing()||isDestroyed())return;
@@ -97,7 +105,7 @@ public final class HomeActivity extends DesktopActivity {
     @Override protected void onResume(){super.onResume();resumed=true;Bridge.get(this).connect();refreshHome();}
     @Override protected void onPause(){resumed=false;super.onPause();}
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)refreshHome();}
-    @Override public void onSharedPreferenceChanged(SharedPreferences prefs,String key){super.onSharedPreferenceChanged(prefs,key);if("sidebar_height".equals(key)||"enabled".equals(key)||"primary_mode".equals(key)||"workspace_display".equals(key)||"phone_sidebar".equals(key)||"phone_window_management".equals(key))refreshHome();}
+    @Override public void onSharedPreferenceChanged(SharedPreferences prefs,String key){super.onSharedPreferenceChanged(prefs,key);if("sidebar_height".equals(key)||"phone_sidebar_side".equals(key)||"enabled".equals(key)||"primary_mode".equals(key)||"workspace_display".equals(key)||"phone_sidebar".equals(key)||"phone_window_management".equals(key))refreshHome();}
     @Override public void onBackPressed(){if(apps!=null&&apps.isOpen())apps.close();else super.onBackPressed();}
     @Override public void onDestroy(){DockService.unobserveNavigation(navigationChanged);Bridge.get(this).remove(bridgeChanged);if(apps!=null)apps.close();menuLoader.shutdownNow();super.onDestroy();}
 }

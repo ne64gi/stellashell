@@ -1,10 +1,23 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
+        <activity android:name="net.fuyumori.stellashell.PinInputActivity" android:exported="true" android:resizeableActivity="true" android:taskAffinity="stellashell.pin.first" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <activity android:name="net.fuyumori.stellashell.PinOtherActivity" android:exported="true" android:resizeableActivity="true" android:taskAffinity="stellashell.pin.second" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
         <activity android:name="net.fuyumori.stellashell.IconPackFixtureActivity" android:exported="true" android:label="StellaShell icon test fixture">
             <intent-filter><action android:name="org.adw.launcher.THEMES" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>
         </activity>
         <activity android:name="net.fuyumori.stellashell.HomeLaunchProbeActivity" android:exported="true" android:taskAffinity="stellashell.home.probe" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <activity-alias android:name="net.fuyumori.stellashell.LauncherEntryFirst" android:targetActivity="net.fuyumori.stellashell.HomeLaunchProbeActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+        </activity-alias>
+        <activity-alias android:name="net.fuyumori.stellashell.LauncherEntrySecond" android:targetActivity="net.fuyumori.stellashell.HomeLaunchProbeActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+        </activity-alias>
+        <activity-alias android:name="net.fuyumori.stellashell.LauncherEntryPrivate" android:targetActivity="net.fuyumori.stellashell.HomeLaunchProbeActivity" android:exported="false" />
+        <activity-alias android:name="net.fuyumori.stellashell.LauncherEntryProtected" android:targetActivity="net.fuyumori.stellashell.HomeLaunchProbeActivity" android:exported="true" android:permission="android.permission.MANAGE_ACTIVITY_TASKS">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+        </activity-alias>
         <activity android:name="net.fuyumori.stellashell.PolishPrimaryActivity" android:exported="true" android:resizeableActivity="true" android:taskAffinity="stellashell.polish.primary" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
         <activity android:name="net.fuyumori.stellashell.PolishSecondaryActivity" android:exported="true" android:resizeableActivity="true" android:taskAffinity="stellashell.polish.secondary" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <activity android:name="net.fuyumori.stellashell.PipFixtureActivity" android:exported="true" android:resizeableActivity="true" android:supportsPictureInPicture="true" android:taskAffinity="stellashell.pip.fixture" android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
     </application>
 </manifest>
