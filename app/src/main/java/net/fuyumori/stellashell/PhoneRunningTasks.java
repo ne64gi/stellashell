@@ -20,6 +20,7 @@ final class PhoneRunningTasks implements AutoCloseable {
     enum State { LOADING, READY, UNAVAILABLE, ERROR }
     interface Backend {
         boolean ready();
+        default boolean awake(){return true;}
         default void connect(){}
         void observe(Runnable changed);
         void remove(Runnable changed);
@@ -31,45 +32,47 @@ final class PhoneRunningTasks implements AutoCloseable {
     private final Runnable changed;
     private final Handler main=new Handler(Looper.getMainLooper());
     private final List<TaskSnapshot.Task> tasks=new ArrayList<>();
-    private boolean active,closed,busy,commandBusy;
+    private boolean active,closed,busy,commandBusy,invalidated;
     private State state=State.LOADING;
     private long generation;
     private final Runnable connectionChanged=this::refresh;
-    private final Runnable poll=new Runnable(){@Override public void run(){
-        if(!active||closed)return;refresh();main.postDelayed(this,1100);
-    }};
+    private final Runnable initial=this::refresh;
     PhoneRunningTasks(Context context,Runnable changed){this(new Backend(){
         private final Bridge bridge=Bridge.get(context);
         private final TaskState taskState=TaskState.of(context);
+        private AutoCloseable events;
         public boolean ready(){return bridge.ready()&&bridge.authorized();}
+        public boolean awake(){return ShellTaskEvents.awake(context,0);}
         public void connect(){if(bridge.authorized())bridge.connect();}
-        public void observe(Runnable listener){bridge.observe(listener);}
-        public void remove(Runnable listener){bridge.remove(listener);}
-        public void snapshot(Bridge.Reply reply){bridge.call(s->s.phoneTaskSnapshot(),reply);}
+        public void observe(Runnable listener){events=ShellTaskEvents.of(context).observe(0,listener);}
+        public void remove(Runnable listener){if(events!=null)try{events.close();}catch(Exception ignored){}events=null;}
+        public void snapshot(Bridge.Reply reply){bridge.read(s->s.phoneTaskSnapshot(),reply);}
         public void focus(TaskSnapshot.Task task,Bridge.Reply reply){taskState.focusPhoneTask(task,reply);}
         public void operation(TaskSnapshot.Task task,String action,Rect bounds,Bridge.Reply reply){taskState.phoneOperation(context,task,action,bounds,reply);}
     },changed);}
     PhoneRunningTasks(Backend backend,Runnable changed){this.backend=backend;this.changed=changed;}
     List<TaskSnapshot.Task> tasks(){return new ArrayList<>(tasks);}
     State state(){return state;}
-    void start(){if(closed||active)return;active=true;generation++;backend.observe(connectionChanged);main.post(poll);}
+    void start(){if(closed||active)return;active=true;generation++;backend.observe(connectionChanged);main.post(initial);}
     void stop(){
         if(active){active=false;generation++;backend.remove(connectionChanged);}
-        main.removeCallbacks(poll);clear(State.LOADING);
+        main.removeCallbacks(initial);clear(State.LOADING);
     }
     private void clear(State next){boolean different=!tasks.isEmpty()||state!=next;tasks.clear();state=next;if(different)changed.run();}
     private void unavailable(){generation++;clear(State.UNAVAILABLE);backend.connect();}
     void refresh(){
         if(closed||!active)return;
+        if(!backend.awake())return;
         if(!backend.ready()){unavailable();return;}
-        if(busy)return;
-        busy=true;long request=generation;
+        if(busy){invalidated=true;return;}
+        invalidated=false;busy=true;long request=generation;
         backend.snapshot((result,error)->{
             busy=false;
             if(closed||!active)return;
             if(request!=generation){refresh();return;}
+            if(!backend.awake())return;
             if(!backend.ready()){unavailable();return;}
-            if(error!=null){clear(State.ERROR);return;}
+            if(error!=null){clear(State.ERROR);followUp();return;}
             try{
                 JSONArray rows=new JSONObject(result).getJSONArray("tasks");
                 List<TaskSnapshot.Task> next=new ArrayList<>();Set<Integer> ids=new HashSet<>();
@@ -85,8 +88,10 @@ final class PhoneRunningTasks implements AutoCloseable {
                 }
                 tasks.clear();tasks.addAll(next);state=State.READY;if(different)changed.run();
             }catch(Exception ignored){clear(State.ERROR);}
+            followUp();
         });
     }
+    private void followUp(){if(invalidated&&!main.hasCallbacks(initial))main.post(initial);}
     void focus(TaskSnapshot.Task requested,Runnable focused,Consumer<String> failed){
         command(requested,null,null,focused,failed);
     }

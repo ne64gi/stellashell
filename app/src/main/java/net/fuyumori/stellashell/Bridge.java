@@ -27,6 +27,11 @@ public final class Bridge {
     public void screenOff(boolean off,Reply reply){call(s->{String result=s.syncPrimaryScreen(mouseDisplay,off,mouseOwner);if(!result.equals(off?"off":"on"))throw new IllegalStateException(result);return result;},(result,error)->{if(error==null)screenOff=off&&mouseDisplay>0;reply.done(result,error);});}
 
     private String mouseStatus="",imeStatus="";
+    private boolean observedEnabled;
+    private final SharedPreferences.OnSharedPreferenceChangeListener imeChanged = this::imePreferenceChanged;
+    private void imePreferenceChanged(SharedPreferences prefs, String key) {
+        if (ready() && "hide_virtual_ime".equals(key)) call(s -> "OK", (result, failure) -> {});
+    }
     private boolean shellHasExternalWorkspace(ShellSettings.Snapshot settings){
         return ShellRuntime.enabled(context)&&(!settings.primaryMode||TaskState.of(context).target(context)>0);
     }
@@ -50,17 +55,30 @@ public final class Bridge {
     private String error = "";
     private final ServiceConnection connection = new ServiceConnection() {
         @Override public void onServiceConnected(ComponentName name, IBinder binder) {
-            service = IDesktopBridge.Stub.asInterface(binder); binding = false; error = ""; changed();
+            service = IDesktopBridge.Stub.asInterface(binder); binding = false; error = "";
+            call(s -> "OK", (result, failure) -> {}); changed();
         }
         @Override public void onServiceDisconnected(ComponentName name) { service = null; screenOff=false; binding = false; changed(); }
     };
     private Bridge(Context context) {
         this.context=context;
         args = new Shizuku.UserServiceArgs(new ComponentName(context, DesktopBridgeService.class))
-                .daemon(false).processNameSuffix("desktop_bridge").debuggable(false).version(32);
+                .daemon(false).processNameSuffix("desktop_bridge").debuggable(false).version(33);
         Shizuku.addBinderReceivedListenerSticky(this::connect);
         Shizuku.addBinderDeadListener(() -> { service = null; screenOff=false; binding = false; changed(); });
         Shizuku.addRequestPermissionResultListener((code, result) -> { if (result == PackageManager.PERMISSION_GRANTED) connect(); changed(); });
+        ShellSettings.of(context).observe((changes, settings) -> {
+            if (ready() && changes.contains(ShellSettings.Change.PRIMARY_MODE))
+                call(s -> "OK", (result, failure) -> {});
+        });
+        observedEnabled = ShellRuntime.enabled(context);
+        ShellRuntime.observeNavigation(() -> {
+            boolean enabled = ShellRuntime.enabled(context);
+            if (enabled == observedEnabled) return;
+            observedEnabled = enabled;
+            if (ready()) call(s -> "OK", (result, failure) -> {});
+        });
+        Launches.prefs(context).registerOnSharedPreferenceChangeListener(imeChanged);
     }
     public void observe(Runnable listener) { listeners.add(listener); }
     public void remove(Runnable listener) { listeners.remove(listener); }
@@ -94,7 +112,12 @@ public final class Bridge {
         } catch (RuntimeException e) { binding = false; error = e.getMessage(); changed(); }
     }
     public void call(Work work, Reply reply) {call(work,reply,true);}
+    /** Read model/event wiring does not enumerate input devices or mutate pin/IME leases. */
+    void read(Work work, Reply reply) { execute(work, reply, false, false); }
     private void call(Work work,Reply reply,boolean syncPins) {
+        execute(work,reply,true,syncPins);
+    }
+    private void execute(Work work,Reply reply,boolean maintenance,boolean syncPins) {
         worker.execute(() -> {
             String value = null, failure = null;
             try {
@@ -102,6 +125,7 @@ public final class Bridge {
                 if (current == null || !current.asBinder().isBinderAlive()) throw new IllegalStateException(status());
                 ShellSettings.Snapshot settings=ShellSettings.of(context).snapshot();
                 current.setPrimaryMode(settings.primaryMode&&ShellRuntime.enabled(context));
+                if (maintenance) {
                 // Input restoration must not be gated by an unrelated pin cleanup failure.
                 String routing;
                 try{routing=current.syncMouseRouting(shellHasExternalWorkspace(settings)?mouseDisplay:-1,mouseOwner);}
@@ -121,6 +145,7 @@ public final class Bridge {
                 if(syncPins){
                     String pins=current.syncWindowPins(ShellRuntime.enabled(context),mouseOwner);
                     if(pins.startsWith("ERROR:"))throw new IllegalStateException(pins);
+                }
                 }
                 value = work.run(current);
                 if (value == null || value.startsWith("ERROR:")) throw new IllegalStateException(value);

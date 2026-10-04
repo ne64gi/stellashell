@@ -18,8 +18,8 @@ public final class ShellNotifications extends NotificationListenerService {
     private static final Handler main=new Handler(Looper.getMainLooper());
     private static final Runnable notifyObservers=()->{for(Runnable observer:observers)observer.run();};
     static void observe(Runnable observer){observers.add(observer);}
-    static void unobserve(Runnable observer){observers.remove(observer);}
-    private static void changed(){main.removeCallbacks(notifyObservers);main.post(notifyObservers);}
+    static void unobserve(Runnable observer){observers.remove(observer);if(observers.isEmpty())main.removeCallbacks(notifyObservers);}
+    private static void changed(){if(observers.isEmpty())return;main.removeCallbacks(notifyObservers);main.post(notifyObservers);}
     static boolean ready(Context context){
         if(connected==null)return false;
         NotificationManager manager=context.getSystemService(NotificationManager.class);

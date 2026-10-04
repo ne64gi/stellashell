@@ -105,7 +105,7 @@ public final class HomeActivity extends DesktopActivity {
         super.onNewIntent(intent);if(apps!=null)apps.close();returnPending=true;refreshHome();
     }
     @Override protected void onStart(){super.onStart();if(homeVisibility==null)homeVisibility=ShellRuntime.attachHomeSurface();homeVisibility.visible(true);}
-    @Override protected void onStop(){if(homeVisibility!=null)homeVisibility.visible(false);super.onStop();}
+    @Override protected void onStop(){if(apps!=null)apps.close();if(homeVisibility!=null)homeVisibility.visible(false);super.onStop();}
     @Override protected void onResume(){super.onResume();resumed=true;Bridge.get(this).connect();refreshHome();}
     @Override protected void onPause(){resumed=false;super.onPause();}
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)refreshHome();}

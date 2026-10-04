@@ -34,7 +34,7 @@ final class PlatformBridgeChecks {
             check(ready.await(20,TimeUnit.SECONDS),"Installed server did not connect");
             test.runOnMainSync(()->{
                 peeked[0]=true;
-                check(Shizuku.peekUserService(args,connection)==32,"Old Shizuku user service survived module update");
+                check(Shizuku.peekUserService(args,connection)==33,"Old Shizuku user service survived event update");
             });
             check(connected.await(10,TimeUnit.SECONDS),"Read-only server connection unavailable");
             check(server[0].asBinder().getInterfaceDescriptor().equals("net.fuyumori.stellashell.IDesktopBridge"),"Binder descriptor changed");

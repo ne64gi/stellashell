@@ -59,3 +59,4 @@ Taskbar（Braden Farmer / contributors）とDextop（NarYuki / contributors）�
 本体・ドキュメント・同梱ヘルパーのGPL-3.0-or-laterへの整理は、過去の来歴問題そのものの解消を意味しません。[監査](docs/LICENSE-AUDIT-2026-09-29.md)・[修正履歴](docs/LICENSE-REMEDIATION-2026-09-29.md)を参照してください。
 
 ソースの依存方向と拡張手順は [モジュール構成](docs/MODULES.md)、状態管理・寿命・設定互換は [Shellの状態と所有境界](docs/STATE-OWNERSHIP.md) を参照。
+待機時の処理予算・監視と測定条件は [Idle性能設計](docs/IDLE-PERFORMANCE.md) を参照。

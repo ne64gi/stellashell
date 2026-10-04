@@ -122,4 +122,21 @@ final class TaskSnapshot {
         for (Task task : tasks) if (task.identity().equals(identity)) return task;
         return null;
     }
+
+    /** Generation is delivery bookkeeping, not a reason to redraw unchanged windows. */
+    boolean sameState(TaskSnapshot other) {
+        return outputEpoch == other.outputEpoch && displayId == other.displayId
+                && stackReliable == other.stackReliable && canArrange == other.canArrange
+                && canPin == other.canPin && sameTasks(tasks, other.tasks) && sameTasks(stack, other.stack);
+    }
+    private static boolean sameTasks(List<Task> left, List<Task> right) {
+        if (left.size() != right.size()) return false;
+        for (int i = 0; i < left.size(); i++) {
+            Task a = left.get(i), b = right.get(i);
+            if (!a.identity().equals(b.identity()) || a.mode != b.mode || a.visible != b.visible
+                    || a.focused != b.focused || a.alwaysOnTop != b.alwaysOnTop
+                    || !a.bounds().equals(b.bounds())) return false;
+        }
+        return true;
+    }
 }

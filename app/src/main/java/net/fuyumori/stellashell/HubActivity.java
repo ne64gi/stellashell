@@ -67,6 +67,7 @@ public final class HubActivity extends Activity implements DisplayManager.Displa
         }
         if(Intent.ACTION_SCREEN_OFF.equals(i.getAction()))screenOff=true;
         else if(Intent.ACTION_SCREEN_ON.equals(i.getAction())||Intent.ACTION_USER_PRESENT.equals(i.getAction()))screenOff=false;
+        syncWidgets();
         refresh.run();
     }};
     static void open(Context context,int displayId){open(context,displayId,true);}
@@ -168,7 +169,14 @@ public final class HubActivity extends Activity implements DisplayManager.Displa
         String description=getString(notifications?R.string.hub_access:editing?R.string.ui_finish_editing_widgets:R.string.hub_widget_settings);
         panelSettings.setContentDescription(description);panelSettings.setTooltipText(description);
     }}
-    private void showTab(boolean value){if(value&&widgets!=null)widgets.finishEditing();notifications=value;updateEdit();widgetPage.setVisibility(value?View.GONE:View.VISIBLE);notificationPage.setVisibility(value?View.VISIBLE:View.GONE);navigation.select(value);renderNotifications();}
+    private void showTab(boolean value){if(value&&widgets!=null)widgets.finishEditing();notifications=value;syncWidgets();updateEdit();widgetPage.setVisibility(value?View.GONE:View.VISIBLE);notificationPage.setVisibility(value?View.VISIBLE:View.GONE);navigation.select(value);renderNotifications();}
+    private boolean widgetsListening;
+    private void syncWidgets(){
+        boolean wanted=started&&!notifications&&!screenOff;
+        if(widgets==null||wanted==widgetsListening)return;
+        widgetsListening=wanted;
+        if(wanted)widgets.start();else widgets.stop();
+    }
     private void renderNotifications(){
         if(!started){notificationList.clear();notificationState=-1;navigation.setNotificationPresence(false,false,null);return;}
         boolean locked=screenOff||ShellNotifications.locked(this),available=ShellNotifications.ready(this);
@@ -203,9 +211,9 @@ public final class HubActivity extends Activity implements DisplayManager.Displa
         }
         renderNotifications();
     }
-    @Override protected void onStart(){super.onStart();started=true;PowerManager power=getSystemService(PowerManager.class);screenOff=power!=null&&!power.isInteractive();if(widgets!=null)widgets.start();ShellNotifications.observe(refresh);}
+    @Override protected void onStart(){super.onStart();started=true;PowerManager power=getSystemService(PowerManager.class);screenOff=power!=null&&!power.isInteractive();syncWidgets();ShellNotifications.observe(refresh);}
     @Override protected void onResume(){super.onResume();if(!isFinishing())ShellPanels.activate(displayId,this,this::finish);if(notificationRows!=null)renderNotifications();updateEdit();}
-    @Override protected void onStop(){started=false;ShellNotifications.unobserve(refresh);if(notificationList!=null){notificationList.clear();notificationState=-1;}if(navigation!=null)navigation.setNotificationPresence(false,false,null);if(widgets!=null)widgets.stop();super.onStop();}
+    @Override protected void onStop(){started=false;syncWidgets();ShellNotifications.unobserve(refresh);if(notificationList!=null){notificationList.clear();notificationState=-1;}if(navigation!=null)navigation.setNotificationPresence(false,false,null);super.onStop();}
     @Override protected void onSaveInstanceState(Bundle state){state.putBoolean("notifications",notifications);if(notificationList!=null)state.putStringArrayList("expanded_notification_groups",notificationList.expandedGroups());super.onSaveInstanceState(state);}
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(widgets!=null){widgets.result(request,result,data);updateEdit();}}
     @Override public boolean dispatchKeyEvent(KeyEvent event){if(event.getKeyCode()==KeyEvent.KEYCODE_ESCAPE&&event.getAction()==KeyEvent.ACTION_UP){if(widgets==null||!widgets.finishEditing())finish();return true;}return super.dispatchKeyEvent(event);}

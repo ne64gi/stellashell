@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 
-/** Internal selected-display poller. TaskState owns its lifetime and published read model. */
+/** Internal event-driven selected-display read model. TaskState owns its lifetime. */
 final class TaskSession {
     private final TaskState owner;
     private final Context context;
@@ -28,8 +28,12 @@ final class TaskSession {
     private final List<TaskSnapshot.Task> stack = new ArrayList<>();
     private boolean stackReliable;
     private boolean closed, busy, canArrange, canPin;
+    private boolean invalidated;
+    private AutoCloseable events;
     private String lastDiagnostic = "";
     private long snapshotGeneration;
+    private long publishedWorkspaceEpoch = -1;
+    private int publishedPrimary = -1;
     private WorkArea previousArea;
     private final Map<TaskSnapshot.Identity, Rect> reflow = new HashMap<>();
     private final Map<TaskSnapshot.Identity, Rect> beforeIme = new HashMap<>(), imeAdjusted = new HashMap<>();
@@ -50,7 +54,11 @@ final class TaskSession {
         previousArea = WorkArea.get(context, displayId);
     }
 
-    void start() { if (!closed) handler.post(poll); }
+    void start() {
+        if (closed || events != null) return;
+        events = ShellTaskEvents.of(context).observe(displayId, this::refresh);
+        refresh();
+    }
     int displayId() { return displayId; }
     long outputEpoch() { return outputEpoch; }
     boolean belongsTo(TaskState state) { return owner == state; }
@@ -61,17 +69,10 @@ final class TaskSession {
     boolean canPin() { return canPin && canArrange(); }
     boolean isClosed() { return closed; }
 
-    private final Runnable poll = new Runnable() {
-        @Override public void run() {
-            refresh();
-            int visible = 0;
-            for (TaskSnapshot.Task task : tasks) if (task.visible) visible++;
-            if (!closed) handler.postDelayed(this, stackReliable && visible > 1 ? 300 : 1100);
-        }
-    };
-
     void refresh() {
-        if (closed || busy || !owner.isCurrent(this) || owner.isBusy() || Launches.pending()) return;
+        if (closed || !owner.isCurrent(this)) return;
+        invalidated = true;
+        if (busy || owner.isBusy() || Launches.pending() || !ShellTaskEvents.awake(context, displayId)) return;
         if (!Bridge.get(context).ready()) {
             if (!tasks.isEmpty() || canArrange || canPin) {
                 tasks.clear();
@@ -83,10 +84,12 @@ final class TaskSession {
             }
             return;
         }
+        invalidated = false;
         busy = true;
-        Bridge.get(context).call(service -> service.taskSnapshot(displayId), (result, error) -> {
+        Bridge.get(context).read(service -> service.taskSnapshot(displayId), (result, error) -> {
             busy = false;
             if (closed || !owner.isCurrent(this) || owner.isBusy() || Launches.pending()) return;
+            if (!ShellTaskEvents.awake(context, displayId)) { invalidated = true; return; }
             try {
                 if (error != null) throw new IllegalStateException(error);
                 JSONObject data = new JSONObject(result);
@@ -157,6 +160,7 @@ final class TaskSession {
                 diagnostic(failure.toString());
             }
             flushDrag();
+            if (invalidated) handler.post(this::refresh);
         });
     }
 
@@ -167,9 +171,14 @@ final class TaskSession {
     }
 
     private void publish() {
+        TaskSnapshot next = new TaskSnapshot(snapshotGeneration + 1, outputEpoch, displayId,
+                tasks, stack, stackReliable, canArrange, canPin);
+        if (next.sameState(owner.snapshot()) && publishedWorkspaceEpoch == owner.session()
+                && publishedPrimary == owner.primary()) return;
+        publishedWorkspaceEpoch = owner.session();
+        publishedPrimary = owner.primary();
         snapshotGeneration++;
-        owner.publish(this, new TaskSnapshot(snapshotGeneration, outputEpoch, displayId,
-                tasks, stack, stackReliable, canArrange, canPin));
+        owner.publish(this, next);
         changed.run();
     }
 
@@ -368,6 +377,8 @@ final class TaskSession {
     void close() {
         if (closed) return;
         closed = true;
+        if (events != null) try { events.close(); } catch (Exception ignored) {}
+        events = null;
         handler.removeCallbacksAndMessages(null);
         pendingBounds = null;
         finishResizeOperation();

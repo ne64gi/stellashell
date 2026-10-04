@@ -13,6 +13,7 @@ import java.util.*;
 
 /** Wallpaper and opt-in shortcuts only; the app catalog belongs to Start. */
 public class DesktopActivity extends Activity implements DisplayManager.DisplayListener,SharedPreferences.OnSharedPreferenceChangeListener {
+    private boolean visualStarted,wallpaperDirty,shortcutsDirty;
     private int displayId;private DisplayManager displays;private DesktopShortcuts shortcuts;
     private ShellSettings shellSettings;private AutoCloseable settingsSubscription;
     private final Runnable runtimeChanged=this::runtimeChanged;
@@ -96,8 +97,11 @@ public class DesktopActivity extends Activity implements DisplayManager.DisplayL
         int[][] colors={{Color.rgb(12,27,42),Color.rgb(24,58,67),Color.rgb(12,19,33)},{0xff392b50,0xff824652,0xff222139},{0xff30343b,0xff1c2028,0xff11151b}};
         int selected=Math.max(0,Math.min(2,Launches.prefs(this).getInt(WorkspaceProfile.key(this,"wallpaper"),0)));root.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,colors[selected]));
     }
-    @Override protected void onStart(){super.onStart();if(widgets!=null)widgets.start();}
-    @Override protected void onStop(){if(shortcuts!=null)shortcuts.closePanel();if(widgets!=null)widgets.stop();super.onStop();}
+    @Override protected void onStart(){super.onStart();visualStarted=true;
+        if(wallpaperDirty){wallpaperDirty=false;wallpaper();if(imageWallpaper!=null)imageWallpaper.reload();}
+        if(shortcutsDirty){shortcutsDirty=false;if(shortcuts!=null)shortcuts.refresh();}
+        if(widgets!=null)widgets.start();}
+    @Override protected void onStop(){visualStarted=false;if(shortcuts!=null)shortcuts.closePanel();if(widgets!=null)widgets.stop();super.onStop();}
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(imageWallpaper!=null&&imageWallpaper.result(request,result,data))return;if(widgets!=null)widgets.result(request,result,data);}
     @Override public void onBackPressed(){if(shortcuts!=null&&shortcuts.back())return;if(widgets!=null&&widgets.finishEditing())return;if(shortcuts!=null)shortcuts.cancelMove();}
     @Override public boolean onSearchRequested(){
@@ -127,8 +131,12 @@ public class DesktopActivity extends Activity implements DisplayManager.DisplayL
     }
     private void runtimeChanged(){if(!homeSurface()&&!ShellRuntime.enabled(this))finishAndRemoveTask();}
     @Override public void onSharedPreferenceChanged(SharedPreferences p,String key){
-        if(key!=null&&(key.startsWith("wallpaper")||key.startsWith("phone_wallpaper"))){wallpaper();if(imageWallpaper!=null)imageWallpaper.reload();}
-        if(shortcuts!=null&&(p==AppOrganization.prefs(this)||WorkspaceProfile.changed(key,"desktop_shortcuts")||WorkspaceProfile.changed(key,"shortcut_snap")||IconTheme.changed(key)))shortcuts.refresh();
+        if(key!=null&&(key.startsWith("wallpaper")||key.startsWith("phone_wallpaper"))){
+            if(visualStarted){wallpaper();if(imageWallpaper!=null)imageWallpaper.reload();}else wallpaperDirty=true;
+        }
+        if(shortcuts!=null&&(p==AppOrganization.prefs(this)||WorkspaceProfile.changed(key,"desktop_shortcuts")||WorkspaceProfile.changed(key,"shortcut_snap")||IconTheme.changed(key))){
+            if(visualStarted)shortcuts.refresh();else shortcutsDirty=true;
+        }
     }
     @Override public void onDestroy(){ShellRuntime.unobserveNavigation(runtimeChanged);close(settingsSubscription);if(shortcuts!=null)shortcuts.destroy();AppOrganization.prefs(this).unregisterOnSharedPreferenceChangeListener(this);if(imageWallpaper!=null)imageWallpaper.destroy();if(widgets!=null)widgets.destroy();if(displays!=null)displays.unregisterDisplayListener(this);Launches.prefs(this).unregisterOnSharedPreferenceChangeListener(this);super.onDestroy();}
     private static void close(AutoCloseable closeable){if(closeable!=null)try{closeable.close();}catch(Exception ignored){}}

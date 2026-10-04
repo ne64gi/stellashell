@@ -18,7 +18,10 @@ final class ShellLaunchCoordinator {
         public void remove(Runnable action){main.removeCallbacks(action);}
     });
     private void enqueue(Context context,TaskState state,SerialLaunchQueue.Action action){
-        queue.enqueue(state::isBusy,action,error->Launches.problem(context,error.getMessage()));
+        queue.enqueue(state::isBusy,done->action.run(()->{
+            done.finish();
+            if(!queue.pending())state.refresh();
+        }),error->Launches.problem(context,error.getMessage()));
     }
     boolean pending(){return queue.pending();}
     void role(Context c,TaskSnapshot.Task task,int display,boolean primary){
