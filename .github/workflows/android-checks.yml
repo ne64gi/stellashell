@@ -33,7 +33,11 @@ jobs:
           cache-read-only: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
 
       - name: Ensure Android SDK packages
-        run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+        # The hosted SDK's command-line tools are not guaranteed to be on PATH.
+        run: >-
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          --sdk_root="${ANDROID_HOME}"
+          --install 'platforms;android-35' 'build-tools;35.0.0'
 
       # AndroidTest is compiled only: no emulator, device, signing secrets or deployment.
       - name: Run unit tests, lint and debug builds
