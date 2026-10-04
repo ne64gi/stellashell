@@ -33,13 +33,13 @@ final class HomeLauncherChecks {
                 // An already-resumed HOME must not restart the service while this
                 // fixture is waiting for the previous service's onDestroy.
                 prefs.edit().putBoolean("phone_sidebar",false).commit();
-                DockService.stop(context,false);
+                ShellRuntime.stop(context,false);
             });
-            awaitState("Previous DockService did not stop",()->DockService.running()?"service still running":null);
+            awaitState("Previous ShellRuntime did not stop",()->ShellRuntime.running()?"runtime still running":null);
             // Even stale enabled=true after a restart must permit normal HOME with no bridge.
             main(()->{
                 try{serviceField.set(bridge,null);bindingField.setBoolean(bridge,true);}catch(Exception e){throw new RuntimeException(e);}
-                prefs.edit().putBoolean("enabled",true).putBoolean("primary_mode",true).putBoolean("phone_window_management",false).putBoolean("phone_sidebar",true).putInt("preferred_display",0).putBoolean("workspace_auto",false).remove("workspace_display").commit();
+                prefs.edit().putBoolean("enabled",true).putBoolean("primary_mode",true).putBoolean("phone_window_management",false).putBoolean("phone_sidebar",true).putBoolean("phone_taskbar",false).putInt("preferred_display",0).putBoolean("workspace_auto",false).remove("workspace_display").commit();
             });
             // startActivitySync must create an instance, not deliver onNewIntent to a
             // HOME that was already open before instrumentation began.
@@ -49,19 +49,21 @@ final class HomeLauncherChecks {
                 if(info.activityInfo!=null&&info.activityInfo.name.equals(HomeActivity.class.getName()))candidate=true;
             require(candidate,"Always-enabled HOME not discoverable after desktop stop");
             System.out.println("HOME check: launching");home=(HomeActivity)test.startActivitySync(homeIntent);System.out.println("HOME check: launched");HomeActivity shown=home;test.waitForIdleSync();
+            ShellRuntime.HomeVisibilityLease homeLease=ShellFixtureAccess.homeVisibility(shown);
+            require(homeLease!=null,"HOME did not acquire its visibility lease");
             require(!home.isFinishing(),"HOME finished without bridge");require(!bridge.ready(),"Disconnect fixture was not active");
             main(()->shown.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON));
             require(Launches.basicHome(home,0),"Unavailable bridge did not select basic HOME");
             awaitPhoneSidebar();
             System.out.println("HOME check: sidebar attached");
             checkStartRequestCache();
-            Object dockInstance=field(DockService.class,"instance").get(null);
-            PhoneSidebar sidebar=(PhoneSidebar)read(dockInstance,"phoneSidebar");
+            PhoneSidebar sidebar=ShellFixtureAccess.sidebar();
+            require(sidebar!=null,"Phone navigation owner did not attach a Sidebar");
             @SuppressWarnings("unchecked") java.util.List<View> handles=sidebar.handles;
             checkOverlayTaskPopup(handles.get(0));
             main(()->{
                 prefs.edit().putBoolean("phone_sidebar_over_apps",false).putInt("sidebar_height",0).commit();
-                DockService.homeVisible(true);
+                homeLease.visible(true);
                 require(handles.size()==2&&handles.get(0).getVisibility()==View.VISIBLE,"HOME-only sidebar absent on HOME");
             });test.waitForIdleSync();
             require(!containsClock((View)read(sidebar,"panel")),"Main sidebar still contains a clock");
@@ -71,13 +73,13 @@ final class HomeLauncherChecks {
             main(()->prefs.edit().putInt("sidebar_height",100).commit());test.waitForIdleSync();
             require(((android.view.WindowManager.LayoutParams)handles.get(0).getLayoutParams()).y>top,"Sidebar height did not move");
             main(()->{
-                DockService.homeVisible(false);
+                homeLease.visible(false);
                 require(handles.get(0).getVisibility()==View.GONE,"HOME-only sidebar remained over app");
                 prefs.edit().putBoolean("phone_sidebar_over_apps",true).commit();
             });test.waitForIdleSync();
             main(()->{
                 require(handles.get(0).getVisibility()==View.VISIBLE,"Over-app toggle did not restore sidebar");
-                DockService.homeVisible(true);
+                homeLease.visible(true);
             });
             main(shown::openApps);drawer=(AppMenu)field(HomeActivity.class,"apps").get(home);
             AppMenu opened=drawer;long until=SystemClock.uptimeMillis()+10000;
@@ -100,30 +102,31 @@ final class HomeLauncherChecks {
                 main(()->Launches.app(shown,"net.fuyumori.stellashell.test/net.fuyumori.stellashell.HomeLaunchProbeActivity",0));
                 require(launched.await(5,java.util.concurrent.TimeUnit.SECONDS)&&launchDisplay[0]==0,"Basic HOME could not launch an actual app on display 0");
                 require(!multiWindow[0],"Normal phone app was forced into a window");
-                require(DockService.running(),"Sidebar stopped when the app launched");
+                require(ShellRuntime.running(),"Sidebar stopped when the app launched");
                 Thread.sleep(500);
             }finally{context.unregisterReceiver(receiver);}
             System.out.println("HOME check: launch paths passed");
             if(externalDisplay>0){
                 main(()->{
                     prefs.edit().putBoolean("primary_mode",false).putInt("workspace_display",0).commit();
-                    DockService.start(shown,externalDisplay,false);
+                    ShellRuntime.start(shown,externalDisplay,false);
                 });
                 long deadline=SystemClock.uptimeMillis()+5000;
                 while(prefs.getInt("active_display",-1)!=externalDisplay&&SystemClock.uptimeMillis()<deadline)Thread.sleep(100);
                 test.waitForIdleSync();
                 require(prefs.getInt("active_display",-1)==externalDisplay,"External fixture did not start");
                 main(()->{
-                    require(DockService.phoneNavigationReady(),"External handoff removed main sidebar");
+                    require(ShellRuntime.phoneNavigationReady(),"External handoff removed main sidebar");
                     require(((View)read(shown,"fallback")).getVisibility()==View.GONE,"Duplicate HOME handles visible");
-                    require(sidebar==read(dockInstance,"phoneSidebar"),"Main sidebar recreated during handoff");
-                    sidebar.toggleStart();require(sidebar.menu.isOpen(),"Main Start unavailable alongside external Desktop");sidebar.menu.close();
+                    require(sidebar==ShellFixtureAccess.sidebar(),"Main sidebar recreated during handoff");
+                    require(ShellFixtureAccess.phone().toggleStart(),"Phone Start request was not routed alongside external Desktop");
+                    require(sidebar.menu.isOpen(),"Main Start unavailable alongside external Desktop");sidebar.menu.close();
                 });
             }
             System.out.println("HOME check: external sidebar passed");
             checkWidgetSwipe(sidebar,false,false);checkWidgetSwipe(sidebar,true,false);checkWidgetSwipe(sidebar,true,true);
             checkPanelTracking();
-            main(()->DockService.stop(shown,false));test.waitForIdleSync();
+            main(()->ShellRuntime.stop(shown,false));test.waitForIdleSync();
             require(!home.isFinishing()&&!home.isDestroyed(),"Extension stop destroyed HOME");
             require(context.getPackageManager().getActivityInfo(homeComponent,0).enabled,"Extension stop disabled HOME");
             main(shown::openApps);require(((AppMenu)field(HomeActivity.class,"apps").get(home)).isOpen(),"Apps inaccessible after stop");
@@ -134,7 +137,7 @@ final class HomeLauncherChecks {
                 if(closingDrawer!=null)closingDrawer.close();if(closing!=null)closing.finish();
                 try{serviceField.set(bridge,service);bindingField.setBoolean(bridge,binding);}catch(Exception e){throw new RuntimeException(e);}
                 SharedPreferences.Editor edit=prefs.edit();
-                for(String key:new String[]{"enabled","primary_mode","workspace_display","active_display","preferred_display","compact_workspace","workspace_auto","phone_sidebar","phone_sidebar_over_apps","sidebar_height","phone_window_management","recent","last_error"}){
+                for(String key:new String[]{"enabled","primary_mode","workspace_display","active_display","preferred_display","compact_workspace","workspace_auto","phone_sidebar","phone_taskbar","phone_sidebar_over_apps","sidebar_height","phone_window_management","recent","last_error"}){
                     Object old=before.get(key);if(old instanceof Boolean)edit.putBoolean(key,(Boolean)old);else if(old instanceof Integer)edit.putInt(key,(Integer)old);else if(old instanceof String)edit.putString(key,(String)old);else edit.remove(key);
                 }edit.commit();
                 context.getPackageManager().setComponentEnabledSetting(legacy,legacyState,PackageManager.DONT_KILL_APP);
@@ -276,13 +279,11 @@ final class HomeLauncherChecks {
         require(false,failure+": "+state[0]);
     }
     private void awaitPhoneSidebar()throws Exception{
-        Field instance=field(DockService.class,"instance");
         awaitState("Phone edge overlays did not become ready",()->{
-            if(!DockService.running())return "service not running";
-            if(!DockService.phoneNavigationReady())return "navigation not ready";
-            Object dock;
-            try{dock=instance.get(null);}catch(IllegalAccessException e){throw new RuntimeException(e);}
-            PhoneSidebar sidebar=(PhoneSidebar)read(dock,"phoneSidebar");
+            if(!ShellRuntime.running())return "shell runtime not running";
+            if(!ShellRuntime.phoneNavigationReady())return "navigation not ready";
+            PhoneSidebar sidebar=ShellFixtureAccess.sidebar();
+            if(sidebar==null)return "sidebar owner unavailable";
             View panel=(View)read(sidebar,"panel");
             if(!panel.isAttachedToWindow())return "sidebar panel not attached";
             if(panel.getDisplay()==null||panel.getDisplay().getDisplayId()!=0)return "sidebar panel not on display 0";
@@ -299,21 +300,34 @@ final class HomeLauncherChecks {
         // Intercept command dispatch, leaving the real running output untouched.
         // A pending/repeated start must not erase the service's published cache.
         SharedPreferences fixture=context.getSharedPreferences("home_start_cache_fixture",0);
+        ShellSettings settings=ShellSettings.isolated(fixture);
         int[] requests={0};
-        Context capture=new ContextWrapper(context){
-            @Override public SharedPreferences getSharedPreferences(String name,int mode){return fixture;}
-            @Override public ComponentName startForegroundService(Intent intent){requests[0]++;return intent.getComponent();}
-        };
+        Context capture=new RequestCaptureContext(context,fixture,settings,requests);
         try{
             main(()->{
                 fixture.edit().clear().putBoolean("enabled",true).putInt("active_display",7).putInt("preferred_display",7).commit();
-                DockService.start(capture,0,false);
+                ShellRuntime.start(capture,0,false);
                 require(fixture.getInt("active_display",-1)==7,"Pending start erased actual output cache");
-                DockService.start(capture,0,false);
+                ShellRuntime.start(capture,0,false);
                 require(fixture.getInt("active_display",-1)==7,"Repeated start erased actual output cache");
                 require(fixture.getInt("preferred_display",-1)==0&&requests[0]==2,"Start request was not dispatched");
             });
-        }finally{main(()->fixture.edit().clear().commit());}
+        }finally{
+            settings.close();
+            main(()->fixture.edit().clear().commit());
+        }
+    }
+
+    private static final class RequestCaptureContext extends ContextWrapper implements ShellSettings.Provider {
+        private final SharedPreferences preferences;
+        private final ShellSettings settings;
+        private final int[] requests;
+        RequestCaptureContext(Context base,SharedPreferences preferences,ShellSettings settings,int[] requests){
+            super(base);this.preferences=preferences;this.settings=settings;this.requests=requests;
+        }
+        @Override public SharedPreferences getSharedPreferences(String name,int mode){return preferences;}
+        @Override public ShellSettings shellSettings(){return settings;}
+        @Override public ComponentName startForegroundService(Intent intent){requests[0]++;return intent.getComponent();}
     }
     @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag") // API 30-32 branch intentionally receives only the disposable cross-package test probe; flags are used on 33+.
     private void registerProbeReceiver(BroadcastReceiver receiver,IntentFilter filter){

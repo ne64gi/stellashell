@@ -9,7 +9,7 @@ import java.util.concurrent.*;
 
 /** Display-0 taskbar, independently enabled from the phone Dock and Desktop output. */
 final class PhoneTaskbar implements AutoCloseable {
-    private final Context context,receiverContext;private final WindowManager windows;private final java.util.function.Supplier<WorkArea> area;
+    private final Context context,receiverContext;private final WindowManager windows;private final java.util.function.Supplier<WorkArea> area;private final ShellSettings settings;
     private final ExecutorService loader=Executors.newSingleThreadExecutor();
     final AppMenu menu;
     private final PhoneRunningTasks running;private final PhoneTaskMenu taskMenu;
@@ -27,7 +27,7 @@ final class PhoneTaskbar implements AutoCloseable {
         receiverContext=service.getApplicationContext();
         context=new ContextThemeWrapper(service.createDisplayContext(service.getSystemService(android.hardware.display.DisplayManager.class).getDisplay(0))
             .createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,null),Appearance.theme());
-        windows=context.getSystemService(WindowManager.class);area=areaSupplier==null?()->WorkArea.get(context,0):areaSupplier;
+        settings=ShellSettings.of(context);windows=context.getSystemService(WindowManager.class);area=areaSupplier==null?()->WorkArea.get(context,0):areaSupplier;
         menu=new AppMenu(context,windows,0);taskMenu=new PhoneTaskMenu(context);
         running=backend==null?new PhoneRunningTasks(context,this::renderRunning):new PhoneRunningTasks(backend,this::renderRunning);
         observer=areaSupplier==null?new WorkAreaObserver(context,0,()->{relayout();areaChanged.run();}):null;
@@ -63,7 +63,7 @@ final class PhoneTaskbar implements AutoCloseable {
     private Button action(String text,int description,Runnable action,int width){
         Button button=Ui.toolbarButton(context,text,action);button.setPadding(0,0,0,0);button.setTextSize(14*factor());button.setMinHeight(dp(48));button.setContentDescription(context.getString(description));button.setTooltipText(context.getString(description));item(button,width);return button;
     }
-    private void pin(String component,TaskSession.Task task){
+    private void pin(String component,TaskSnapshot.Task task){
         try{
             ComponentName name=ComponentName.unflattenFromString(component);if(name==null)return;
             android.content.pm.ApplicationInfo info=context.getPackageManager().getApplicationInfo(name.getPackageName(),0);CharSequence label=info.loadLabel(context.getPackageManager());
@@ -76,11 +76,11 @@ final class PhoneTaskbar implements AutoCloseable {
     private void renderRunning(){
         if(closed||activeTasks==null)return;taskMenu.close();
         if(backButton!=null)backButton.setVisibility(running.state()==PhoneRunningTasks.State.READY?View.VISIBLE:View.GONE);
-        java.util.List<TaskSession.Task> tasks=running.state()==PhoneRunningTasks.State.READY?running.tasks():java.util.Collections.emptyList();
+        java.util.List<TaskSnapshot.Task> tasks=running.state()==PhoneRunningTasks.State.READY?running.tasks():java.util.Collections.emptyList();
         pinnedTasks.removeAllViews();
         for(String component:Launches.taskbarPins(context)){
-            ComponentName name=ComponentName.unflattenFromString(component);if(name==null)continue;TaskSession.Task match=null;
-            for(TaskSession.Task task:tasks)if(name.getPackageName().equals(task.packageName())){match=task;if(task.focused)break;}
+            ComponentName name=ComponentName.unflattenFromString(component);if(name==null)continue;TaskSnapshot.Task match=null;
+            for(TaskSnapshot.Task task:tasks)if(name.getPackageName().equals(task.packageName())){match=task;if(task.focused)break;}
             pin(component,match);
         }
         PhoneSidebar.renderTasks(context,activeTasks,PhoneSidebar.unpinnedTasks(tasks,Launches.taskbarPins(context)),
@@ -89,8 +89,8 @@ final class PhoneTaskbar implements AutoCloseable {
             View icon=activeTasks.getChildAt(i);icon.setPadding(dp(8),dp(6),dp(8),dp(6));icon.setLayoutParams(new LinearLayout.LayoutParams(dp(48),dp(44)));
         }
     }
-    private void taskMenu(View anchor,TaskSession.Task task){taskMenu(anchor,task,null);}
-    private void taskMenu(View anchor,TaskSession.Task task,String pin){
+    private void taskMenu(View anchor,TaskSnapshot.Task task){taskMenu(anchor,task,null);}
+    private void taskMenu(View anchor,TaskSnapshot.Task task,String pin){
         if(closed)return;
         taskMenu.show(anchor,TaskModes.canReturnToMain(task.mode),pin!=null,action->{
             if(closed)return;
@@ -112,7 +112,7 @@ final class PhoneTaskbar implements AutoCloseable {
         if(closed||panel==null)return;WorkArea area=this.area.get();WindowManager.LayoutParams p=(WindowManager.LayoutParams)panel.getLayoutParams();
         p.width=area.usable.width();p.height=Math.min(dp(52),area.usable.height());p.x=area.usable.left;p.y=Math.max(area.usable.top,area.usable.bottom-dp(56));windows.updateViewLayout(panel,p);menu.relayout();
     }
-    private int scale(){return Launches.prefs(context).getInt(NavigationScale.key(true,true),NavigationScale.DEFAULT);}
+    private int scale(){return settings.snapshot().phoneTaskbar.scalePercent;}
     private float factor(){return NavigationScale.factor(scale());}
     private int dp(int value){return NavigationScale.pixels(context.getResources().getDisplayMetrics().density,value,scale());}
     private void removeViews(){taskMenu.close();menu.close();activeTasks=null;pinnedTasks=null;battery=null;if(panel!=null)try{windows.removeViewImmediate(panel);}catch(RuntimeException ignored){}panel=null;row=null;}

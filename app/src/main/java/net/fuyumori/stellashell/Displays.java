@@ -17,17 +17,25 @@ final class Displays {
     static List<Integer> ids(Context context) {
         List<Integer> ids=new ArrayList<>(); for(Display d:available(context)) ids.add(d.getDisplayId()); return ids;
     }
-    static boolean primary(Context context) { return Launches.prefs(context).getBoolean("primary_mode",false); }
-    static boolean primaryActive(Context context) { return primary(context) && Launches.prefs(context).getBoolean("enabled",false); }
+    static boolean primary(Context context) { return ShellSettings.of(context).snapshot().primaryMode; }
+    static boolean primaryActive(Context context) { return primary(context) && ShellRuntime.enabled(context); }
     static List<Integer> allIds(Context context) {
         List<Integer> out=ids(context);
         Display main=context.getSystemService(DisplayManager.class).getDisplay(0);
         if(main!=null && main.isValid() && (main.getFlags()&Display.FLAG_PRIVATE)==0)out.add(0);
         return out;
     }
-    static int target(Context context,int preferred) { return Workspace.enabled(context)?(allIds(context).contains(Workspace.target(context))?Workspace.target(context):0):Policy.selectDisplay(preferred,allIds(context),primary(context)); }
+    static int target(Context context,int preferred) {
+        TaskState tasks=TaskState.of(context);
+        List<Integer> available=allIds(context);
+        if(tasks.enabled(context)){
+            int target=tasks.target(context);
+            return available.contains(target)?target:0;
+        }
+        return Policy.selectDisplay(preferred,available,primary(context));
+    }
     static Display require(Context context,int id) {
-        if(primary(context) && !Workspace.enabled(context) && id!=0)throw new IllegalArgumentException("Primary display mode is selected");
+        if(primary(context) && !TaskState.of(context).enabled(context) && id!=0)throw new IllegalArgumentException("Primary display mode is selected");
         Policy.requireTarget(id,allIds(context),primaryActive(context));
         Display d=context.getSystemService(DisplayManager.class).getDisplay(id);
         if(d==null || !d.isValid()) throw new IllegalArgumentException(context.getString(R.string.ui_the_external_display_is_disconnected));

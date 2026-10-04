@@ -11,7 +11,7 @@ import android.widget.*;
 import java.lang.ref.WeakReference;
 
 /** Clock popover. Widgets have a distinct host/storage from the desktop surface. */
-public final class HubActivity extends Activity implements DisplayManager.DisplayListener,SharedPreferences.OnSharedPreferenceChangeListener {
+public final class HubActivity extends Activity implements DisplayManager.DisplayListener {
     private static WeakReference<HubActivity> visible=new WeakReference<>(null);
     private int displayId;
     private LinearLayout panel;
@@ -53,6 +53,8 @@ public final class HubActivity extends Activity implements DisplayManager.Displa
     private static final int NOTIFICATIONS_LIVE=0,NOTIFICATIONS_LOCKED=1,NOTIFICATIONS_UNAVAILABLE=2;
     private int notificationState=-1;
     private DisplayManager displays;
+    private boolean observingNavigation;
+    private final Runnable navigationChanged=()->{if(!ShellRuntime.enabled(this))finish();};
     private final Runnable refresh=()->{if(notificationRows!=null)renderNotifications();};
     private final BroadcastReceiver lockChanges=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){
         String action=i.getAction();
@@ -78,12 +80,13 @@ public final class HubActivity extends Activity implements DisplayManager.Displa
     }
     @Override public void onCreate(Bundle state){
         super.onCreate(state);displayId=getDisplay()==null?-1:getDisplay().getDisplayId();
-        try{if(displayId!=0)Displays.require(this,displayId);if(!Launches.prefs(this).getBoolean("enabled",false)){finish();return;}}
+        try{if(displayId!=0)Displays.require(this,displayId);if(!ShellRuntime.enabled(this)){finish();return;}}
         catch(RuntimeException e){finish();return;}
         visible=new WeakReference<>(this);
         if(pendingDrag!=null&&getIntent().getLongExtra("sidebar_pull",-1)==pendingDrag.token){sidebarDrag=pendingDrag;getWindow().addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE);}
         displays=getSystemService(DisplayManager.class);displays.registerDisplayListener(this,new Handler(Looper.getMainLooper()));
-        Launches.prefs(this).registerOnSharedPreferenceChangeListener(this);
+        ShellRuntime.observeNavigation(navigationChanged);observingNavigation=true;
+        if(!ShellRuntime.enabled(this)){finish();return;}
         backdrop=new FrameLayout(this);backdrop.setBackgroundColor(0x22101725);backdrop.setOnClickListener(v->finish());
         panel=Ui.column(this);panel.setPadding(dp(16),dp(16),dp(16),dp(16));panel.setBackground(Appearance.surface(this,22));panel.setElevation(dp(18));panel.setOnClickListener(v->{});
         FrameLayout.LayoutParams box=new FrameLayout.LayoutParams(Math.min(dp(720),getResources().getDisplayMetrics().widthPixels-dp(24)),-1,(getIntent().getBooleanExtra("from_right",true)?Gravity.RIGHT:Gravity.LEFT)|Gravity.TOP);
@@ -210,14 +213,13 @@ public final class HubActivity extends Activity implements DisplayManager.Displa
     @Override public void onDisplayRemoved(int id){if(id==displayId)finish();}
     @Override public void onDisplayAdded(int id){}
     @Override public void onDisplayChanged(int id){}
-    @Override public void onSharedPreferenceChanged(SharedPreferences prefs,String key){if("enabled".equals(key)&&!prefs.getBoolean("enabled",false))finish();}
     @Override public void onDestroy(){
         if(pullAnimation!=null)pullAnimation.cancel();if(sidebarDrag!=null)sidebarDrag.complete();
         ShellPanels.release(displayId,this);
+        if(observingNavigation){ShellRuntime.unobserveNavigation(navigationChanged);observingNavigation=false;}
         if(visible.get()==this)visible.clear();ShellNotifications.unobserve(refresh);
         if(notificationList!=null)notificationList.clear();
         if(widgets!=null)widgets.destroy();if(displays!=null)displays.unregisterDisplayListener(this);
-        Launches.prefs(this).unregisterOnSharedPreferenceChangeListener(this);
         try{unregisterReceiver(lockChanges);}catch(IllegalArgumentException ignored){}super.onDestroy();
     }
 }

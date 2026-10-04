@@ -240,7 +240,7 @@ final class MouseRoutingChecks {
         long finalDeadline=SystemClock.uptimeMillis()+30000,deadline=finalDeadline-10000;
         SharedPreferences prefs=Launches.prefs(context);Map<String,Object> before=prefsSnapshot();String[] globals=globalSettings();
         int target=prefs.getInt("active_display",-1);Display display=context.getSystemService(DisplayManager.class).getDisplay(target);
-        check(DockService.running()&&prefs.getBoolean("enabled",false)&&!prefs.getBoolean("primary_mode",true),"Requires an existing enabled external session; fixture never starts/stops it");
+        check(ShellRuntime.running()&&prefs.getBoolean("enabled",false)&&!prefs.getBoolean("primary_mode",true),"Requires an existing enabled external session; fixture never starts/stops it");
         check(target>0&&display!=null&&display.isValid()&&(display.getFlags()&Display.FLAG_PRIVATE)==0,"Requires current public external target");
         String targetUnique=unique(display);Matcher diagnostic=DIAGNOSTIC.matcher(prefs.getString("mouse_diagnostics",""));
         check(diagnostic.matches()&&Integer.parseInt(diagnostic.group(1))==target&&Integer.parseInt(diagnostic.group(2))>0,"Requires nonempty existing owned-mouse routing diagnostic");

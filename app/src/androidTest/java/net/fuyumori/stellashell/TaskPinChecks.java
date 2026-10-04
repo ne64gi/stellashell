@@ -48,14 +48,14 @@ public final class TaskPinChecks {
         require(!reused.top&&!pins.pinned(reused.entry())&&two.top,"unsupported destination clears owned pins, not foreign native pins");
         store.supported=true;two.top=false;
         Window pip=new Window(3);pip.mode=2;pip.top=true;store.live.put(3,pip);require(!pins.pinned(pip.entry()),"PiP is not a user pin");
-        TaskSession.Task picture=view(10,2,false),pinned=view(11,5,true),ordinary=view(12,5,false);
-        List<TaskSession.Task> order=Arrays.asList(picture,pinned,ordinary);
-        List<TaskSession.Task> dragged=WindowChrome.dragOrder(order,ordinary);
+        TaskSnapshot.Task picture=view(10,2,false),pinned=view(11,5,true),ordinary=view(12,5,false);
+        List<TaskSnapshot.Task> order=Arrays.asList(picture,pinned,ordinary);
+        List<TaskSnapshot.Task> dragged=WindowChrome.dragOrder(order,ordinary);
         require(dragged.get(0).id==10&&dragged.get(1).id==11&&dragged.get(2).id==12,"drag chrome must stay below pinned window and PiP");
         dragged=WindowChrome.dragOrder(order,pinned);require(dragged.get(0).id==10&&dragged.get(1).id==11,"pinned drag must stay below PiP");
     }
-    private static TaskSession.Task view(int id,int mode,boolean pinned)throws Exception {
-        return new TaskSession.Task(new org.json.JSONObject().put("id",id).put("mode",mode).put("alwaysOnTop",pinned).put("component","fixture.app/fixture.app.Window"+id).put("visible",true).put("focused",false).put("left",0).put("top",0).put("right",300).put("bottom",300));
+    private static TaskSnapshot.Task view(int id,int mode,boolean pinned)throws Exception {
+        return new TaskSnapshot.Task(new org.json.JSONObject().put("id",id).put("mode",mode).put("alwaysOnTop",pinned).put("component","fixture.app/fixture.app.Window"+id).put("visible",true).put("focused",false).put("left",0).put("top",0).put("right",300).put("bottom",300));
     }
     private static void require(boolean value,String message){if(!value)throw new AssertionError(message);}
 }

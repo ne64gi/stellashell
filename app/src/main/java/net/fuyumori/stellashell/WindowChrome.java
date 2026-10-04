@@ -10,22 +10,25 @@ import java.util.*;
 
 /** Per-task captions; occluded paint AND input are removed using small clipped windows. */
 final class WindowChrome {
-    private final Context context;private final WindowManager windows;private final TaskSession session;
+    private final Context context;private final WindowManager windows;private final TaskState taskState;
     private final Map<Integer,Frame> frames=new LinkedHashMap<>();
-    private List<TaskSession.Task> stack=new ArrayList<>();
+    private List<TaskSnapshot.Task> stack=new ArrayList<>();
     private Frame draggingFrame;private boolean dragFront;
-    WindowChrome(Context c,WindowManager wm,TaskSession session){context=c;windows=wm;this.session=session;}
-    void update(List<TaskSession.Task> tasks){
-        if(!session.canArrange()){clear();return;}
-        stack=session.stackReliable()?session.stack():new ArrayList<>();
-        if(!session.stackReliable())for(TaskSession.Task t:tasks)if(t.focused)stack.add(t);
+    WindowChrome(Context c,WindowManager wm,TaskState taskState){context=c;windows=wm;this.taskState=taskState;}
+    void update(List<TaskSnapshot.Task> tasks){
+        TaskSnapshot snapshot=taskState.snapshot();
+        if(!Bridge.get(context).ready()||!snapshot.canArrange){clear();return;}
+        stack=snapshot.stackReliable?new ArrayList<>(snapshot.stack):new ArrayList<>();
+        if(!snapshot.stackReliable)for(TaskSnapshot.Task t:tasks)if(t.focused)stack.add(t);
         if(draggingFrame!=null){
-            boolean alive=false;for(TaskSession.Task t:tasks)if(t.id==draggingFrame.task.id&&t.visible&&t.mode==5)alive=true;
+            boolean alive=false;for(TaskSnapshot.Task t:tasks)if(t.identity().equals(draggingFrame.task.identity())&&t.visible&&t.mode==5)alive=true;
             if(!alive)clear();else relayout();return;
         }
         Set<Integer> wanted=new HashSet<>();
-        for(TaskSession.Task t:tasks)if(t.visible&&t.mode==5&&(session.stackReliable()||t.focused)){
-            wanted.add(t.id);Frame f=frames.get(t.id);if(f==null){f=new Frame(t);frames.put(t.id,f);}else {f.task=t;f.rendered=new Rect(t.bounds);}
+        for(TaskSnapshot.Task t:tasks)if(t.visible&&t.mode==5&&(snapshot.stackReliable||t.focused)){
+            wanted.add(t.id);Frame f=frames.get(t.id);
+            if(f!=null&&!f.task.identity().equals(t.identity())){f.clear();frames.remove(t.id);f=null;}
+            if(f==null){f=new Frame(t);frames.put(t.id,f);}else {f.task=t;f.rendered=t.bounds().toRect();}
             f.active=t.focused;
         }
         for(Integer id:new ArrayList<>(frames.keySet()))if(!wanted.contains(id)){frames.remove(id).clear();}
@@ -35,35 +38,35 @@ final class WindowChrome {
         draggingFrame=f;dragFront=f.active;f.wantResize=false;f.waitingFocus=false;
         if(!f.active){
             f.waitingFocus=true;
-            session.focusForDrag(f.task,ok->{
+            taskState.focusForDrag(f.task,ok->{
                 f.waitingFocus=!ok;if(frames.get(f.task.id)!=f)return;
-                if(!ok){f.wantResize=false;session.refresh();return;}
+                if(!ok){f.wantResize=false;taskState.refresh();return;}
                 for(Frame other:frames.values())other.active=other==f;
                 if(draggingFrame==f)dragFront=true;
                 // Do not send bounds until the app is actually focused.
-                if(f.wantResize)session.resize(f.task,f.rendered);
+                if(f.wantResize)taskState.resize(f.task,f.rendered);
                 relayout();
             });
         }
     }
-    private void end(Frame f){if(draggingFrame==f){draggingFrame=null;dragFront=false;}f.heldRoot=null;session.refresh();}
-    static List<TaskSession.Task> dragOrder(List<TaskSession.Task> stack,TaskSession.Task dragged){
-        List<TaskSession.Task> ordered=new ArrayList<>(stack);ordered.removeIf(t->t.id==dragged.id);
+    private void end(Frame f){if(draggingFrame==f){draggingFrame=null;dragFront=false;}f.heldRoot=null;taskState.refresh();}
+    static List<TaskSnapshot.Task> dragOrder(List<TaskSnapshot.Task> stack,TaskSnapshot.Task dragged){
+        List<TaskSnapshot.Task> ordered=new ArrayList<>(stack);ordered.removeIf(t->t.identity().equals(dragged.identity()));
         int insertion=0;
         for(int i=0;i<ordered.size();i++){
-            TaskSession.Task task=ordered.get(i);
+            TaskSnapshot.Task task=ordered.get(i);
             if(task.visible&&(task.mode==2||!dragged.alwaysOnTop&&task.alwaysOnTop))insertion=i+1;
         }
         ordered.add(insertion,dragged);return ordered;
     }
     private void relayout(){
-        List<TaskSession.Task> ordered=new ArrayList<>(stack);
+        List<TaskSnapshot.Task> ordered=new ArrayList<>(stack);
         if(draggingFrame!=null&&dragFront)ordered=dragOrder(ordered,draggingFrame.task);
         List<int[]> blockers=new ArrayList<>();Set<Integer> drawn=new HashSet<>();
         Rect panel=ShellPanels.bounds(context.getDisplay().getDisplayId());if(panel!=null)blockers.add(new int[]{panel.left,panel.top,panel.right,panel.bottom});
-        for(TaskSession.Task t:ordered){
+        for(TaskSnapshot.Task t:ordered){
             if(!t.visible||ShellPanels.panelTask(t.component))continue;
-            Frame f=frames.get(t.id);Rect b=f==null?t.bounds:f.rendered;
+            Frame f=frames.get(t.id);Rect b=f==null?t.bounds().toRect():f.rendered;
             if(f!=null){f.layout(blockers);drawn.add(t.id);}
             int top=f!=null?Math.max(0,b.top-Ui.dp(context,32)):b.top;
             blockers.add(new int[]{b.left,top,b.right,b.bottom});
@@ -73,9 +76,9 @@ final class WindowChrome {
     void clear(){for(Frame f:frames.values())f.clear();frames.clear();stack.clear();draggingFrame=null;dragFront=false;}
 
     private final class Frame {
-        TaskSession.Task task;Rect rendered;boolean active,dragging,waitingFocus,wantResize;long lastSend;View heldRoot;
+        TaskSnapshot.Task task;Rect rendered;boolean active,dragging,waitingFocus,wantResize;long lastSend;View heldRoot;
         final List<List<Fragment>> parts=new ArrayList<>();final String label;
-        Frame(TaskSession.Task t){task=t;rendered=new Rect(t.bounds);for(int i=0;i<9;i++)parts.add(new ArrayList<>());
+        Frame(TaskSnapshot.Task t){task=t;rendered=t.bounds().toRect();for(int i=0;i<9;i++)parts.add(new ArrayList<>());
             String name=t.packageName();try{name=context.getPackageManager().getApplicationLabel(context.getPackageManager().getApplicationInfo(name,0)).toString();}catch(Exception ignored){}label=name;
         }
         private boolean isMaximized(){return WorkArea.get(context,context.getDisplay().getDisplayId()).maximized(rendered);}
@@ -88,14 +91,14 @@ final class WindowChrome {
             LinearLayout title=new LinearLayout(context);title.setGravity(Gravity.CENTER_VERTICAL);
             TextView name=Ui.text(context,label,13,Ui.TEXT);name.setGravity(Gravity.CENTER_VERTICAL);name.setSingleLine();name.setEllipsize(android.text.TextUtils.TruncateAt.END);name.setPadding(Ui.dp(context,12),0,0,0);
             title.addView(name,new LinearLayout.LayoutParams(0,-1,1));name.setContentDescription(context.getString(R.string.ui_bring_to_front_and_move,label));gesture(name,0);
-            if(session.canPin())button(title,context.getString(R.string.window_pin),"pin");
+            if(taskState.snapshot().canPin)button(title,context.getString(R.string.window_pin),"pin");
             button(title,context.getString(R.string.ui_snap_left),"left");button(title,context.getString(R.string.ui_snap_right),"right");button(title,context.getString(R.string.ui_minimize),"minimize");button(title,context.getString(R.string.ui_maximize_restore),"maximize");button(title,context.getString(R.string.task_close_window),"close");return title;
         }
         private void button(LinearLayout row,String description,String action){
             CaptionButton b=new CaptionButton(context,action);b.setContentDescription(label+" "+description);b.setTooltipText(description);
-            b.setOnClickListener(v->{ShellPanels.dismiss(context.getDisplay().getDisplayId());String actual=action.equals("pin")?(task.alwaysOnTop?"unpin":"pin"):action.equals("maximize")&&isMaximized()?"restore":action;
+            b.setOnClickListener(v->{ShellPanels.dismiss(context.getDisplay().getDisplayId());String actual=action.equals("pin")?"togglePin":action.equals("maximize")?"toggleMaximize":action;
                 // Closing a background window must not depend on successfully focusing it first.
-                if(active||"close".equals(actual))session.action(task,actual);else session.focusForDrag(task,ok->{if(ok)session.action(task,actual);});});
+                if(active||"close".equals(actual))taskState.action(task,actual);else taskState.focusForDrag(task,ok->{if(ok)taskState.action(task,actual);});});
             row.addView(b,new LinearLayout.LayoutParams(Ui.dp(context,36),-1));
         }
         private void style(View v,int edge){
@@ -162,7 +165,7 @@ final class WindowChrome {
                 if(task==null)return false;
                 if(event.getActionMasked()==MotionEvent.ACTION_DOWN){if(event.isFromSource(InputDevice.SOURCE_MOUSE)&&(event.getButtonState()&MotionEvent.BUTTON_PRIMARY)==0)return false;if(v instanceof ResizeHandle)((ResizeHandle)v).active(true);x=event.getRawX();y=event.getRawY();start=new Rect(rendered);dragging=true;heldRoot=v.getRootView();lastSend=0;begin(Frame.this);ShellPanels.dismiss(context.getDisplay().getDisplayId());return true;}
                 if(start==null)return false;
-                if(event.getActionMasked()==MotionEvent.ACTION_CANCEL){if(v instanceof ResizeHandle)((ResizeHandle)v).active(false);wantResize=false;dragging=false;start=null;end(Frame.this);session.refresh();return true;}
+                if(event.getActionMasked()==MotionEvent.ACTION_CANCEL){if(v instanceof ResizeHandle)((ResizeHandle)v).active(false);wantResize=false;dragging=false;start=null;end(Frame.this);taskState.refresh();return true;}
                 if(event.getActionMasked()!=MotionEvent.ACTION_MOVE&&event.getActionMasked()!=MotionEvent.ACTION_UP)return true;
                 int dx=Math.round(event.getRawX()-x),dy=Math.round(event.getRawY()-y);Rect b=new Rect(start);
                 if(edge==0)b.offset(dx,dy);
@@ -175,7 +178,7 @@ final class WindowChrome {
                 android.graphics.Point size=new android.graphics.Point();context.getDisplay().getRealSize(size);
                 rendered=WorkArea.get(context,context.getDisplay().getDisplayId()).clamp(b);relayout();
                 long now=SystemClock.uptimeMillis();boolean done=event.getActionMasked()==MotionEvent.ACTION_UP;
-                if(done||now-lastSend>120){wantResize=true;if(!waitingFocus)session.resize(task,rendered);lastSend=now;}
+                if(done||now-lastSend>120){wantResize=true;if(!waitingFocus)taskState.resize(task,rendered);lastSend=now;}
                 if(done){if(v instanceof ResizeHandle)((ResizeHandle)v).active(false);dragging=false;start=null;end(Frame.this);}return true;
             }
         });

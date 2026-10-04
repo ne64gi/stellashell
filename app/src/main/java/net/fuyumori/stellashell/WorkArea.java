@@ -24,12 +24,13 @@ final class WorkArea {
         int types=WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout()|WindowInsets.Type.mandatorySystemGestures();
         Insets system=insets.getInsets(types);
         Rect stable=inset(physical,insets.getInsetsIgnoringVisibility(types));
-        boolean compact=WorkspaceProfile.standard(c,c.getDisplay().getDisplayId())||ShellPresentation.compact(Launches.prefs(c).getString("shell_layout","auto"),stable.width()/density,stable.height()/density);
+        ShellSettings.Snapshot settings=ShellSettings.of(c).snapshot();
+        boolean compact=WorkspaceProfile.standard(c,c.getDisplay().getDisplayId())||ShellPresentation.compact(settings.shellLayout.storedValue(),stable.width()/density,stable.height()/density);
         Insets all=insets.getInsets(types|WindowInsets.Type.ime());
-        android.content.SharedPreferences prefs=Launches.prefs(c);
         boolean main=c.getDisplay().getDisplayId()==0;
-        boolean taskbarShown=!main||prefs.getBoolean("phone_taskbar",false);
-        int taskbar=taskbarShown?NavigationScale.pixels(density,60,prefs.getInt(NavigationScale.key(main,true),NavigationScale.DEFAULT)):0;
+        boolean taskbarShown=!main||settings.phoneTaskbar.enabled;
+        int scale=main?settings.phoneTaskbar.scalePercent:settings.externalTaskbar.scalePercent;
+        int taskbar=taskbarShown?NavigationScale.pixels(density,60,scale):0;
         WorkArea result=new WorkArea(physical,inset(physical,all),compact,Math.round(32*density),taskbar);
         // The icon Dock overlays apps, including when it touches an edge. Only
         // the taskbar reserves a workspace strip; Dock placement still avoids it.

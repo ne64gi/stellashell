@@ -54,9 +54,9 @@ final class Profiles {
     static void launched(Context c,String component,JSONObject result,int displayId)throws JSONException {
         JSONObject row=result.getJSONObject("task");String k=key(component);taskKeys.put(row.getInt("id"),k);
         AppLaunchProfile p=get(c,k);p.resolvedComponent=row.getString("component");save(c,k,p);
-        observe(c,new TaskSession.Task(row),displayId);
+        observe(c,new TaskSnapshot.Task(row),displayId);
     }
-    static void observe(Context c,TaskSession.Task task,int displayId){
+    static void observe(Context c,TaskSnapshot.Task task,int displayId){
         try {
             if(WorkArea.get(c,displayId).imeVisible)return;
             String component=taskKeys.get(task.id);
@@ -66,15 +66,16 @@ final class Profiles {
             }
             if(launching.contains(component))return;
             AppLaunchProfile p=get(c,component);
-            boolean maximized=task.mode==5 && WorkArea.get(c,displayId).maximized(task.bounds);
+            android.graphics.Rect bounds=task.bounds().toRect();
+            boolean maximized=task.mode==5 && WorkArea.get(c,displayId).maximized(bounds);
             p.lastState=task.mode==1?AppLaunchProfile.Mode.FULLSCREEN:maximized?AppLaunchProfile.Mode.MAXIMIZED:AppLaunchProfile.Mode.WINDOWED;
-            if(p.rememberBounds&&task.mode==5&&!maximized&&!task.bounds.isEmpty()){
-                p.x=task.bounds.left;p.y=task.bounds.top;p.lastWidth=task.bounds.width();p.lastHeight=task.bounds.height();p.hasLastBounds=true;
+            if(p.rememberBounds&&task.mode==5&&!maximized&&!bounds.isEmpty()){
+                p.x=bounds.left;p.y=bounds.top;p.lastWidth=bounds.width();p.lastHeight=bounds.height();p.hasLastBounds=true;
             }
             save(c,component,p);
         }catch(RuntimeException ignored){}
     }
     static void rememberSnapshot(Context c,String json,int taskId,int displayId){
-        try{JSONArray rows=new JSONObject(json).getJSONArray("tasks");for(int i=0;i<rows.length();i++)if(rows.getJSONObject(i).getInt("id")==taskId)observe(c,new TaskSession.Task(rows.getJSONObject(i)),displayId);}catch(Exception ignored){}
+        try{JSONArray rows=new JSONObject(json).getJSONArray("tasks");for(int i=0;i<rows.length();i++)if(rows.getJSONObject(i).getInt("id")==taskId)observe(c,new TaskSnapshot.Task(rows.getJSONObject(i)),displayId);}catch(Exception ignored){}
     }
 }

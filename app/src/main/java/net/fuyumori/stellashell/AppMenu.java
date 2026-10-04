@@ -48,7 +48,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     }
     private void position(WorkArea area,WindowManager.LayoutParams p){
         int[] point=DockPlacement.menu(area.application.left,area.application.top,area.application.right,area.application.bottom,
-            menuWidth,menuHeight,dp(12),Launches.prefs(context).getString("dock_edge","bottom"),displayId==0?null:DockService.navigationBounds(displayId));
+            menuWidth,menuHeight,dp(12),ShellSettings.of(context).snapshot().externalDock.edge.storedValue(),displayId==0?null:ShellRuntime.navigationBounds(displayId));
         p.x=point[0];p.y=point[1];
     }
     void back(){if(openGroup!=null)closeFolder();else close();}
@@ -56,10 +56,25 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         ShellPanels.release(displayId,this);
         AppOrganization.prefs(context).unregisterOnSharedPreferenceChangeListener(this);
         Launches.prefs(context).unregisterOnSharedPreferenceChangeListener(this);
-        if(activePopup!=null)activePopup.dismiss();activePopup=null;
-        for(android.app.AlertDialog dialog:new HashSet<>(dialogs))dialog.dismiss();dialogs.clear();
+        if(activePopup!=null)activePopup.dismiss();
+        activePopup=null;
+        for(android.app.AlertDialog dialog:new HashSet<>(dialogs))dialog.dismiss();
+        dialogs.clear();
         if(root!=null)try{windows.removeViewImmediate(root);}catch(RuntimeException ignored){}
-        folderOnly=false;root=null;folderLayer=null;openGroup=null;folderAnchor=null;renderQueued=false;
+        // The menu owner outlives its window. Do not keep the detached view tree
+        // (and every catalog icon) reachable while Start is closed.
+        root=null;
+        main=null;
+        content=null;
+        scroll=null;
+        search=null;
+        folderLayer=null;
+        folderAnchor=null;
+        openGroup=null;
+        all.clear();
+        loaded=false;
+        folderOnly=false;
+        renderQueued=false;
     }
     void openGroup(ExecutorService loader,String group){
         if(isOpen())close();open(loader);folderOnly=true;main.setVisibility(View.GONE);root.setBackgroundColor(android.graphics.Color.TRANSPARENT);openGroup=group;buildFolder();
@@ -82,7 +97,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         heading.addView(search,new LinearLayout.LayoutParams(0,dp(48),1));
         Button settings=smallButton("⚙",context.getString(R.string.launcher_tools));settings.setTextSize(28);settings.setBackground(null);settings.setStateListAnimator(null);settings.setElevation(0);settings.setOnClickListener(v->tools(settings));heading.addView(settings,new LinearLayout.LayoutParams(dp(48),dp(48)));
         main.addView(heading);
-        if(Workspace.compact(context,displayId))
+        if(TaskState.of(context).compact(context,displayId))
             main.addView(Ui.text(context,context.getString(R.string.workspace_roles_hint),12,Ui.MUTED));
         scroll=new ScrollView(context);scroll.setFillViewport(false);scroll.setClipToPadding(false);scroll.setPadding(0,dp(8),0,0);
         content=Ui.column(context);scroll.addView(content);main.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
@@ -94,7 +109,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
             power.setContentDescription(context.getString(R.string.exit_desktop));power.setTooltipText(context.getString(R.string.exit_desktop));
             power.setOnClickListener(v->showDialog(new android.app.AlertDialog.Builder(context).setTitle(R.string.exit_desktop)
                     .setMessage(R.string.exit_desktop_session_note).setNegativeButton(R.string.ui_cancel,null)
-                    .setPositiveButton(R.string.exit_desktop,(dialog,which)->{close();DockService.stop(context);}).create()));
+                    .setPositiveButton(R.string.exit_desktop,(dialog,which)->{close();ShellRuntime.stop(context);}).create()));
             footer.addView(power,new LinearLayout.LayoutParams(dp(48),dp(48)));
         }
         main.addView(footer);
@@ -102,9 +117,13 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
             if((key==KeyEvent.KEYCODE_ESCAPE||key==KeyEvent.KEYCODE_BACK)&&event.getAction()==KeyEvent.ACTION_UP){back();return true;}return false;
         };
         root.setFocusableInTouchMode(true);root.setOnKeyListener(back);search.setOnKeyListener(back);dismissOnOutside(root);
+        EditText openedSearch=search;
         search.addTextChangedListener(new TextWatcher(){
             public void beforeTextChanged(CharSequence s,int start,int count,int after){}
-            public void onTextChanged(CharSequence s,int start,int before,int count){closeFolder();render();scroll.scrollTo(0,0);}
+            public void onTextChanged(CharSequence s,int start,int before,int count){
+                if(root==null||search!=openedSearch)return;
+                closeFolder();render();if(scroll!=null)scroll.scrollTo(0,0);
+            }
             public void afterTextChanged(Editable text){}
         });
         WindowManager.LayoutParams params=new WindowManager.LayoutParams(menuWidth,menuHeight,activityHosted?WindowManager.LayoutParams.TYPE_APPLICATION_PANEL:WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -162,7 +181,8 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         items.sort((a,b)->sort.compare(a instanceof String?(String)a:((Launches.App)a).label,b instanceof String?(String)b:((Launches.App)b).label));
         List<View> tiles=new ArrayList<>();for(Object item:items)tiles.add(item instanceof String?groupTile((String)item):appTile((Launches.App)item));
         if(tiles.isEmpty())note(content,R.string.ui_no_matching_apps);else content.addView(grid(tiles,columns));
-        scroll.post(()->{if(root!=null)scroll.scrollTo(0,y);});
+        FrameLayout renderedRoot=root;ScrollView renderedScroll=scroll;
+        renderedScroll.post(()->{if(root==renderedRoot)renderedScroll.scrollTo(0,y);});
         if(openGroup!=null){if(!AppOrganization.groups(context).contains(openGroup))closeFolder();else buildFolder();}
     }
     private View grid(List<View> tiles,int columns){
@@ -228,7 +248,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     @Override public void onSharedPreferenceChanged(SharedPreferences prefs,String key){
         if(root==null || prefs==Launches.prefs(context)&&!WorkspaceProfile.changed(key,"start_pinned")&&!IconTheme.changed(key))return;
         if(renderQueued)return;renderQueued=true;FrameLayout generation=root;
-        root.post(()->{renderQueued=false;if(root==generation)render();});
+        root.post(()->{if(root==generation){renderQueued=false;render();}});
     }
     private void selectApps(String group){
         if(!loaded){Ui.message(context,context.getString(R.string.ui_loading));return;}

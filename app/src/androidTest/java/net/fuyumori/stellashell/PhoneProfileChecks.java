@@ -11,8 +11,11 @@ import java.util.*;
 final class PhoneProfileChecks {
     private static void check(boolean value,String message){if(!value)throw new AssertionError(message);}
     static void run(Instrumentation test,int external){
-        Context base=test.getTargetContext();Set<String> stores=new HashSet<>();String prefix="phone_profile_fixture_";
-        class Capture extends ContextWrapper {
+        Context base=test.getTargetContext();Set<String> stores=new HashSet<>();String prefix="phone_profile_fixture_";ShellSettings[] settings={null};TaskState[] tasks={null};
+        class Capture extends ContextWrapper implements ShellSettings.Provider,TaskState.Provider {
+            @Override public Context getApplicationContext(){return this;}
+            public ShellSettings shellSettings(){if(settings[0]==null)settings[0]=ShellSettings.isolated(getSharedPreferences("desktop",0));return settings[0];}
+            public TaskState taskState(){if(tasks[0]==null)tasks[0]=TaskState.isolated(this);return tasks[0];}
             final Display display;Intent launched;Bundle options;
             Capture(int id){super(base);display=base.getSystemService(DisplayManager.class).getDisplay(id);if(display==null)throw new AssertionError("missing fixture display");}
             @Override public Display getDisplay(){return display;}
@@ -44,11 +47,11 @@ final class PhoneProfileChecks {
             phone.launched=null;Launches.home(phone,0);
             check(phone.launched!=null&&phone.launched.hasCategory(Intent.CATEGORY_HOME),"home must use Android HOME without minimizing tasks");
             prefs.edit().putBoolean("primary_mode",true).putBoolean("compact_workspace",true).putInt("workspace_display",0).commit();
-            boolean[] transferred={false};Workspace.transfer(phone,external,()->transferred[0]=true);
-            check(transferred[0]&&Workspace.target(phone)==external,"empty standard workspace handoff required a task bridge");
+            boolean[] transferred={false};TaskState.of(phone).transfer(phone,external,()->transferred[0]=true);
+            check(transferred[0]&&TaskState.of(phone).target(phone)==external,"empty standard workspace handoff required a task bridge");
             check(WorkspaceProfile.phone(phone),"Phone profile changed with shell destination");
-            Workspace.transfer(phone,0,()->transferred[0]=false);
-            check(!transferred[0]&&Workspace.target(phone)==0,"Phone return failed");
+            TaskState.of(phone).transfer(phone,0,()->transferred[0]=false);
+            check(!transferred[0]&&TaskState.of(phone).target(phone)==0,"Phone return failed");
             prefs.edit().putBoolean("phone_window_management",true).commit();
             check(WorkspaceProfile.standard(phone,0),"legacy management flag changed normal fullscreen launch");
             AppOrganization.addGroup(phone,"Tools");String folder=GroupEntries.reference(phone,"Tools");
@@ -65,6 +68,6 @@ final class PhoneProfileChecks {
             check(GroupEntries.name(phone,folder)==null&&!StartPins.get(phone).contains(folder)&&!Launches.desktop(desktop).contains(folder),"deleted group retained links");
             check(!desktop.getSharedPreferences("shortcut_positions",0).contains(folder),"deleted group retained position");
             check(StartPins.get(phone).contains("a.b/a.b.Two"),"group deletion removed unrelated app pin");
-        } finally {for(String name:stores)base.deleteSharedPreferences(prefix+name);}
+        } finally {if(tasks[0]!=null)tasks[0].closeOwner();if(settings[0]!=null)settings[0].close();for(String name:stores)base.deleteSharedPreferences(prefix+name);}
     }
 }

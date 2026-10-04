@@ -5,7 +5,6 @@ import android.app.ActivityOptions;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.View;
@@ -16,12 +15,15 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import java.util.function.Consumer;
+import java.util.function.IntConsumer;
+import java.util.function.IntSupplier;
+import java.util.function.Supplier;
 
 /** Sidebar preferences apply immediately, independently for phone and desktop. */
-public final class SidebarSettingsActivity extends Activity implements SharedPreferences.OnSharedPreferenceChangeListener {
-    private static final String[] PHONE_SIDES={"both","left","right"};
-    private static final String[] DOCK_EDGES={"left","right","top","bottom"};
-    private SharedPreferences prefs;
+public final class SidebarSettingsActivity extends Activity {
+    private ShellSettings settings;
+    private AutoCloseable settingsSubscription;
     private CheckBox phoneShow,phoneOverApps,desktopShow;
     private LinearLayout phoneControls,desktopControls;
     private Button phoneSide,desktopEdge;
@@ -33,7 +35,7 @@ public final class SidebarSettingsActivity extends Activity implements SharedPre
         catch(RuntimeException e){Ui.message(c,e.getMessage());}
     }
     @Override public void onCreate(Bundle state){
-        super.onCreate(state);prefs=Launches.prefs(this);
+        super.onCreate(state);settings=ShellSettings.of(this);
         LinearLayout page=DashboardUi.page(this);
         page.addView(DashboardUi.action(this,getString(R.string.sidebar_settings_back),this::finish,false));
         DashboardUi.space(page,16);page.addView(DashboardUi.title(this,getString(R.string.sidebar_settings_title),25));
@@ -43,60 +45,62 @@ public final class SidebarSettingsActivity extends Activity implements SharedPre
         Ui.note(body,getString(R.string.sidebar_settings_start_note));
 
         DashboardUi.section(body,getString(R.string.sidebar_settings_phone));LinearLayout card=DashboardUi.card(body);
-        phoneShow=checkbox(card,R.string.sidebar_settings_show_phone,"phone_sidebar",true);
+        phoneShow=checkbox(card,R.string.sidebar_settings_show_phone,
+                ()->settings.snapshot().phoneDock.enabled,settings::setPhoneDockEnabled);
         DashboardUi.divider(card);phoneControls=Ui.column(this);card.addView(phoneControls);
-        phoneSide=choice(phoneControls,R.string.sidebar_settings_call_side,PHONE_SIDES,phoneSideLabels(),"phone_sidebar_side","both",false);
-        phoneHeight=new Slider(phoneControls,R.string.sidebar_settings_vertical,"sidebar_height",80,R.string.sidebar_settings_top,R.string.sidebar_settings_bottom);
-        phoneScale=new Slider(phoneControls,"phone_dock_scale");
+        phoneSide=choice(phoneControls,R.string.sidebar_settings_call_side,phoneSideLabels(),
+                ()->settings.snapshot().phoneDock.phoneSide.ordinal(),index->settings.setPhoneDockSide(ShellSettings.PhoneSide.values()[index]));
+        phoneHeight=new Slider(phoneControls,R.string.sidebar_settings_vertical,()->settings.snapshot().phoneDock.triggerPercent,
+                settings::setPhoneDockTriggerPercent,R.string.sidebar_settings_top,R.string.sidebar_settings_bottom,0,100,1,false);
+        phoneScale=new Slider(phoneControls,()->settings.snapshot().phoneDock.scalePercent,
+                settings::setPhoneDockScalePercent);
         DashboardUi.divider(phoneControls);
-        phoneOverApps=checkbox(phoneControls,R.string.phone_sidebar_over_apps,"phone_sidebar_over_apps",true);
+        phoneOverApps=checkbox(phoneControls,R.string.phone_sidebar_over_apps,
+                ()->settings.snapshot().phoneDock.overApps,settings::setPhoneDockOverApps);
 
         DashboardUi.section(body,getString(R.string.sidebar_settings_desktop));card=DashboardUi.card(body);
-        desktopShow=checkbox(card,R.string.sidebar_settings_show_desktop,"desktop_dock",false);
+        desktopShow=checkbox(card,R.string.sidebar_settings_show_desktop,
+                ()->settings.snapshot().externalDock.enabled,settings::setExternalDockEnabled);
         DashboardUi.divider(card);desktopControls=Ui.column(this);card.addView(desktopControls);
-        desktopEdge=choice(desktopControls,R.string.sidebar_settings_edge,DOCK_EDGES,edgeLabels(),"dock_edge","bottom",true);
+        desktopEdge=choice(desktopControls,R.string.sidebar_settings_edge,edgeLabels(),
+                ()->settings.snapshot().externalDock.edge.ordinal(),index->settings.setExternalDockEdge(ShellSettings.DockEdge.values()[index]));
         Ui.note(desktopControls,getString(R.string.sidebar_settings_edge_note));
-        desktopX=new Slider(desktopControls,R.string.sidebar_settings_horizontal,"dock_x",50,R.string.sidebar_settings_left,R.string.sidebar_settings_right);
-        desktopY=new Slider(desktopControls,R.string.sidebar_settings_vertical,"dock_y",100,R.string.sidebar_settings_top,R.string.sidebar_settings_bottom);
-        desktopScale=new Slider(desktopControls,"desktop_dock_scale");
-        prefs.registerOnSharedPreferenceChangeListener(this);refresh();
+        desktopX=new Slider(desktopControls,R.string.sidebar_settings_horizontal,
+                ()->settings.snapshot().externalDock.xPercent,
+                value->{ShellSettings.Snapshot current=settings.snapshot();settings.setExternalDockPosition(value,current.externalDock.yPercent);},
+                R.string.sidebar_settings_left,R.string.sidebar_settings_right,0,100,1,false);
+        desktopY=new Slider(desktopControls,R.string.sidebar_settings_vertical,
+                ()->settings.snapshot().externalDock.yPercent,
+                value->{ShellSettings.Snapshot current=settings.snapshot();settings.setExternalDockPosition(current.externalDock.xPercent,value);},
+                R.string.sidebar_settings_top,R.string.sidebar_settings_bottom,0,100,1,false);
+        desktopScale=new Slider(desktopControls,()->settings.snapshot().externalDock.scalePercent,
+                settings::setExternalDockScalePercent);
+        settingsSubscription=settings.observe((changes,snapshot)->refresh());refresh();
     }
-    private CheckBox checkbox(LinearLayout parent,int label,String key,boolean fallback){
+    private CheckBox checkbox(LinearLayout parent,int label,Supplier<Boolean> read,Consumer<Boolean> write){
         CheckBox box=new CheckBox(this);box.setText(label);box.setTextColor(Ui.TEXT);box.setTypeface(Appearance.face);box.setTextSize(15);
-        box.setMinHeight(Ui.dp(this,56));box.setPadding(0,Ui.dp(this,8),0,Ui.dp(this,8));box.setChecked(prefs.getBoolean(key,fallback));
+        box.setMinHeight(Ui.dp(this,56));box.setPadding(0,Ui.dp(this,8),0,Ui.dp(this,8));box.setChecked(read.get());
         box.setOnCheckedChangeListener((v,checked)->{
-            if(refreshing)return;prefs.edit().putBoolean(key,checked).apply();
-            if("phone_sidebar".equals(key)&&checked&&!Settings.canDrawOverlays(this))Ui.message(this,getString(R.string.ui_allow_the_taskbar_overlay_first));
+            if(refreshing)return;write.accept(checked);
+            if(label==R.string.sidebar_settings_show_phone&&checked&&!Settings.canDrawOverlays(this))Ui.message(this,getString(R.string.ui_allow_the_taskbar_overlay_first));
         });parent.addView(box,new LinearLayout.LayoutParams(-1,-2));return box;
     }
-    private Button choice(LinearLayout parent,int title,String[] values,String[] labels,String key,String fallback,boolean edge){
+    private Button choice(LinearLayout parent,int title,String[] labels,IntSupplier selected,IntConsumer write){
         Button button=DashboardUi.action(this,"",()->{
-            int selected=index(values,prefs.getString(key,fallback),fallback);
-            new AlertDialog.Builder(this).setTitle(title).setSingleChoiceItems(labels,selected,(dialog,which)->{
-                SharedPreferences.Editor edit=prefs.edit().putString(key,values[which]);
-                // Snap only the axis perpendicular to the edge; keep its parallel position.
-                if(edge){switch(values[which]){
-                    case "left":edit.putInt("dock_x",0);break;
-                    case "right":edit.putInt("dock_x",100);break;
-                    case "top":edit.putInt("dock_y",0);break;
-                    default:edit.putInt("dock_y",100);break;
-                }}
-                edit.apply();dialog.dismiss();
+            new AlertDialog.Builder(this).setTitle(title).setSingleChoiceItems(labels,selected.getAsInt(),(dialog,which)->{
+                write.accept(which);dialog.dismiss();
             }).setNegativeButton(R.string.ui_cancel,null).show();
         },false);parent.addView(button);return button;
     }
     private String[] phoneSideLabels(){return new String[]{getString(R.string.sidebar_settings_both),getString(R.string.sidebar_settings_left),getString(R.string.sidebar_settings_right)};}
     private String[] edgeLabels(){return new String[]{getString(R.string.sidebar_settings_left),getString(R.string.sidebar_settings_right),getString(R.string.sidebar_settings_top),getString(R.string.sidebar_settings_bottom)};}
-    private static int index(String[] values,String value,String fallback){
-        for(int i=0;i<values.length;i++)if(values[i].equals(value))return i;
-        for(int i=0;i<values.length;i++)if(values[i].equals(fallback))return i;return 0;
-    }
     private void refresh(){
         if(phoneHeight==null||isDestroyed())return;refreshing=true;
-        phoneShow.setChecked(prefs.getBoolean("phone_sidebar",true));phoneOverApps.setChecked(prefs.getBoolean("phone_sidebar_over_apps",true));
-        desktopShow.setChecked(prefs.getBoolean("desktop_dock",false));
-        phoneSide.setText(getString(R.string.sidebar_settings_choice,getString(R.string.sidebar_settings_call_side),phoneSideLabels()[index(PHONE_SIDES,prefs.getString("phone_sidebar_side","both"),"both")]));
-        desktopEdge.setText(getString(R.string.sidebar_settings_choice,getString(R.string.sidebar_settings_edge),edgeLabels()[index(DOCK_EDGES,prefs.getString("dock_edge","bottom"),"bottom")]));
+        ShellSettings.Snapshot snapshot=settings.snapshot();
+        phoneShow.setChecked(snapshot.phoneDock.enabled);phoneOverApps.setChecked(snapshot.phoneDock.overApps);
+        desktopShow.setChecked(snapshot.externalDock.enabled);
+        phoneSide.setText(getString(R.string.sidebar_settings_choice,getString(R.string.sidebar_settings_call_side),phoneSideLabels()[snapshot.phoneDock.phoneSide.ordinal()]));
+        desktopEdge.setText(getString(R.string.sidebar_settings_choice,getString(R.string.sidebar_settings_edge),edgeLabels()[snapshot.externalDock.edge.ordinal()]));
         phoneHeight.refresh();desktopX.refresh();desktopY.refresh();phoneScale.refresh();desktopScale.refresh();
         controlsEnabled(phoneControls,phoneShow.isChecked());controlsEnabled(desktopControls,desktopShow.isChecked());refreshing=false;
     }
@@ -105,16 +109,16 @@ public final class SidebarSettingsActivity extends Activity implements SharedPre
         if(view==phoneControls||view==desktopControls)view.setAlpha(enabled?1f:0.45f);
     }
     private final class Slider {
-        final TextView label;final SeekBar bar;final int title,fallback,min,max,step;final String key;final boolean scale;
-        Slider(LinearLayout parent,int title,String key,int fallback,int start,int end){
-            this(parent,title,key,fallback,start,end,0,100,1,false);
+        TextView label;SeekBar bar;final int title,min,max,step;final IntSupplier read;final IntConsumer write;final boolean scale;
+        Slider(LinearLayout parent,int title,IntSupplier read,IntConsumer write,int start,int end,int min,int max,int step,boolean scale){
+            this.title=title;this.read=read;this.write=write;this.min=min;this.max=max;this.step=step;this.scale=scale;
+            create(parent,start,end);
         }
-        Slider(LinearLayout parent,String key){
-            this(parent,R.string.sidebar_settings_size,key,NavigationScale.DEFAULT,R.string.sidebar_settings_smaller,R.string.sidebar_settings_larger,NavigationScale.MIN,NavigationScale.MAX,NavigationScale.STEP,true);
+        Slider(LinearLayout parent,IntSupplier read,IntConsumer write){
+            this(parent,R.string.sidebar_settings_size,read,write,R.string.sidebar_settings_smaller,R.string.sidebar_settings_larger,NavigationScale.MIN,NavigationScale.MAX,NavigationScale.STEP,true);
             Ui.note(parent,getString(R.string.sidebar_settings_size_note));
         }
-        Slider(LinearLayout parent,int title,String key,int fallback,int start,int end,int min,int max,int step,boolean scale){
-            this.title=title;this.key=key;this.fallback=fallback;this.min=min;this.max=max;this.step=step;this.scale=scale;
+        private void create(LinearLayout parent,int start,int end){
             DashboardUi.space(parent,16);label=DashboardUi.text(SidebarSettingsActivity.this,"",14,Ui.TEXT);parent.addView(label);
             bar=new SeekBar(SidebarSettingsActivity.this);bar.setMax((max-min)/step);bar.setContentDescription(getString(title));parent.addView(bar,new LinearLayout.LayoutParams(-1,Ui.dp(SidebarSettingsActivity.this,48)));
             String firstLabel=scale?getString(R.string.sidebar_settings_percent,getString(start),min):getString(start),lastLabel=scale?getString(R.string.sidebar_settings_percent,getString(end),max):getString(end);
@@ -122,12 +126,12 @@ public final class SidebarSettingsActivity extends Activity implements SharedPre
             first.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);last.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);last.setGravity(android.view.Gravity.RIGHT);
             ends.addView(first,new LinearLayout.LayoutParams(0,-2,1));ends.addView(last,new LinearLayout.LayoutParams(0,-2,1));parent.addView(ends);
             bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
-                public void onProgressChanged(SeekBar seek,int value,boolean user){if(user)prefs.edit().putInt(key,min+value*step).apply();}
+                public void onProgressChanged(SeekBar seek,int value,boolean user){if(user)write.accept(min+value*step);}
                 public void onStartTrackingTouch(SeekBar seek){}public void onStopTrackingTouch(SeekBar seek){}
             });
         }
-        void refresh(){int saved=prefs.getInt(key,fallback),value=scale?NavigationScale.percent(saved):Math.max(min,Math.min(max,saved));bar.setProgress((value-min)/step);bar.setStateDescription(value+"%");label.setText(getString(R.string.sidebar_settings_percent,getString(title),value));}
+        void refresh(){int saved=read.getAsInt(),value=scale?NavigationScale.percent(saved):Math.max(min,Math.min(max,saved));bar.setProgress((value-min)/step);bar.setStateDescription(value+"%");label.setText(getString(R.string.sidebar_settings_percent,getString(title),value));}
     }
-    @Override public void onSharedPreferenceChanged(SharedPreferences shared,String key){refresh();}
-    @Override public void onDestroy(){if(prefs!=null)prefs.unregisterOnSharedPreferenceChangeListener(this);super.onDestroy();}
+    @Override public void onDestroy(){close(settingsSubscription);super.onDestroy();}
+    private static void close(AutoCloseable closeable){if(closeable!=null)try{closeable.close();}catch(Exception ignored){}}
 }

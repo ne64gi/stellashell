@@ -6,6 +6,5 @@ final class NavigationScale {
     static int percent(int value){int clamped=Math.min(MAX,Math.max(MIN,value));return Math.round(clamped/(float)STEP)*STEP;}
     static float factor(int value){return percent(value)/100f;}
     static String key(boolean main,boolean taskbar){return (main?"phone_":"desktop_")+(taskbar?"taskbar_scale":"dock_scale");}
-    static boolean changed(String key){return "phone_dock_scale".equals(key)||"desktop_dock_scale".equals(key)||"phone_taskbar_scale".equals(key)||"desktop_taskbar_scale".equals(key);}
     static int pixels(float density,float baseDp,int value){return baseDp<=0?0:Math.max(1,Math.round(density*baseDp*factor(value)));}
 }

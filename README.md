@@ -36,6 +36,10 @@ Dockとタスクバーは別機能で、アプリのピン留めも別々です�
 
 APKは `app/build/outputs/apk/debug/app-debug.apk`（開発用署名）。ビルド成功は端末での検証完了を意味しません。
 
+### CI
+
+[Android checks](.github/workflows/android-checks.yml) はpushとPull Requestごとに、JDK 17／Gradle WrapperでJVMテスト、lint、debug APKとAndroidTest APKのビルドを実行します。AndroidTestはコンパイル確認だけで、エミュレーター・実機テストや配布は行いません。結果はGitHub Actionsの各実行で確認してください。
+
 - [変更・検証範囲の入口](docs/RELEASES.md)
 - [タスクAPIと機種別の調査](docs/TASK-API-PROVENANCE.md)
 - [過去の開発履歴](docs/RELEASE-HISTORY.md)
@@ -53,3 +57,5 @@ APKは `app/build/outputs/apk/debug/app-debug.apk`（開発用署名）。ビル
 Taskbar（Braden Farmer / contributors）とDextop（NarYuki / contributors）は設計・互換性調査の参考、scrcpy（Genymobile / Romain Vimont / contributors）は開発・検証ツールに加え本体画面消灯の改変コードの出典です。皆さんに感謝します。参考・謝辞と、取り込んだコード・依存資材のライセンスは区別しています。詳細な著作権・変更通知・参照コミットは[第三者表記](THIRD_PARTY_NOTICES.md)に記載し、必要な通知はAPKにも保持しています。各プロジェクトの公式な推奨・提携を示すものではありません。
 
 本体・ドキュメント・同梱ヘルパーのGPL-3.0-or-laterへの整理は、過去の来歴問題そのものの解消を意味しません。[監査](docs/LICENSE-AUDIT-2026-09-29.md)・[修正履歴](docs/LICENSE-REMEDIATION-2026-09-29.md)を参照してください。
+
+内部の状態管理・寿命・設定互換の境界は [Shellの状態と所有境界](docs/STATE-OWNERSHIP.md) を参照。

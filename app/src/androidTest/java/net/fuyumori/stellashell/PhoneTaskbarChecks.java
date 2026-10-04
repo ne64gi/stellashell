@@ -31,6 +31,7 @@ final class PhoneTaskbarChecks {
     private final String prefix="phone_taskbar_fixture_"+java.util.UUID.randomUUID()+"_";
     private final Set<String> files=new HashSet<>();
     private Context sandbox,mainContext;
+    private ShellSettings fixtureSettings;private TaskState fixtureTasks;
     private PhoneTaskbar bar;private PhoneSidebar dock;
     private final FakeBackend barBackend=new FakeBackend(),dockBackend=new FakeBackend();
     private String barPin,dockPin,barLabel;private int external;
@@ -61,7 +62,7 @@ final class PhoneTaskbarChecks {
                 barBackend.payload=snapshot(dockPin,12);dockBackend.payload=snapshot(barPin,1);
                 switchFlags(true,false);
                 bar=new PhoneTaskbar(sandbox,()->{},barBackend,this::area);
-                dock=new PhoneSidebar(sandbox,()->{},dockBackend,this::area);dock.show(true);
+                dock=new PhoneSidebar(sandbox,()->{},dockBackend,this::area);dock.taskbarReady(bar.ready());dock.show(true);
                 check(get(bar,"observer")==null&&get(dock,"observer")==null,"Main fixture must not register/cache a real WorkArea-0 observer");
             });
             await(()->laidOut(),"Main Taskbar/Dock did not attach");test.waitForIdleSync();
@@ -91,7 +92,7 @@ final class PhoneTaskbarChecks {
             Bridge.Reply[] late={null};
             main(()->{
                 barBackend.hold=true;feed.refresh();late[0]=barBackend.pending;check(late[0]!=null,"No pending synthetic reply for hide test");
-                switchFlags(false,true);bar.close();check(!bar.ready()&&get(bar,"panel")==null,"Hidden main Taskbar retained its logical overlay");
+                switchFlags(false,true);bar.close();dock.taskbarReady(false);check(!bar.ready()&&get(bar,"panel")==null,"Hidden main Taskbar retained its logical overlay");
                 check(feed.tasks().isEmpty()&&barBackend.observed==barBackend.removed,"Hidden main Taskbar retained task feed/observer");
                 int requests=barBackend.requests;late[0].done(barBackend.payload,null);barBackend.pending=null;feed.refresh();
                 check(feed.tasks().isEmpty()&&barBackend.requests==requests&&get(bar,"panel")==null,"Late reply resurrected hidden main Taskbar");
@@ -105,7 +106,7 @@ final class PhoneTaskbarChecks {
             int requests=barBackend.requests;Thread.sleep(1200);test.waitForIdleSync();
             check(barBackend.requests==requests,"Hidden main Taskbar kept polling");
             main(()->check(!removedPanel.isAttachedToWindow()&&get(bar,"panel")==null&&feed.tasks().isEmpty(),"Late reply resurrected detached main Taskbar"));
-            main(()->{barBackend.hold=false;switchFlags(true,false);bar=new PhoneTaskbar(sandbox,()->{},barBackend,this::area);dock.rebuild();});
+            main(()->{barBackend.hold=false;switchFlags(true,false);bar=new PhoneTaskbar(sandbox,()->{},barBackend,this::area);dock.taskbarReady(bar.ready());dock.rebuild();});
             await(this::laidOut,"Main Taskbar did not recreate after toggle");main(this::validate);
             check(barBackend.operations==2&&dockBackend.operations==0,"Unexpected operation outside the two synthetic Taskbar close-menu checks");
         }finally{
@@ -113,7 +114,7 @@ final class PhoneTaskbarChecks {
                 Throwable failure=null;
                 try{if(bar!=null)bar.close();}catch(Throwable t){failure=t;}
                 try{if(dock!=null)dock.close();}catch(Throwable t){if(failure==null)failure=t;else failure.addSuppressed(t);}
-                for(String name:files)actual.deleteSharedPreferences(name);
+                if(fixtureSettings!=null)fixtureSettings.close();if(fixtureTasks!=null)fixtureTasks.closeOwner();for(String name:files)actual.deleteSharedPreferences(name);
                 if(failure!=null)throw new AssertionError("Main fixture cleanup failed",failure);
             });
             test.waitForIdleSync();
@@ -187,15 +188,17 @@ final class PhoneTaskbarChecks {
         try{JSONArray tasks=new JSONArray();for(int i=0;i<count;i++)tasks.put(new JSONObject().put("id",990000+i).put("component",component).put("mode",1).put("visible",i==0).put("focused",i==0).put("left",0).put("top",0).put("right",300).put("bottom",600));return new JSONObject().put("tasks",tasks).toString();}catch(org.json.JSONException e){throw new AssertionError(e);}
     }
     private static final class FakeBackend implements PhoneRunningTasks.Backend {
-        String payload;boolean hold,captureOperations;int observed,removed,requests,operations;Bridge.Reply pending;Runnable observer;TaskSession.Task operated;String action;
+        String payload;boolean hold,captureOperations;int observed,removed,requests,operations;Bridge.Reply pending;Runnable observer;TaskSnapshot.Task operated;String action;
         public boolean ready(){return true;}
         public void observe(Runnable listener){check(observer==null,"Duplicate main fixture feed observer");observer=listener;observed++;}
         public void remove(Runnable listener){check(observer==listener,"Wrong main fixture feed observer removed");observer=null;removed++;}
         public void snapshot(Bridge.Reply reply){requests++;if(hold){check(pending==null,"Overlapping main fixture snapshot");pending=reply;}else reply.done(payload,null);}
-        public void focus(TaskSession.Task task,Bridge.Reply reply){operations++;throw new AssertionError("Main fixture must not focus tasks");}
-        public void operation(TaskSession.Task task,String action,Rect bounds,Bridge.Reply reply){operations++;check(captureOperations,"Main fixture must not operate tasks outside captured synthetic menu checks");operated=task;this.action=action;reply.done("OK",null);}
+        public void focus(TaskSnapshot.Task task,Bridge.Reply reply){operations++;throw new AssertionError("Main fixture must not focus tasks");}
+        public void operation(TaskSnapshot.Task task,String action,Rect bounds,Bridge.Reply reply){operations++;check(captureOperations,"Main fixture must not operate tasks outside captured synthetic menu checks");operated=task;this.action=action;reply.done("OK",null);}
     }
-    private final class Sandbox extends ContextWrapper {
+    private final class Sandbox extends ContextWrapper implements ShellSettings.Provider,TaskState.Provider {
+        public ShellSettings shellSettings(){if(fixtureSettings==null)fixtureSettings=ShellSettings.isolated(getSharedPreferences("desktop",0));return fixtureSettings;}
+        public TaskState taskState(){if(fixtureTasks==null)fixtureTasks=TaskState.isolated(this);return fixtureTasks;}
         Sandbox(Context base){super(base);}
         @Override public Context getApplicationContext(){return this;}
         @Override public SharedPreferences getSharedPreferences(String name,int mode){String isolated=prefix+name;files.add(isolated);return actual.getSharedPreferences(isolated,mode);}

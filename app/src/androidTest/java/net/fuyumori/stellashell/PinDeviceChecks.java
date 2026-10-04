@@ -28,8 +28,7 @@ final class PinDeviceChecks {
     private static Object field(Class<?> type,Object object,String name)throws Exception{java.lang.reflect.Field f=type.getDeclaredField(name);f.setAccessible(true);return f.get(object);}
     private View button(int id){
         try{
-            Object service=field(DockService.class,null,"instance");if(service==null)return null;
-            Object chrome=field(DockService.class,service,"chrome");if(chrome==null)return null;
+            Object chrome=ShellFixtureAccess.chrome();if(chrome==null)return null;
             Object frame=((Map<?,?>)field(WindowChrome.class,chrome,"frames")).get(id);if(frame==null)return null;
             for(Object fragment:(List<?>)((List<?>)field(frame.getClass(),frame,"parts")).get(0)){
                 View root=(View)field(fragment.getClass(),fragment,"root");
@@ -52,15 +51,20 @@ final class PinDeviceChecks {
         require(!context.getSystemService(android.app.KeyguardManager.class).isDeviceLocked(),"Unlock normally first");
         require(Launches.prefs(context).getBoolean("enabled",false)&&Launches.prefs(context).getBoolean("primary_mode",false),"Requires an already enabled main-display session");
         SharedPreferences profiles=context.getSharedPreferences("launch_profiles",0);Map<String,?> before=profiles.getAll();int fixture=-1;
-        main(()->{DockService.start(context,0,false);Bridge.get(context).connect();});
+        main(()->{ShellRuntime.start(context,0,false);Bridge.get(context).connect();});
         await(()->Bridge.get(context).ready(),"Shizuku service not ready");
         try{
             JSONObject initial=new JSONObject(call(s->s.taskSnapshot(0)));
             require(initial.getJSONObject("capabilities").getBoolean("alwaysOnTop"),"Installed service did not advertise pinning");
             JSONArray rows=initial.getJSONArray("tasks");for(int i=0;i<rows.length();i++)require(!COMPONENT.equals(rows.getJSONObject(i).getString("component")),"Refuse to reuse an existing fixture");
             JSONObject launched=new JSONObject(call(s->{WorkArea.get(context,0).sync(s,0);return s.launchProfile(COMPONENT,"",0,5,100,700,950,1700,true);}));
-            TaskSession.Task model=new TaskSession.Task(launched.getJSONObject("task"));fixture=model.id;int id=fixture;
-            main(()->Workspace.adoptFloating(model,Workspace.session()));
+            JSONObject taskRecord=launched.getJSONObject("task");
+            TaskSnapshot.Task model=new TaskSnapshot.Task(taskRecord);fixture=model.id;int id=fixture;
+            JSONObject ownershipRecord=new JSONObject().put("task",taskRecord);
+            main(()->{
+                try{TaskState.of(context).launched(context,ownershipRecord,0,true,()->{});}
+                catch(org.json.JSONException error){throw new AssertionError(error);}
+            });
             await(()->button(id)!=null,"Pin caption did not render");
             main(()->require(button(id).performClick(),"Pin caption click failed"));
             await(()->button(id)!=null&&button(id).isSelected(),"Pin caption did not select");

@@ -188,7 +188,7 @@ final class PipRestoreChecks {
         for(String key:new String[]{"enabled","primary_mode","active_display","preferred_display","workspace_display","workspace_auto"})
             protectedPrefs.put(key,prefs.contains(key)?prefs.getAll().get(key):null);
         int selected=prefs.getInt("active_display",-1);
-        check(DockService.running()&&prefs.getBoolean("enabled",false)&&selected>=0
+        check(ShellRuntime.running()&&prefs.getBoolean("enabled",false)&&selected>=0
             &&(selectedExternal?selected==ownedDisplay:selected!=ownedDisplay)
             &&prefs.getInt("active_display",-1)==selected,"Requires stable existing workspace; fixture never changes it");
         if(!selectedExternal)check(prefs.contains("workspace_auto")&&!prefs.getBoolean("workspace_auto",true),
