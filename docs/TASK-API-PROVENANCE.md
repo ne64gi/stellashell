@@ -89,3 +89,16 @@ the rendered ordering, so new pins there are rejected. Native unpin remains
 available for cleanup if an owned task moved displays. The NX809J guard remains.
 The Sony controller can adopt another freeform task while its own popup is active;
 coexistence is not supported. Probe runners must refuse that starting state.
+
+## 2026-10-04: event invalidation instead of idle queries
+
+`TaskChangeMonitor` uses the framework's `registerTaskStackListener` /
+`unregisterTaskStackListener` contract and the installed stub's transaction-name
+lookup. References are [AOSP ITaskStackListener](https://github.com/aosp-mirror/platform_frameworks_base/blob/android14-release/core/java/android/app/ITaskStackListener.aidl)
+and [IActivityTaskManager](https://github.com/aosp-mirror/platform_frameworks_base/blob/android14-release/core/java/android/app/IActivityTaskManager.aidl).
+This adapter is original API interoperation, not a copied AOSP listener class.
+
+Only invalidation crosses the new Stella callback. Incoming task, component and
+thumbnail payloads are not decoded, persisted or forwarded. Existing snapshot
+schema and mutation identity checks remain authoritative. See
+[Idle work budget](IDLE-PERFORMANCE.md) for lifecycle and measurement boundaries.

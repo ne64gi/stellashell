@@ -17,7 +17,10 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
     private static final String FREEFORM = "enable_freeform_support";
     public DesktopBridgeService() { context = null; }
     public DesktopBridgeService(Context context) { this.context = context; }
-    @Override public synchronized void destroy() { releaseWindowPins();if(primaryScreen!=null)primaryScreen.release();if(mouseRouting!=null)mouseRouting.release();if(virtualKeyboard!=null)virtualKeyboard.release();System.exit(0); }
+    @Override public synchronized void destroy() { taskChanges.close();releaseWindowPins();if(primaryScreen!=null)primaryScreen.release();if(mouseRouting!=null)mouseRouting.release();if(virtualKeyboard!=null)virtualKeyboard.release();System.exit(0); }
+    private final TaskChangeMonitor taskChanges = new TaskChangeMonitor();
+    @Override public String observeTaskChanges(ITaskChangeListener listener) { return taskChanges.observe(listener); }
+    @Override public void removeTaskObserver(ITaskChangeListener listener) { taskChanges.remove(listener); }
     private static String exec(String... args) throws Exception {
         Process process = new ProcessBuilder(args).redirectErrorStream(true).start();
         ByteArrayOutputStream output = new ByteArrayOutputStream();

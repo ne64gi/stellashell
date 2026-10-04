@@ -1,4 +1,5 @@
 package net.fuyumori.stellashell;
+import net.fuyumori.stellashell.ITaskChangeListener;
 import android.os.ParcelFileDescriptor;
 interface IDesktopBridge {
     void destroy() = 16777114;
@@ -25,4 +26,6 @@ interface IDesktopBridge {
     String snapshotDisplayScale(int displayId) = 21;
     String applyDisplayScale(int displayId, String identity, int percent) = 22;
     String checkedTaskOperation(int displayId, int taskId, String component, String action, int left, int top, int right, int bottom) = 23;
+    String observeTaskChanges(ITaskChangeListener listener) = 24;
+    void removeTaskObserver(ITaskChangeListener listener) = 25;
 }
