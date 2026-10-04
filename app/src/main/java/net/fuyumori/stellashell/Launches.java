@@ -1,5 +1,9 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.launch.AppLaunchProfile;
+import net.fuyumori.stellashell.core.launch.Policy;
+import net.fuyumori.stellashell.core.tasks.TaskModes;
+
 import android.app.ActivityOptions;
 import android.content.*;
 import android.content.pm.*;

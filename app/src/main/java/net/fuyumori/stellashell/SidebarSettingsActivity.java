@@ -1,5 +1,7 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.navigation.NavigationScale;
+
 import android.app.Activity;
 import android.app.ActivityOptions;
 import android.app.AlertDialog;

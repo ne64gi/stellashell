@@ -1,5 +1,7 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.launch.Policy;
+
 import android.content.Context;
 import android.graphics.Rect;
 import android.os.Looper;

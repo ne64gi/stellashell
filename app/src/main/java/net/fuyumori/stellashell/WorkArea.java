@@ -1,5 +1,9 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.layout.WindowGeometry;
+import net.fuyumori.stellashell.core.navigation.NavigationScale;
+import net.fuyumori.stellashell.core.navigation.ShellPresentation;
+
 import android.content.Context;
 import android.graphics.*;
 import android.view.*;

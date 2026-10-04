@@ -31,7 +31,7 @@ Dockとタスクバーは別機能で、アプリのピン留めも別々です�
 ソースからのビルドにはJDK 17、Android SDK Platform 35／Build Tools 35.0.0を使います。`ANDROID_HOME`、またはローカルの `local.properties` の `sdk.dir` でSDKを指定します。Gradle 8.11.1はWrapperで取得します。
 
 ```sh
-./gradlew testDebugUnitTest lintDebug assembleDebug
+./gradlew :core:test testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest
 ```
 
 APKは `app/build/outputs/apk/debug/app-debug.apk`（開発用署名）。ビルド成功は端末での検証完了を意味しません。
@@ -58,4 +58,4 @@ Taskbar（Braden Farmer / contributors）とDextop（NarYuki / contributors）�
 
 本体・ドキュメント・同梱ヘルパーのGPL-3.0-or-laterへの整理は、過去の来歴問題そのものの解消を意味しません。[監査](docs/LICENSE-AUDIT-2026-09-29.md)・[修正履歴](docs/LICENSE-REMEDIATION-2026-09-29.md)を参照してください。
 
-内部の状態管理・寿命・設定互換の境界は [Shellの状態と所有境界](docs/STATE-OWNERSHIP.md) を参照。
+ソースの依存方向と拡張手順は [モジュール構成](docs/MODULES.md)、状態管理・寿命・設定互換は [Shellの状態と所有境界](docs/STATE-OWNERSHIP.md) を参照。

@@ -1,5 +1,7 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.layout.DockPlacement;
+
 import android.app.Instrumentation;
 import android.content.ComponentName;
 import android.content.Context;

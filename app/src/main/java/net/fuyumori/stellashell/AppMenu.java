@@ -1,5 +1,11 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.layout.DockPlacement;
+
+import net.fuyumori.stellashell.feature.search.WebSearchSettings;
+import net.fuyumori.stellashell.feature.search.SearchSettings;
+import net.fuyumori.stellashell.feature.search.StartSearchSession;
+
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
@@ -22,6 +28,8 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     private final WindowManager windows;
     private final int displayId;
     private final boolean activityHosted;
+    private final SearchSettings webSettings;
+    private StartSearchSession webSearchSession;
     private WorkArea area(){return activityHosted?WorkArea.read(context,windows.getCurrentWindowMetrics().getWindowInsets()):WorkArea.get(context,displayId);}
     private final List<Launches.App> all=new ArrayList<>();
     private final Set<android.app.AlertDialog> dialogs=new HashSet<>();
@@ -29,6 +37,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     private LinearLayout main,content;
     private ScrollView scroll;
     private EditText search;
+    private Button webSearchAction;
     private String openGroup;
     private View folderAnchor;
     private boolean hiddenMode,loaded,renderQueued,folderOnly;
@@ -36,7 +45,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     private PopupMenu activePopup;private long outsideDown=-1;
     void toggle(ExecutorService loader,long downTime){if(downTime>0&&downTime==outsideDown)return;open(loader);}
 
-    AppMenu(Context context,WindowManager windows,int displayId){this.context=context;this.windows=windows;this.displayId=displayId;this.activityHosted=context instanceof HomeActivity&&displayId==0;}
+    AppMenu(Context context,WindowManager windows,int displayId){this.context=context;this.windows=windows;this.displayId=displayId;this.activityHosted=context instanceof HomeActivity&&displayId==0;webSettings=WebSearchSettings.of(context);}
     boolean isOpen(){return root!=null;}
     void relayout(){
         if(root==null)return;WorkArea area=area();
@@ -56,6 +65,8 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         ShellPanels.release(displayId,this);
         AppOrganization.prefs(context).unregisterOnSharedPreferenceChangeListener(this);
         Launches.prefs(context).unregisterOnSharedPreferenceChangeListener(this);
+        if(webSearchSession!=null)webSearchSession.close();
+        webSearchSession=null;
         if(activePopup!=null)activePopup.dismiss();
         activePopup=null;
         for(android.app.AlertDialog dialog:new HashSet<>(dialogs))dialog.dismiss();
@@ -68,6 +79,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         content=null;
         scroll=null;
         search=null;
+        webSearchAction=null;
         folderLayer=null;
         folderAnchor=null;
         openGroup=null;
@@ -97,6 +109,19 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         heading.addView(search,new LinearLayout.LayoutParams(0,dp(48),1));
         Button settings=smallButton("⚙",context.getString(R.string.launcher_tools));settings.setTextSize(28);settings.setBackground(null);settings.setStateListAnimator(null);settings.setElevation(0);settings.setOnClickListener(v->tools(settings));heading.addView(settings,new LinearLayout.LayoutParams(dp(48),dp(48)));
         main.addView(heading);
+        webSearchAction=Ui.button(context,"",()->{});webSearchAction.setTextSize(14);webSearchAction.setMaxLines(1);webSearchAction.setEllipsize(TextUtils.TruncateAt.END);
+        webSearchAction.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);webSearchAction.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_menu_search,0,0,0);webSearchAction.setCompoundDrawablePadding(dp(8));
+        webSearchAction.setVisibility(View.GONE);main.addView(webSearchAction,new LinearLayout.LayoutParams(-1,dp(48)));
+        FrameLayout openedRoot=root;Button openedWebAction=webSearchAction;
+        StartSearchSession openedWebSession=new StartSearchSession(webSettings,(engine,query)->{
+            if(root!=openedRoot||webSearchAction!=openedWebAction)return false;
+            return WebSearchLauncher.open(context,displayId,engine,query);
+        },this::queueRender);
+        webSearchSession=openedWebSession;
+        webSearchAction.setOnClickListener(v->{
+            if(root!=openedRoot||webSearchAction!=openedWebAction)return;
+            if(openedWebSession.launch(search.getText().toString()))close();
+        });
         if(TaskState.of(context).compact(context,displayId))
             main.addView(Ui.text(context,context.getString(R.string.workspace_roles_hint),12,Ui.MUTED));
         scroll=new ScrollView(context);scroll.setFillViewport(false);scroll.setClipToPadding(false);scroll.setPadding(0,dp(8),0,0);
@@ -116,7 +141,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         View.OnKeyListener back=(v,key,event)->{
             if((key==KeyEvent.KEYCODE_ESCAPE||key==KeyEvent.KEYCODE_BACK)&&event.getAction()==KeyEvent.ACTION_UP){back();return true;}return false;
         };
-        root.setFocusableInTouchMode(true);root.setOnKeyListener(back);search.setOnKeyListener(back);dismissOnOutside(root);
+        root.setFocusableInTouchMode(true);root.setOnKeyListener(back);search.setOnKeyListener(back);webSearchAction.setOnKeyListener(back);dismissOnOutside(root);
         EditText openedSearch=search;
         search.addTextChangedListener(new TextWatcher(){
             public void beforeTextChanged(CharSequence s,int start,int count,int after){}
@@ -152,6 +177,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     private List<Launches.App> members(String group){List<Launches.App> apps=new ArrayList<>();for(Launches.App app:all)if(!AppOrganization.hidden(context,app.component)&&group.equals(AppOrganization.group(context,app.component)))apps.add(app);return apps;}
     private void render(){
         if(root==null)return;
+        updateWebSearch();
         int y=scroll.getScrollY();content.removeAllViews();
         if(!loaded){note(content,R.string.ui_loading);return;}
         String query=search.getText().toString().trim();
@@ -184,6 +210,14 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         FrameLayout renderedRoot=root;ScrollView renderedScroll=scroll;
         renderedScroll.post(()->{if(root==renderedRoot)renderedScroll.scrollTo(0,y);});
         if(openGroup!=null){if(!AppOrganization.groups(context).contains(openGroup))closeFolder();else buildFolder();}
+    }
+    private void updateWebSearch(){
+        StartSearchSession.State state=webSearchSession.state(search.getText().toString());
+        search.setHint(state.enabled?net.fuyumori.stellashell.feature.search.R.string.web_search_hint:R.string.ui_search_by_name);
+        search.setContentDescription(context.getString(state.enabled?net.fuyumori.stellashell.feature.search.R.string.web_search_hint:R.string.ui_search_apps));
+        webSearchAction.setVisibility(state.visible?View.VISIBLE:View.GONE);
+        if(state.visible){String label=context.getString(net.fuyumori.stellashell.feature.search.R.string.web_search_action,state.engineName,state.query);webSearchAction.setText(label);webSearchAction.setContentDescription(label);}
+        else{webSearchAction.setText("");webSearchAction.setContentDescription(null);}
     }
     private View grid(List<View> tiles,int columns){
         LinearLayout rows=Ui.column(context);
@@ -247,6 +281,10 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     }
     @Override public void onSharedPreferenceChanged(SharedPreferences prefs,String key){
         if(root==null || prefs==Launches.prefs(context)&&!WorkspaceProfile.changed(key,"start_pinned")&&!IconTheme.changed(key))return;
+        queueRender();
+    }
+    private void queueRender(){
+        if(root==null)return;
         if(renderQueued)return;renderQueued=true;FrameLayout generation=root;
         root.post(()->{if(root==generation){renderQueued=false;render();}});
     }
@@ -283,6 +321,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         desktopAction(customize,R.string.ui_new_shortcut,2);
         desktopAction(customize,R.string.ui_snap_icons_to_grid,1);
         SubMenu settings=menu.addSubMenu(R.string.menu_settings);
+        settings.add(net.fuyumori.stellashell.feature.search.R.string.web_search_settings_title).setOnMenuItemClickListener(item->{close();SearchSettingsActivity.open(context,displayId);return true;});
         settings.add(R.string.menu_android_settings).setOnMenuItemClickListener(item->{
             close();
             try{

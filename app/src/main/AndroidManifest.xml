@@ -29,6 +29,8 @@
             android:launchMode="singleTask" android:taskAffinity="net.fuyumori.stellashell.sidebarsettings" android:excludeFromRecents="true" />
         <activity android:name=".TaskbarSettingsActivity" android:exported="false" android:resizeableActivity="true"
             android:launchMode="singleTask" android:taskAffinity="net.fuyumori.stellashell.taskbarsettings" android:excludeFromRecents="true" />
+        <activity android:name=".SearchSettingsActivity" android:exported="false" android:resizeableActivity="true"
+            android:launchMode="singleTask" android:taskAffinity="net.fuyumori.stellashell.searchsettings" android:excludeFromRecents="true" />
         <activity android:name=".DisplaySettingsActivity" android:exported="false" android:resizeableActivity="true"
             android:launchMode="singleTask" android:taskAffinity="net.fuyumori.stellashell.displaysettings" android:excludeFromRecents="true" />
         <activity android:name=".SetupActivity" android:exported="true">

@@ -1,5 +1,8 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.launch.AppLaunchProfile;
+import net.fuyumori.stellashell.core.navigation.NavigationScale;
+
 import android.content.*;
 import android.content.pm.PackageManager;
 import android.graphics.PixelFormat;

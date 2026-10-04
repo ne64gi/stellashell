@@ -1,5 +1,8 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.display.HomeMode;
+import net.fuyumori.stellashell.core.display.HomeOutputRecovery;
+
 import android.content.*;
 import android.os.Bundle;
 import android.provider.Settings;

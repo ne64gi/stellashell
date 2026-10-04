@@ -13,6 +13,8 @@
 | 本体Dock / Taskbarの寿命・Startの振分け | `PhoneNavigationOwner` | 設定をreconcileする。生成・close・実readyの判定はownerへ任せる |
 | 一つの出力のTaskbar / Dock / Start / caption / WorkArea監視 | `SelectedOutputSurface` | 出力の寿命内で生成・破棄する。別出力や本体navigationのViewを共有しない |
 | 選択出力のtask snapshot・操作・Workspaceの所有identity / role / transfer | `TaskState` | 不変`TaskSnapshot`を読む。identity付きcommandを送る。内部`TaskSession`・`Workspace`を操作しない |
+| StartのWeb検索先 | `feature-search`の`SearchSettings` / `WebSearchSettings` | 不変snapshotと型付き保存・購読を使う。windowごとの`StartSearchSession`が明示操作だけをappの`WebSearchLauncher`へ渡す |
+| アプリ別の次回起動設定と観測済みbounds | `core.launch.LaunchProfileOwner` | 不変snapshotを読み、項目別commandで更新する。Android保存は`LaunchProfilePreferencesStore`、JSON互換は`LaunchProfileCodec`が担当 |
 
 `DockService`はforeground通知とAndroid lifecycleの入口。設定、View、タスク一覧、staticなService実体を持たない。
 
@@ -25,6 +27,12 @@
 - pins / Start pins / wallpaper / shortcutsの本体・外部profile、通知、アイコン、外観、system display densityは各既存domainの所有者を維持する。全設定を一つの巨大managerへ統合しない。
 
 DockとTaskbarは別の設定・pins・倍率を持つ。外部Taskbarの常設仕様、本体navigationが外部選択出力から独立する仕様は変更しない。
+
+Web検索は独立した`web_search`保存領域で、本体／外部共通・初期OFF。検索語や履歴は永続化せず、入力中の通信も行わない。windowごとの`StartSearchSession`が検索先の購読とnavigatorを所有し、closeで解除・解放する。Viewはapp側のメニューが所有し、古いactionは新しいwindowへ操作を送れない。検索を開く際はAndroidのURL解決とdisplay指定を使い、Bridgeやtask identityの窓口は変更しない。
+
+起動profileの表示は不変snapshot。画面で読んだprofile全体を書き戻さず、変更する項目だけを最新の保存値へmergeする。bounds観測とモード・サイズ・位置の設定が交差しても別項目を失わない。`Profiles.get`のlegacy planner値は毎回detached copyで、保存の正本にはしない。`launch_profiles`のversion 1 JSON・17項目・alias優先順・absolute座標と既定freeformは維持する。adapter全体をstatic cacheで保持しない。
+
+検索と検索設定の画面検証は`Displays.requireUiTarget`を使う。本体の通常操作はDesktopの稼働・選択モードに依存しない。切断・不明・privateな出力は拒否し、本体へ自動転送しない。タスク操作用`Displays.require`のworkspace制約は別に維持する。
 
 ## 寿命と不変条件
 
@@ -41,5 +49,7 @@ DockとTaskbarは別の設定・pins・倍率を持つ。外部Taskbarの常設�
 JVMの`ShellRuntimeRegistryTest`、`PhoneNavigationOwnerTest`、`TaskSnapshotTest`とownership fitness testが、世代・可視lease・生成/close・不変snapshot・consumerの境界を確認する。設定互換と実Android View/Bridgeの試験はAndroidTest側で分ける。
 
 隔離fixtureでは`ShellSettings.Provider` / `TaskState.Provider`からnonce保存領域に対応したownerを注入し、派生display/window Contextでも同じownerを使う。productionのService stateへ反射でfixture状態を設定しない。テスト専用のView観測は`ShellFixtureAccess`へ集約する。
+
+依存方向と新機能の配置は[モジュール構成](MODULES.md)を参照。coreのAndroid非依存、feature/platformのapp逆依存禁止、保存ownerと項目別commandは`ModuleArchitectureFitnessTest`と各moduleのcompileで固定する。
 
 実装・build・端末導入・実機PASSは別の証跡で確認する。この文書自体を実機PASSの証明にはしない。

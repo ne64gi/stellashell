@@ -1,5 +1,7 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.layout.WidgetGeometry;
+
 import android.content.Context;
 import android.view.View;
 import android.view.ViewGroup;

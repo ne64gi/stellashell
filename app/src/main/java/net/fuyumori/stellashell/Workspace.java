@@ -1,5 +1,7 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.tasks.WorkspaceOperations;
+
 import android.content.Context;
 import android.graphics.Rect;
 import org.json.*;

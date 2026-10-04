@@ -1,5 +1,7 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.tasks.TaskModes;
+
 import android.app.Instrumentation;
 import android.content.Context;
 import android.content.res.Configuration;

@@ -1,5 +1,7 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.launch.Policy;
+
 import android.content.Context;
 import android.hardware.display.DisplayManager;
 import android.view.Display;
@@ -39,6 +41,13 @@ final class Displays {
         Policy.requireTarget(id,allIds(context),primaryActive(context));
         Display d=context.getSystemService(DisplayManager.class).getDisplay(id);
         if(d==null || !d.isValid()) throw new IllegalArgumentException(context.getString(R.string.ui_the_external_display_is_disconnected));
+        return d;
+    }
+    /** Explicit UI actions use their own public screen, independently of workspace selection. */
+    static Display requireUiTarget(Context context,int id) {
+        Display d=context.getSystemService(DisplayManager.class).getDisplay(id);
+        if(id<0 || d==null || !d.isValid() || (d.getFlags()&Display.FLAG_PRIVATE)!=0)
+            throw new IllegalArgumentException(context.getString(R.string.ui_the_external_display_is_disconnected));
         return d;
     }
 }

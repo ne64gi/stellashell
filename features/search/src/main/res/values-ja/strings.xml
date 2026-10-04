@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="web_search_settings_title">検索エンジン</string>
+    <string name="web_search_settings_summary">スタートからのWeb検索を設定</string>
+    <string name="web_search_back">戻る</string>
+    <string name="web_search_settings_note">アプリ検索はそのまま使えます。Web検索は、検索ボタンを選んだときだけ開きます。</string>
+    <string name="web_search_off">Web検索を使用しない</string>
+    <string name="web_search_custom">独自の検索エンジン</string>
+    <string name="web_search_custom_name">名前</string>
+    <string name="web_search_custom_url">検索URL</string>
+    <string name="web_search_template_note" formatted="false">URL内の検索語を {query} または %s に置き換えます。例：https://example.com/search?q={query}</string>
+    <string name="web_search_name_invalid">60文字以内の名前を入力してください。</string>
+    <string name="web_search_url_invalid" formatted="false">http または https のURLを入力し、パスか検索条件に {query} または %s を1つ入れてください。</string>
+    <string name="web_search_hint">アプリやWebを検索</string>
+    <string name="web_search_action">%1$sで「%2$s」をWeb検索</string>
+    <string name="web_search_open_failed">検索を開けませんでした。ブラウザが使えるか確認してください。</string>
+    <string name="web_search_settings_open_failed">検索設定を開けませんでした。</string>
+</resources>

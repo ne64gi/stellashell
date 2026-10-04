@@ -1,5 +1,7 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.layout.WidgetGeometry;
+
 import android.app.*;
 import android.appwidget.*;
 import android.content.*;
