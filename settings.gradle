@@ -4,6 +4,7 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = 'StellaShell'
-include ':app', ':core', ':feature-search', ':platform-bridge'
+include ':app', ':core', ':feature-search', ':platform-bridge', ':feature-launch'
 project(':feature-search').projectDir = file('features/search')
 project(':platform-bridge').projectDir = file('platform/bridge')
+project(':feature-launch').projectDir = file('features/launch')
