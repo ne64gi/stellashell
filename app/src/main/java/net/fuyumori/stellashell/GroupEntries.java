@@ -23,11 +23,12 @@ final class GroupEntries {
     static void validate(Context c,String item){if(isGroup(item)){if(name(c,item)==null)throw new IllegalArgumentException("Unknown group");}else Policy.component(item);}
     static void removeReferences(Context c,String id){
         if(id.isEmpty())return;String token="group:"+id;SharedPreferences prefs=Launches.prefs(c);SharedPreferences.Editor edit=prefs.edit();
-        for(String key:new String[]{"start_pinned","phone_start_pinned","desktop_shortcuts","phone_desktop_shortcuts"}){
+        for(String key:new String[]{"start_pinned","phone_start_pinned"}){
             if(!prefs.contains(key))continue;
             List<String> items=new ArrayList<>(Arrays.asList(prefs.getString(key,"").split("\\n")));
             if(items.remove(token))edit.putString(key,String.join("\n",items));
         }
+        Launches.removeDesktopReference(c,token);
         edit.apply();
         for(String file:new String[]{"shortcut_positions","phone_shortcut_positions"})c.getSharedPreferences(file,0).edit().remove(token).apply();
     }

@@ -21,10 +21,15 @@ final class LauncherEntryChecks {
         }
         boolean absent=false;try{Launches.normalAppIntent(base,"fixture.missing.launcher/.Main");}catch(ActivityNotFoundException expected){absent=true;}check(absent,"Missing package silently launched another app");
         Intent[] sent={null};Bundle[] options={null};
-        Context captured=new ContextWrapper(base){
-            @Override public SharedPreferences getSharedPreferences(String name,int mode){return base.getSharedPreferences("launcher_entry_checks",mode);}
+        String preferenceFile="launcher_entry_checks_"+java.util.UUID.randomUUID();
+        TaskState isolated=TaskState.isolated(base);
+        class CapturedContext extends ContextWrapper implements TaskState.Provider {
+            CapturedContext(){super(base);}
+            @Override public TaskState taskState(){return isolated;}
+            @Override public SharedPreferences getSharedPreferences(String name,int mode){return base.getSharedPreferences(preferenceFile,mode);}
             @Override public void startActivity(Intent intent,Bundle bundle){sent[0]=new Intent(intent);options[0]=bundle;}
-        };
+        }
+        Context captured=new CapturedContext();
         try{
             Launches.prefs(captured).edit().clear().commit();
             Launches.normalApp(captured,pkg+"/net.fuyumori.stellashell.LauncherEntryPrivate");
@@ -32,7 +37,18 @@ final class LauncherEntryChecks {
             int flags=Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED;
             check((sent[0].getFlags()&flags)==flags,"Standard launch flags lost");
             check(Launches.recents(captured).size()==1,"Normal app recent entry lost");
-        }finally{Launches.prefs(captured).edit().clear().commit();}
+            // Exercise the actual request/decision/queue/executor path, but capture the owned APK's intent.
+            sent[0]=null;options[0]=null;Throwable[] queuedError={null};
+            test.runOnMainSync(()->{try{
+                check(!Launches.pending(),"Unexpected pending launch before owned captured request");
+                Launches.app(captured,second,0);
+                check(!Launches.pending(),"Captured ordinary-phone request did not finish its queue job");
+            }catch(Throwable error){queuedError[0]=error;}});
+            if(queuedError[0]!=null)throw new AssertionError(queuedError[0]);
+            check(sent[0]!=null&&sent[0].getComponent().equals(ComponentName.unflattenFromString(second)),"Queued normal-phone launcher alias changed");
+            check((sent[0].getFlags()&flags)==flags&&options[0]!=null,"Queued normal launch flags/options changed");
+            check(Launches.recents(captured).size()==2,"Queued executor did not record the requested alias separately");
+        }finally{test.runOnMainSync(isolated::closeOwner);base.deleteSharedPreferences(preferenceFile);}
         if(launchComponent!=null){
             Intent resolved=Launches.normalAppIntent(base,launchComponent);
             ActivityInfo info=base.getPackageManager().getActivityInfo(resolved.getComponent(),0);

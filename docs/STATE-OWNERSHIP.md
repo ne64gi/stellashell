@@ -6,6 +6,10 @@
 
 | 対象 | 正本・窓口 | 呼び出し側の責務 |
 | --- | --- | --- |
+| 4系統のpins・共通recent・profile別desktop配置 | feature-launchの`LaunchItems` | 不変snapshotを読む。toggle/remember/remove-reference commandを使い、保存文字列を直接編集しない |
+| app catalog・公開launcher解決 | `AppCatalog` / `PublicLauncher` | entryをViewへ変換する。実行後のrecentやShell状態はapp executorへ委ねる |
+| 起動route・起動順序 | coreの`AppLaunchDecision` / `SerialLaunchQueue` | 不変request/facts、scheduler・busy・actionを渡す。完了はそのjobのtokenのみで通知する |
+| Android / Bridge起動とTaskStateへの配線 | `ShellLaunchExecutor` / `ShellLaunchCoordinator` | UIは`Launches`の互換窓口を使う。TaskState/profile保存の正本を複製しない |
 | Dock / Taskbar / 表示形式 / Workspaceの構成・次回出力選好 | `ShellSettings` | 不変の設定snapshotを読む。型付きsetterで変更し、型付きChange通知を購読・解除する |
 | 実行中・実際の選択出力・phone navigationの準備状態 | `ShellRuntime`の世代付きregistry | snapshotを読む。開始・停止・Start要求などのcommandを送る。ServiceやViewを取得しない |
 | HOMEの可視状態 | `ShellRuntime.HomeVisibilityLease` | Activityごとのleaseを表示・非表示・closeする。複数Activityの可視状態を一つのbooleanで上書きしない |
@@ -33,6 +37,8 @@ Web検索は独立した`web_search`保存領域で、本体／外部共通・�
 起動profileの表示は不変snapshot。画面で読んだprofile全体を書き戻さず、変更する項目だけを最新の保存値へmergeする。bounds観測とモード・サイズ・位置の設定が交差しても別項目を失わない。`Profiles.get`のlegacy planner値は毎回detached copyで、保存の正本にはしない。`launch_profiles`のversion 1 JSON・17項目・alias優先順・absolute座標と既定freeformは維持する。adapter全体をstatic cacheで保持しない。
 
 検索と検索設定の画面検証は`Displays.requireUiTarget`を使う。本体の通常操作はDesktopの稼働・選択モードに依存しない。切断・不明・privateな出力は拒否し、本体へ自動転送しない。タスク操作用`Displays.require`のworkspace制約は別に維持する。
+
+起動queueは既存のprocess-wide main-loop順序を維持する。waiting/activeを含むpending判定、先頭jobのbusy待ち、RuntimeException後の解放を一つのownerが持つ。同期完了は反復drainで処理し、重複・遅延したcompletionは次jobを解放しない。通常本体起動はworkspaceの選択・Bridge・profile plannerを必要としない。保存profileからのdesktop/freeform計画、task role、session barrier、HOME/PiPの操作契約は従来のまま。
 
 ## 寿命と不変条件
 

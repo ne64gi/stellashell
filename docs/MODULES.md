@@ -6,6 +6,8 @@
 graph TD
     APP[app: UI / lifecycle / adapters] --> CORE[core: pure Java domain]
     APP --> SEARCH[feature-search: settings / Start session]
+    APP --> LAUNCH[feature-launch: catalog / public launcher / launch items]
+    LAUNCH --> CORE
     APP --> BRIDGE[platform-bridge: privileged server / Binder]
     SEARCH --> CORE
     BRIDGE --> CORE
@@ -15,14 +17,15 @@ graph TD
 
 | Gradle module / directory | 所有する責務 | 依存してはいけないもの |
 | --- | --- | --- |
-| `:core` / `core/` | geometry、launch profile、task/display/input policy、限定transaction、検索URL | Android、JSON、View、app・feature・platformの実装 |
+| `:core` / `core/` | geometry、launch profile、task/display/input policy、限定transaction、検索URL、起動routeと直列queue | Android、JSON、View、app・feature・platformの実装 |
 | `:feature-search` / `features/search/` | 検索設定の保存・購読とwindow単位の明示検索操作 | app型、Bridge、ShellRuntime、他feature |
+| `:feature-launch` / `features/launch/` | app catalog、公開launcher解決、4系統pins・recent・desktop配置の保存 | app型、Bridge、ShellRuntime、他feature |
 | `:platform-bridge` / `platform/bridge/` | 特権task・display・input・density・capture操作とAIDL server | app画面、app resources、app保存設定、ShellRuntime |
-| `:app` / `app/` | Activity/Service入口、View、配線、Androidの通常起動、保存adapter、Shell/task owner | 下位moduleの内部stateを別の正本として保持すること |
+| `:app` / `app/` | Activity/Service入口、View、配線、起動executor・Shell coordinator、保存adapter、Shell/task owner | 下位moduleの内部stateを別の正本として保持すること |
 
 core は Java 17 library。他のmoduleは Android library / application。Gradle が下位moduleからappへの参照を拒否する。`ModuleArchitectureFitnessTest`は許可したproject依存、core/featureのpackage/import、保存owner、移動済み型の重複を検査する。
 
-coreのpackageは `net.fuyumori.stellashell.core.{layout,navigation,launch,tasks,display,input,settings,assets,search}`。検索featureは `net.fuyumori.stellashell.feature.search`。
+coreのpackageは `net.fuyumori.stellashell.core.{layout,navigation,launch,tasks,display,input,settings,assets,search}`。検索featureは `net.fuyumori.stellashell.feature.search`、起動featureは `net.fuyumori.stellashell.feature.launch`。
 
 platform bridgeは既存Java/AIDL package `net.fuyumori.stellashell` を維持する。Shizukuが起動する`DesktopBridgeService`のFQCN、Binder descriptor・transaction ID・引数・JSON schemaを変えないための互換境界であり、appへの逆依存を認める例外ではない。Bridge clientの接続・設定・UI policyはappに残す。
 
@@ -32,6 +35,10 @@ platform bridgeは既存Java/AIDL package `net.fuyumori.stellashell` を維持�
 - appの`AppMenu`はViewと検索入力、`SearchSettingsActivity`は設定画面、`WebSearchLauncher`はAndroid URL解決・現在displayへの起動だけを担当する。featureからそれらの型を呼ばず、navigator/callbackを注入する。
 - 起動profileは `LaunchProfileOwner` / `LaunchProfileSnapshot`。`setMode` / `setSize` / `setPosition` / `setRememberBounds` / `setCustomSize` / 観測commandだけを使う。古いsnapshot全体の保存窓口は提供しない。
 - 保存port `LaunchProfileStore` を実装するAndroid adapterだけが`launch_profiles`を開く。同じ保存領域を包むadapterは共通lock上でread/merge/writeする。既存JSON互換は`LaunchProfileCodec`が担当する。
+- `AppCatalog`はcatalogの取得、`PublicLauncher`は同じpackage内の公開launcher解決と通常Android起動。catalogの不変entryをapp側のView型へ変換し、内部Activity・権限保護・stale entryのfallbackと明示aliasを維持する。
+- `LaunchItems`は注入された既存SharedPreferencesの4系統pins・共通recent・profile別desktop配置だけを所有する。読み取りは不変detached snapshot、操作は最新値へのcommand。同じSharedPreferences上のlockで複数adapterの更新を直列化する。group参照の削除もこの窓口を使う。legacy初期profile copyだけはappの`WorkspaceProfile`に残る。
+- coreの`AppLaunchDecision`は不変requestとworkspace factsからroute/geometryを決める。通常本体起動はworkspace factsを要求しない。`SerialLaunchQueue`はFIFO・busy retry・job固有の一度だけ有効なcompletionを所有し、古い完了が次のjobを解放しない。
+- appの`ShellLaunchCoordinator`はmain-loop schedulerとTaskStateへの配線、`ShellLaunchExecutor`はAndroid/Bridge実行・既存session barrier・結果反映。`Launches`は互換facadeであり、queue/catalog取得/launch items保存の正本を持たない。HOME・PiPの挙動はこの分離で変更しない。
 - Shell設定・実行画面・task状態は従来の独立ownerを維持する。[所有境界](STATE-OWNERSHIP.md)を参照。
 
 ## 新機能を追加するとき
@@ -48,13 +55,13 @@ platform bridgeは既存Java/AIDL package `net.fuyumori.stellashell` を維持�
 ./gradlew :core:test testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest
 ```
 
-`:core:test`はpure Java、root task selectorsはappとAndroid librariesのunit/lint/buildを対象にする。CIも同じ対象を実行する。AndroidTestはCIではcompileのみ。端末上のprofile JSON互換、検索設定、Start lifetime、Shell owner、navigation、pin backend等は隔離fixtureで別に確認する。build成功をOEM・物理入力・実外部画面のPASSとは扱わない。
+`:core:test`はpure Java、root task selectorsはappとAndroid librariesのunit/lint/buildを対象にする。CIも同じ対象を実行する。AndroidTestはCIではcompileのみ。端末上のprofile JSON互換、4pins/recent/desktop保存と公開launcher alias、検索設定、Start lifetime、Shell owner、navigation、pin backend等は隔離fixtureで別に確認する。build成功をOEM・物理入力・実外部画面のPASSとは扱わない。
 
 ## 残る分割対象
 
 これは既存挙動を保った依存基盤であり、全画面を小さなfeatureへ移し終えた状態ではない。
 
-- `Launches`はcatalog/pins/recents/通常起動/特権起動をまだ扱う。次の分割ではrequest/decisionとAndroid executorを切り分け、HOME・公開launcherのfallbackを別契約にする。
+- `Launches`の互換facadeには設定画面・desktop action・エラー表示のapp配線が残る。HOMEの全task最小化とopaque desktop前面化は既知の別修正対象。今回のqueue整理をHOME修正とは扱わない。
 - `Profiles`のlaunch-in-flight / cascade / task-key対応付けはappの既存coordinatorに残る。ID再利用とsession identityの改善は保存ownerの分離と別に扱う。
 - `TaskSnapshot`のAndroid/JSON parse、workspace orchestration、`DesktopWidgets`や通知・アイコン・外観のView/adapterはappに残る。固まった契約から順にfeatureへ移す。
 - appの`Bridge`は接続transportとShell policyの両方を持つ。server側のmodule分離を根拠に、clientのpolicyまで特権側へ移さない。

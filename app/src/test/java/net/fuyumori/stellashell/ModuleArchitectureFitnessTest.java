@@ -25,8 +25,9 @@ public final class ModuleArchitectureFitnessTest {
         Path root=root();
         assertEquals(set(),dependencies(root.resolve("core/build.gradle")));
         assertEquals(set(":core"),dependencies(root.resolve("features/search/build.gradle")));
+        assertEquals(set(":core"),dependencies(root.resolve("features/launch/build.gradle")));
         assertEquals(set(":core"),dependencies(root.resolve("platform/bridge/build.gradle")));
-        assertEquals(set(":core",":feature-search",":platform-bridge"),dependencies(root.resolve("app/build.gradle")));
+        assertEquals(set(":core",":feature-search",":feature-launch",":platform-bridge"),dependencies(root.resolve("app/build.gradle")));
         assertTrue(read(root.resolve("core/build.gradle")).contains("java-library"));
         assertFalse(read(root.resolve("core/build.gradle")).contains("com.android"));
     }
@@ -34,6 +35,7 @@ public final class ModuleArchitectureFitnessTest {
         Path root=root();List<String> violations=new ArrayList<>();
         inspect(root.resolve("core/src/main/java"),"net.fuyumori.stellashell.core",true,violations);
         inspect(root.resolve("features/search/src/main/java"),"net.fuyumori.stellashell.feature.search",false,violations);
+        inspect(root.resolve("features/launch/src/main/java"),"net.fuyumori.stellashell.feature.launch",false,violations);
         // Privileged Java/AIDL retain their legacy package for wire and Shizuku entry compatibility.
         inspect(root.resolve("platform/bridge/src/main/java"),"net.fuyumori.stellashell",false,violations);
         assertTrue(String.join("\n",violations),violations.isEmpty());
@@ -46,7 +48,7 @@ public final class ModuleArchitectureFitnessTest {
     }
     @Test public void settingsKeysAreOwnedByDomainAdaptersAndUiUsesCommands()throws Exception {
         Path root=root();List<String> violations=new ArrayList<>();
-        for(String module:Arrays.asList("app","core","features/search","platform/bridge")){
+        for(String module:Arrays.asList("app","core","features/search","features/launch","platform/bridge")){
             Path directory=root.resolve(module+"/src/main/java");
             try(Stream<Path> files=Files.walk(directory)){
                 files.filter(p->p.toString().endsWith(".java")).forEach(path->{
@@ -65,10 +67,16 @@ public final class ModuleArchitectureFitnessTest {
                     }
                     if(Pattern.compile("\\bProfiles\\s*\\.\\s*save\\s*\\(").matcher(source).find())
                         violations.add(relative+" writes a stale whole profile instead of a field command");
+                    if(!module.equals("features/launch")&&!relative.endsWith("/WorkspaceProfile.java")
+                            &&Pattern.compile("(?:getString|putString)\\s*\\(\\s*\"(?:recent|pinned|phone_pinned|phone_taskbar_pinned|dock_pinned|desktop_shortcuts|phone_desktop_shortcuts)\"").matcher(source).find())
+                        violations.add(relative+" bypasses LaunchItems storage owner");
                 });
             }
         }
         assertTrue(String.join("\n",violations),violations.isEmpty());
+        String facade=read(root.resolve("app/src/main/java/net/fuyumori/stellashell/Launches.java"));
+        for(String global:Arrays.asList("appQueue","appLaunching","appHandler","appDone","queryIntentActivities"))
+            assertFalse("Launch facade regained an owner/PackageManager implementation: "+global,facade.contains(global));
         for(String legacy:Arrays.asList("Policy","AppLaunchProfile","WindowGeometry","SearchEngine","WebSearchSettings",
                 "DesktopBridgeService","TaskBackend","FrameworkTaskAccess","TaskPins","MouseRouting",
                 "VirtualKeyboardPolicy","PrimaryScreenPower","DesktopCapture","DisplaySessions","ScreenScaling"))
