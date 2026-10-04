@@ -11,7 +11,7 @@ import java.util.concurrent.*;
 /** Disposable fixture windows only; restores every preference changed by this check. */
 final class DesktopPolishChecks {
     private final Instrumentation test;private final Context context;private final int display;private final boolean pauseShell;
-    private final List<Integer> fixtures=new ArrayList<>();private TaskSession session;private WindowChrome chrome;private AppMenu menu;
+    private final List<Integer> fixtures=new ArrayList<>();private TaskState session;private TaskState.OutputLease taskLease;private WindowChrome chrome;private AppMenu menu;
     private final ExecutorService loader=Executors.newSingleThreadExecutor();
     DesktopPolishChecks(Instrumentation test,int display,boolean pauseShell){this.test=test;this.context=test.getTargetContext();this.display=display;this.pauseShell=pauseShell;}
     private void main(Runnable action){Throwable[] error={null};test.runOnMainSync(()->{try{action.run();}catch(Throwable t){error[0]=t;}});if(error[0]!=null)throw new AssertionError(error[0]);}
@@ -42,9 +42,9 @@ final class DesktopPolishChecks {
         SharedPreferences profiles=context.getSharedPreferences("launch_profiles",Context.MODE_PRIVATE);
         Map<String,?> previousProfiles=profiles.getAll();
         int[] originalFocus={-1};
-        Runnable panels=()->{if(chrome!=null&&session!=null)chrome.update(session.tasks());};
+        Runnable panels=()->{if(chrome!=null&&session!=null)chrome.update(session.snapshot().tasks);};
         try{
-            if(running)main(()->DockService.stop(context,false));
+            if(running)main(()->ShellRuntime.stop(context,false));
             main(()->{prefs.edit().putBoolean("enabled",true).putBoolean("primary_mode",display==0).putString("shell_layout",display==0?"compact":"desktop").apply();Bridge.get(context).connect();});
             await(()->Bridge.get(context).ready(),"Shizuku not connected");
             JSONArray originalRows=new JSONObject(call(bridge->bridge.taskSnapshot(display))).getJSONArray("tasks");
@@ -53,41 +53,41 @@ final class DesktopPolishChecks {
             if(display==0){
                 String first="net.fuyumori.stellashell.test/net.fuyumori.stellashell.PolishPrimaryActivity";
                 String second="net.fuyumori.stellashell.test/net.fuyumori.stellashell.PolishSecondaryActivity";
-                main(()->{Workspace.reset(context);Launches.app(context,first,0);Launches.app(context,second,0);});
-                await(()->!Launches.pending()&&!Workspace.isBusy()&&Workspace.primary()==primary,"Sequential default launches did not keep the first app primary");
+                main(()->{TaskState.of(context).reset(context);Launches.app(context,first,0);Launches.app(context,second,0);});
+                await(()->!Launches.pending()&&!TaskState.of(context).isBusy()&&TaskState.of(context).primary()==primary,"Sequential default launches did not keep the first app primary");
                 call(s->s.taskOperation(0,secondary,"focus",0,0,0,0));
-                if(Workspace.primary()!=primary)throw new AssertionError("Focusing secondary promoted it");
+                if(TaskState.of(context).primary()!=primary)throw new AssertionError("Focusing secondary promoted it");
                 JSONArray tasks=new JSONObject(call(s->s.taskSnapshot(0))).getJSONArray("tasks");JSONObject a=null,b=null;
                 for(int i=0;i<tasks.length();i++){JSONObject row=tasks.getJSONObject(i);if(row.getInt("id")==primary)a=row;if(row.getInt("id")==secondary)b=row;}
                 if(a==null||b==null||a.getInt("mode")!=1||b.getInt("mode")!=5||!a.getBoolean("visible")||!b.getBoolean("visible")||b.getInt("right")-b.getInt("left")>=a.getInt("right")-a.getInt("left"))throw new AssertionError("Primary and secondary not simultaneously visible at distinct sizes");
                 call(s->s.taskOperation(0,secondary,"fullscreen",0,0,0,0));
-                JSONArray drifted=new JSONObject(call(s->s.taskSnapshot(0))).getJSONArray("tasks");List<TaskSession.Task> changed=new ArrayList<>();
-                for(int i=0;i<drifted.length();i++)changed.add(new TaskSession.Task(drifted.getJSONObject(i)));
-                main(()->Workspace.observe(context,0,changed));await(()->!Workspace.isBusy(),"Secondary mode repair did not finish");
+                JSONArray drifted=new JSONObject(call(s->s.taskSnapshot(0))).getJSONArray("tasks");List<TaskSnapshot.Task> changed=new ArrayList<>();
+                for(int i=0;i<drifted.length();i++)changed.add(new TaskSnapshot.Task(drifted.getJSONObject(i)));
+                main(()->TaskState.of(context).observe(context,0,changed));await(()->!TaskState.of(context).isBusy(),"Secondary mode repair did not finish");
                 JSONArray repaired=new JSONObject(call(s->s.taskSnapshot(0))).getJSONArray("tasks");
                 for(int i=0;i<repaired.length();i++)if(repaired.getJSONObject(i).getInt("id")==secondary&&repaired.getJSONObject(i).getInt("mode")!=5)throw new AssertionError("Secondary fullscreen drift was not repaired");
-                main(()->Workspace.role(context,secondary,0,true));await(()->!Workspace.isBusy()&&Workspace.primary()==secondary,"Role swap failed");
-                call(s->s.taskOperation(0,primary,"focus",0,0,0,0));if(Workspace.primary()!=secondary)throw new AssertionError("Demoted task focus changed primary");
-                main(()->{DockService.enableHome(context,true);Launches.home(context,0);});
-                await(()->!Launches.pending()&&Workspace.needsPrimary(),"Show desktop did not prepare next primary");
+                TaskSnapshot.Task roleTarget=new TaskSnapshot.Task(b);main(()->TaskState.of(context).role(context,roleTarget,0,true));await(()->!TaskState.of(context).isBusy()&&TaskState.of(context).primary()==secondary,"Role swap failed");
+                call(s->s.taskOperation(0,primary,"focus",0,0,0,0));if(TaskState.of(context).primary()!=secondary)throw new AssertionError("Demoted task focus changed primary");
+                main(()->{ShellRuntime.enableHome(context,true);Launches.home(context,0);});
+                await(()->!Launches.pending()&&TaskState.of(context).needsPrimary(),"Show desktop did not prepare next primary");
                 JSONArray hidden=new JSONObject(call(s->s.taskSnapshot(0))).getJSONArray("tasks");int remaining=0;
                 for(int i=0;i<hidden.length();i++){JSONObject row=hidden.getJSONObject(i);if(row.getInt("id")==primary||row.getInt("id")==secondary){remaining++;if(row.optBoolean("visible"))throw new AssertionError("Show desktop left a fixture visible");}}
                 if(remaining!=2)throw new AssertionError("Show desktop closed a fixture");
                 main(()->Launches.app(context,first,0));
-                await(()->!Launches.pending()&&Workspace.primary()==primary,"First launch after desktop did not become primary");
+                await(()->!Launches.pending()&&TaskState.of(context).primary()==primary,"First launch after desktop did not become primary");
                 main(()->Launches.app(context,second,0,false,false));
-                await(()->!Launches.pending()&&Workspace.primary()==secondary,"Explicit primary launch ignored");
+                await(()->!Launches.pending()&&TaskState.of(context).primary()==secondary,"Explicit primary launch ignored");
                 main(()->Launches.app(context,second,0,false,true));
-                await(()->!Launches.pending()&&Workspace.primary()==-1,"Explicit secondary launch ignored");
+                await(()->!Launches.pending()&&TaskState.of(context).primary()==-1,"Explicit secondary launch ignored");
                 main(()->Launches.app(context,first,0));
-                await(()->!Launches.pending()&&Workspace.primary()==primary,"Missing primary was not replaced");
+                await(()->!Launches.pending()&&TaskState.of(context).primary()==primary,"Missing primary was not replaced");
                 // A failed launch must not consume the next-primary decision or block the queue.
                 main(()->{Launches.home(context,0);Launches.app(context,"net.fuyumori.stellashell.test/net.fuyumori.stellashell.MissingActivity",0);Launches.app(context,second,0);});
-                await(()->!Launches.pending()&&Workspace.primary()==secondary,"Failed launch consumed primary selection or stalled queue");
+                await(()->!Launches.pending()&&TaskState.of(context).primary()==secondary,"Failed launch consumed primary selection or stalled queue");
             }else{
                 main(()->{
                     Context dc=context.createDisplayContext(Displays.require(context,display)).createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,null);WindowManager wm=dc.getSystemService(WindowManager.class);
-                    session=new TaskSession(context,display,()->{if(chrome!=null)chrome.update(session.tasks());},()->false);chrome=new WindowChrome(dc,wm,session);menu=new AppMenu(dc,wm,display);ShellPanels.observe(panels);
+                    session=TaskState.of(context);taskLease=session.openOutput(context,display,()->{if(chrome!=null)chrome.update(session.snapshot().tasks);},()->false);chrome=new WindowChrome(dc,wm,session);menu=new AppMenu(dc,wm,display);ShellPanels.observe(panels);
                 });
                 await(()->captions()>0,"Fixture captions did not render");
                 main(()->HubActivity.open(context,display));await(()->ShellPanels.bounds(display)!=null&&captions()>0,"Widget panel hid all captions");
@@ -97,11 +97,11 @@ final class DesktopPolishChecks {
                 main(()->menu.back());await(()->!ShellPanels.isOpen(display)&&captions()>0,"Back failed to close Start or restore captions");
             }
         }finally{
-            main(()->{ShellPanels.unobserve(panels);ShellPanels.dismiss(display);if(session!=null)session.close();if(chrome!=null)chrome.clear();});loader.shutdownNow();
-            try{await(()->!Launches.pending()&&!Workspace.isBusy(),"Fixture queue did not drain");}catch(Throwable ignored){}
+            main(()->{ShellPanels.unobserve(panels);ShellPanels.dismiss(display);if(taskLease!=null)taskLease.close();if(chrome!=null)chrome.clear();});loader.shutdownNow();
+            try{await(()->!Launches.pending()&&!TaskState.of(context).isBusy(),"Fixture queue did not drain");}catch(Throwable ignored){}
             for(int id:fixtures)try{call(s->s.taskOperation(display,id,"close",0,0,0,0));}catch(Throwable ignored){}
             if(originalFocus[0]>=0)try{call(s->s.taskOperation(display,originalFocus[0],"focus",0,0,0,0));}catch(Throwable ignored){}
-            main(()->{Workspace.reset(context);SharedPreferences.Editor edit=prefs.edit();for(String key:new String[]{"enabled","primary_mode","shell_layout","workspace_display","recent","last_error"}){Object value=previous.get(key);if(value instanceof Boolean)edit.putBoolean(key,(Boolean)value);else if(value instanceof Integer)edit.putInt(key,(Integer)value);else if(value instanceof String)edit.putString(key,(String)value);else edit.remove(key);}edit.commit();
+            main(()->{TaskState.of(context).reset(context);SharedPreferences.Editor edit=prefs.edit();for(String key:new String[]{"enabled","primary_mode","shell_layout","workspace_display","recent","last_error"}){Object value=previous.get(key);if(value instanceof Boolean)edit.putBoolean(key,(Boolean)value);else if(value instanceof Integer)edit.putInt(key,(Integer)value);else if(value instanceof String)edit.putString(key,(String)value);else edit.remove(key);}edit.commit();
                 SharedPreferences.Editor clean=profiles.edit();
                 for(String key:profiles.getAll().keySet())if(key.startsWith("net.fuyumori.stellashell.test/")){Object old=previousProfiles.get(key);if(old instanceof String)clean.putString(key,(String)old);else clean.remove(key);}clean.commit();
                 context.getPackageManager().setComponentEnabledSetting(desktopComponent,desktopState,android.content.pm.PackageManager.DONT_KILL_APP);

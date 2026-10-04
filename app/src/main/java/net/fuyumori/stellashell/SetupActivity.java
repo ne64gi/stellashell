@@ -17,15 +17,16 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
     private LinearLayout outputSelector;private Button primaryAction,stop,transfer,enable,reset,restore;
     private final LinearLayout[] pages=new LinearLayout[3];private final Button[] tabs=new Button[2];
     private ScrollView pageScroll;private Bridge bridge;private DisplayManager displays;
+    private AutoCloseable settingsSubscription;
     private boolean busy,resumed,setupOpen;private final Runnable refreshListener=this::refresh;
     @Override public void onCreate(Bundle state){
         super.onCreate(state);bridge=Bridge.get(this);displays=getSystemService(DisplayManager.class);
         // Preserve scrcpy's explicit launcher target, but never skip required permissions.
         if(!Displays.primary(this)&&getIntent().hasCategory(Intent.CATEGORY_LAUNCHER)&&getDisplay()!=null&&getDisplay().getDisplayId()>0
                 &&Displays.ids(this).contains(getDisplay().getDisplayId())&&PrerequisitesActivity.satisfied(this)){
-            DockService.start(this);finish();return;
+            ShellRuntime.start(this);finish();return;
         }
-        int saved=Launches.prefs(this).getInt("preferred_display",-1);
+        int saved=ShellSettings.of(this).snapshot().preferredDisplayId;
         selectedOutput=state!=null?state.getInt("selected_output",0):Displays.primary(this)?0:Displays.ids(this).contains(saved)?saved:Displays.ids(this).isEmpty()?0:Displays.ids(this).get(0);
         if(state==null&&getDisplay()!=null&&getDisplay().getDisplayId()>0&&getIntent().hasCategory(Intent.CATEGORY_LAUNCHER))selectedOutput=getDisplay().getDisplayId();
         setupOpen=state!=null&&state.getBoolean("setup_open",false);
@@ -43,7 +44,7 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         LinearLayout body=Ui.column(this);body.setPadding(0,0,0,Ui.dp(this,28));pageScroll.addView(body);
         for(int i=0;i<3;i++){pages[i]=Ui.column(this);body.addView(pages[i]);}
         buildOverview();buildSettings();buildDiagnostics();
-        displays.registerDisplayListener(this,new Handler(Looper.getMainLooper()));Launches.prefs(this).registerOnSharedPreferenceChangeListener(this);bridge.observe(refreshListener);
+        displays.registerDisplayListener(this,new Handler(Looper.getMainLooper()));Launches.prefs(this).registerOnSharedPreferenceChangeListener(this);bridge.observe(refreshListener);ShellRuntime.observeNavigation(refreshListener);settingsSubscription=ShellSettings.of(this).observe((changes,snapshot)->refresh());
         showPage(state==null?0:state.getInt("setup_page",0));
     }
     private void buildOverview(){
@@ -59,11 +60,11 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         outputSelector.addView(DashboardUi.text(this,getString(R.string.setup_desktop_screen),12,Ui.MUTED));
         outputValue=DashboardUi.title(this,"",16);outputValue.setPadding(0,Ui.dp(this,4),0,0);outputSelector.addView(outputValue);outputSelector.setOnClickListener(v->chooseOutput());outputSelector.setFocusable(true);session.addView(outputSelector);
         DashboardUi.space(session,16);primaryAction=DashboardUi.action(this,"",()->{
-            if(Launches.prefs(this).getBoolean("enabled",false)){
-                int active=Launches.prefs(this).getInt("active_display",-1);if(active>=0)Launches.home(this,active);
+            if(ShellRuntime.enabled(this)){
+                int active=ShellRuntime.selectedDisplay();if(active>=0)Launches.home(this,active);
             }else startDesktop();
         },true);session.addView(primaryAction);
-        DashboardUi.space(session,8);stop=DashboardUi.action(this,getString(R.string.setup_desktop_stop),()->{DockService.stop(this,false);refresh();},false);session.addView(stop);
+        DashboardUi.space(session,8);stop=DashboardUi.action(this,getString(R.string.setup_desktop_stop),()->{ShellRuntime.stop(this,false);refresh();},false);session.addView(stop);
         transfer=DashboardUi.action(this,getString(R.string.output_transfer),this::chooseTransfer,false);session.addView(transfer);
         DashboardUi.section(root,getString(R.string.dashboard_manage));LinearLayout manage=DashboardUi.card(root);
         manage.addView(DashboardUi.row(this,android.R.drawable.ic_menu_slideshow,getString(R.string.displays_title),getString(R.string.setup_displays_note),()->DisplayManagementActivity.open(this)));
@@ -72,8 +73,11 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         DashboardUi.space(root,12);root.addView(DashboardUi.action(this,getString(R.string.dashboard_connection_help),()->new AlertDialog.Builder(this).setTitle(R.string.dashboard_connection_help).setMessage(R.string.external_start_note).setPositiveButton(android.R.string.ok,null).show(),false));
     }
     private Switch toggle(LinearLayout parent,int label,String key,boolean fallback,java.util.function.Consumer<Boolean> change){
+        return toggle(parent,label,Launches.prefs(this).getBoolean(key,fallback),change);
+    }
+    private Switch toggle(LinearLayout parent,int label,boolean checked,java.util.function.Consumer<Boolean> change){
         Switch control=new Switch(this);control.setText(label);control.setTypeface(Appearance.face);control.setTextColor(Ui.TEXT);control.setTextSize(14);control.setPadding(0,Ui.dp(this,14),0,Ui.dp(this,14));control.setMinHeight(Ui.dp(this,56));
-        control.setChecked(Launches.prefs(this).getBoolean(key,fallback));control.setOnCheckedChangeListener((v,checked)->change.accept(checked));parent.addView(control,new LinearLayout.LayoutParams(-1,-2));return control;
+        control.setChecked(checked);control.setOnCheckedChangeListener((v,value)->change.accept(value));parent.addView(control,new LinearLayout.LayoutParams(-1,-2));return control;
     }
     private void buildSettings(){
         LinearLayout root=pages[1],card=DashboardUi.card(root);
@@ -92,16 +96,16 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         card.addView(DashboardUi.row(this,android.R.drawable.ic_menu_more,getString(R.string.taskbar_settings_title),getString(R.string.taskbar_settings_summary),()->TaskbarSettingsActivity.open(this,getDisplay()==null?0:getDisplay().getDisplayId())));
         DashboardUi.divider(card);
         card.addView(DashboardUi.row(this,android.R.drawable.ic_menu_view,getString(R.string.shell_layout),getString(R.string.dashboard_layout_note),()->{
-            String[] values={"auto","desktop","compact"};int selected=Arrays.asList(values).indexOf(Launches.prefs(this).getString("shell_layout","auto"));
-            new AlertDialog.Builder(this).setTitle(R.string.shell_layout).setSingleChoiceItems(new String[]{getString(R.string.shell_layout_auto),getString(R.string.shell_layout_desktop),getString(R.string.shell_layout_compact)},Math.max(0,selected),(dialog,which)->{Launches.prefs(this).edit().putString("shell_layout",values[which]).apply();dialog.dismiss();}).setNegativeButton(R.string.ui_cancel,null).show();
+            ShellSettings.Layout[] values=ShellSettings.Layout.values();int selected=ShellSettings.of(this).snapshot().shellLayout.ordinal();
+            new AlertDialog.Builder(this).setTitle(R.string.shell_layout).setSingleChoiceItems(new String[]{getString(R.string.shell_layout_auto),getString(R.string.shell_layout_desktop),getString(R.string.shell_layout_compact)},Math.max(0,selected),(dialog,which)->{ShellSettings.of(this).setShellLayout(values[which]);dialog.dismiss();}).setNegativeButton(R.string.ui_cancel,null).show();
         }));
         DashboardUi.section(root,getString(R.string.dashboard_workspace));card=DashboardUi.card(root);
-        final Switch[] workspace={null};workspace[0]=toggle(card,R.string.workspace_enable,"compact_workspace",false,checked->{
-            if(checked==Launches.prefs(this).getBoolean("compact_workspace",false))return;
-            if(Launches.prefs(this).getBoolean("enabled",false)){workspace[0].setChecked(!checked);Ui.message(this,getString(R.string.workspace_stop_first));return;}
-            Workspace.reset(this);Launches.prefs(this).edit().putBoolean("compact_workspace",checked).apply();
+        final Switch[] workspace={null};workspace[0]=toggle(card,R.string.workspace_enable,ShellSettings.of(this).snapshot().compactWorkspace,checked->{
+            if(checked==ShellSettings.of(this).snapshot().compactWorkspace)return;
+            if(ShellRuntime.enabled(this)){workspace[0].setChecked(!checked);Ui.message(this,getString(R.string.workspace_stop_first));return;}
+            TaskState.of(this).reset(this);ShellSettings.of(this).setWorkspaceOptions(checked,ShellSettings.of(this).snapshot().workspaceAuto);
         });DashboardUi.divider(card);
-        toggle(card,R.string.workspace_auto,"workspace_auto",false,checked->Launches.prefs(this).edit().putBoolean("workspace_auto",checked).apply());DashboardUi.divider(card);
+        toggle(card,R.string.workspace_auto,ShellSettings.of(this).snapshot().workspaceAuto,checked->ShellSettings.of(this).setWorkspaceOptions(ShellSettings.of(this).snapshot().compactWorkspace,checked));DashboardUi.divider(card);
         toggle(card,R.string.hide_virtual_keyboard,"hide_virtual_ime",false,checked->{
             Launches.prefs(this).edit().putBoolean("hide_virtual_ime",checked).apply();bridge.call(s->"OK",(result,error)->{
                 if(checked&&(error!=null||Launches.prefs(this).getString("ime_diagnostics","").startsWith("unavailable")))Ui.message(this,getString(R.string.virtual_keyboard_unavailable));
@@ -117,7 +121,7 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
     private void buildDiagnostics(){
         LinearLayout root=pages[2];root.addView(DashboardUi.action(this,getString(R.string.dashboard_back_settings),()->showPage(1),false));DashboardUi.space(root,16);
         LinearLayout card=DashboardUi.card(root);card.addView(DashboardUi.title(this,getString(R.string.dashboard_diagnostics),22));DashboardUi.space(card,16);
-        reset=DashboardUi.action(this,getString(R.string.reset_connection),()->DockService.resetConnection(this),false);card.addView(reset);
+        reset=DashboardUi.action(this,getString(R.string.reset_connection),()->ShellRuntime.resetConnection(this),false);card.addView(reset);
         restore=DashboardUi.action(this,getString(R.string.ui_restore_previous_device_settings),()->new AlertDialog.Builder(this).setTitle(R.string.ui_restore_device_settings)
                 .setMessage(R.string.ui_stop_the_external_desktop_and_restore_the_two_device_settings_sav).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_restore,(d,w)->apply(true)).show(),false);card.addView(restore);
         detail=DashboardUi.text(this,"",12,Ui.MUTED);detail.setTextIsSelectable(true);DashboardUi.space(card,16);card.addView(detail);DashboardUi.space(card,16);
@@ -140,29 +144,29 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         return count>1?getString(R.string.setup_screen_numbered,name,ordinal):name;
     }
     private void chooseOutput(){
-        if(Launches.prefs(this).getBoolean("enabled",false))return;
+        if(ShellRuntime.enabled(this))return;
         List<Integer> ids=new ArrayList<>();ids.add(0);ids.addAll(Displays.ids(this));if(ids.size()==1)ids.add(-1);
         String[] labels=new String[ids.size()];int checked=ids.indexOf(selectedOutput);for(int i=0;i<ids.size();i++)labels[i]=outputName(ids.get(i));
         new AlertDialog.Builder(this).setTitle(R.string.setup_desktop_screen).setSingleChoiceItems(labels,checked,(dialog,index)->{selectedOutput=ids.get(index);dialog.dismiss();refresh();}).setNegativeButton(R.string.ui_cancel,null).show();
     }
     private void chooseTransfer(){
-        List<Integer> targets=Displays.allIds(this);targets.remove(Integer.valueOf(Workspace.target(this)));
+        List<Integer> targets=Displays.allIds(this);targets.remove(Integer.valueOf(TaskState.of(this).target(this)));
         if(targets.isEmpty()){Ui.message(this,getString(R.string.ui_waiting_for_a_display));return;}
         String[] labels=new String[targets.size()];for(int i=0;i<labels.length;i++)labels[i]=outputName(targets.get(i));
         new AlertDialog.Builder(this).setTitle(R.string.output_transfer).setItems(labels,(dialog,index)->{
             int target=targets.get(index);
             if(!Displays.allIds(this).contains(target)){Ui.message(this,getString(R.string.ui_the_external_display_is_disconnected));return;}
-            DockService.handoff(this,target);
+            ShellRuntime.handoff(this,target);
         }).setNegativeButton(R.string.ui_cancel,null).show();
     }
     private void startDesktop(){
-        if(busy||Launches.prefs(this).getBoolean("enabled",false))return;
+        if(busy||ShellRuntime.enabled(this))return;
         if(!PrerequisitesActivity.satisfied(this)){openPrerequisites(false);return;}
         if(!bridge.ready()){openPrerequisites(true);return;}
         if(selectedOutput>=0&&!Displays.allIds(this).contains(selectedOutput)){Ui.message(this,getString(R.string.ui_the_external_display_is_disconnected));refresh();return;}
-        boolean primary=selectedOutput==0;if(primary)Workspace.reset(this);
-        Launches.prefs(this).edit().putBoolean("primary_mode",primary).apply();
-        DockService.start(this,selectedOutput);refresh();
+        boolean primary=selectedOutput==0;if(primary)TaskState.of(this).reset(this);
+        ShellSettings.of(this).setPrimaryMode(primary);
+        ShellRuntime.start(this,selectedOutput);refresh();
     }
     private void apply(boolean restoring){
         if(busy)return;
@@ -170,7 +174,7 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         SharedPreferences prefs=Launches.prefs(this);
         if(restoring && !prefs.contains("before_desktop")){Ui.message(this,this.getString(R.string.ui_no_settings_to_restore));return;}
         busy=true;refresh();
-        if(restoring)DockService.stop(this);
+        if(restoring)ShellRuntime.stop(this);
         bridge.call(s->{
             if(!restoring && !prefs.contains("before_desktop")){
                 String snapshot=s.settingsSnapshot();
@@ -198,7 +202,7 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         try{version=getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(PackageManager.NameNotFoundException ignored){}
         StringBuilder s=new StringBuilder("StellaShell ").append(version).append(this.getString(R.string.ui_model)).append(Build.MODEL).append(" / Android ").append(Build.VERSION.RELEASE)
                 .append("\nPrimary mode: ").append(Displays.primary(this)).append("\n").append(bridge.status()).append(this.getString(R.string.ui_overlay_permission)).append(Settings.canDrawOverlays(this))
-                .append(this.getString(R.string.ui_session)).append(Launches.prefs(this).getBoolean("enabled",false))
+                .append(this.getString(R.string.ui_session)).append(ShellRuntime.enabled(this))
                 .append(this.getString(R.string.ui_restore_record)).append(Launches.prefs(this).contains("before_desktop"));
         for(Display d:Displays.available(this))s.append(this.getString(R.string.ui_display)).append(d.getDisplayId()).append(": ").append(d.getName())
                 .append(" / ").append(d.getMode().getPhysicalWidth()).append("×").append(d.getMode().getPhysicalHeight());
@@ -217,7 +221,7 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
     private void refresh(){
         if(sessionTitle==null||isDestroyed()||isFinishing())return;
         homeStatus.setText(HomeRegistration.selected(this)?R.string.home_selected:R.string.home_available);
-        boolean running=Launches.prefs(this).getBoolean("enabled",false);int active=Launches.prefs(this).getInt("active_display",-1);
+        boolean running=ShellRuntime.enabled(this);int active=ShellRuntime.selectedDisplay();
         sessionTitle.setText(R.string.setup_desktop_title);
         List<Integer> available=Displays.allIds(this);boolean activeConnected=active>=0&&available.contains(active);
         boolean disconnected=!running&&selectedOutput>=0&&!available.contains(selectedOutput);
@@ -227,14 +231,14 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         primaryAction.setText(running?R.string.setup_desktop_open:(selectedOutput<0?R.string.setup_desktop_start_on_connection:R.string.setup_desktop_start));
         primaryAction.setEnabled(!busy&&(running?activeConnected:(selectedOutput<0||available.contains(selectedOutput))));
         stop.setVisibility(running?View.VISIBLE:View.GONE);stop.setEnabled(!busy);
-        transfer.setVisibility(running&&Workspace.enabled(this)&&(Workspace.target(this)>0||!Displays.ids(this).isEmpty())?View.VISIBLE:View.GONE);transfer.setEnabled(!busy&&!Workspace.isBusy()&&(Workspace.target(this)>0||!Displays.ids(this).isEmpty()));
+        transfer.setVisibility(running&&TaskState.of(this).enabled(this)&&(TaskState.of(this).target(this)>0||!Displays.ids(this).isEmpty())?View.VISIBLE:View.GONE);transfer.setEnabled(!busy&&!TaskState.of(this).isBusy()&&(TaskState.of(this).target(this)>0||!Displays.ids(this).isEmpty()));
         enable.setEnabled(!busy&&bridge.ready());reset.setEnabled(running&&!busy&&bridge.ready());restore.setEnabled(!busy&&bridge.ready()&&Launches.prefs(this).contains("before_desktop"));
         if(selectedPage==2)detail.setText(diagnostics());
     }
     @Override public void onResume(){
         super.onResume();resumed=true;if(bridge!=null){bridge.connect();
-            if(!setupOpen&&PrerequisitesActivity.satisfied(this)&&Launches.prefs(this).getBoolean("enabled",false)&&!DockService.running())
-                DockService.start(this,Launches.prefs(this).getInt("preferred_display",-1),false);
+            if(!setupOpen&&PrerequisitesActivity.satisfied(this)&&ShellRuntime.enabled(this)&&!ShellRuntime.running())
+                ShellRuntime.start(this,ShellSettings.of(this).snapshot().preferredDisplayId,false);
             refresh();
         }
     }
@@ -245,6 +249,6 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
     @Override public void onSharedPreferenceChanged(SharedPreferences p,String key){refresh();}
     @Override public void onDestroy(){
         if(bridge!=null)bridge.remove(refreshListener);if(displays!=null)displays.unregisterDisplayListener(this);
-        Launches.prefs(this).unregisterOnSharedPreferenceChangeListener(this);super.onDestroy();
+        Launches.prefs(this).unregisterOnSharedPreferenceChangeListener(this);ShellRuntime.unobserveNavigation(refreshListener);if(settingsSubscription!=null)try{settingsSubscription.close();}catch(Exception e){Launches.problem(this,e.getMessage());}super.onDestroy();
     }
 }

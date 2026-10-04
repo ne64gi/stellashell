@@ -33,18 +33,18 @@ final class PhoneTaskChecks {
         SharedPreferences profiles=context.getSharedPreferences("launch_profiles",0);Map<String,?> profileBefore=profiles.getAll();
         ComponentName desktop=new ComponentName(context,DesktopActivity.class);int state=context.getPackageManager().getComponentEnabledSetting(desktop);
         try {
-            main(()->{DockService.stop(context,false);prefs.edit().putBoolean("primary_mode",true).putBoolean("phone_window_management",false).putBoolean("phone_sidebar",true).putInt("workspace_display",0).commit();DockService.start(context,0,false);Bridge.get(context).connect();});
+            main(()->{ShellRuntime.stop(context,false);prefs.edit().putBoolean("primary_mode",true).putBoolean("phone_window_management",false).putBoolean("phone_sidebar",true).putInt("workspace_display",0).commit();ShellRuntime.start(context,0,false);Bridge.get(context).connect();});
             await(()->Bridge.get(context).ready(),"Shizuku unavailable for floating fixture");
             main(()->Launches.app(context,floating,0,false,true));await(()->!Launches.pending(),"floating launch stuck");
             JSONObject f=task(0,floating);require(f!=null&&f.getInt("mode")==5,"explicit floating was not freeform");int id=f.getInt("id");
             main(()->Launches.app(context,normal,0));await(()->!Launches.pending(),"normal launch stuck");Thread.sleep(600);
             JSONObject n=task(0,normal);require(n!=null&&n.getInt("mode")==1,"ordinary Phone app was not fullscreen");int ordinary=n.getInt("id");
-            require(!Workspace.owns(new TaskSession.Task(n)),"ordinary Phone app was adopted");
-            require(Workspace.owns(new TaskSession.Task(f)),"explicit float lost ownership");
-            main(()->DockService.handoff(context,external));await(()->Workspace.target(context)==external&&!Workspace.isBusy(),"handoff did not finish");
+            require(!TaskState.of(context).owns(new TaskSnapshot.Task(n)),"ordinary Phone app was adopted");
+            require(TaskState.of(context).owns(new TaskSnapshot.Task(f)),"explicit float lost ownership");
+            main(()->ShellRuntime.handoff(context,external));await(()->TaskState.of(context).target(context)==external&&!TaskState.of(context).isBusy(),"handoff did not finish");
             f=task(external,floating);require(f!=null&&f.getInt("id")==id,"float task identity lost on external handoff");
             n=task(0,normal);require(n!=null&&n.getInt("id")==ordinary&&n.getInt("mode")==1,"normal app was moved or resized");
-            main(()->DockService.handoff(context,0));await(()->Workspace.target(context)==0&&!Workspace.isBusy(),"return did not finish");
+            main(()->ShellRuntime.handoff(context,0));await(()->TaskState.of(context).target(context)==0&&!TaskState.of(context).isBusy(),"return did not finish");
             f=task(0,floating);require(f!=null&&f.getInt("id")==id&&f.getInt("mode")==5,"floating task not preserved on return");
             n=task(0,normal);require(n!=null&&n.getInt("id")==ordinary&&n.getInt("mode")==1,"normal task changed on return");
         } finally {
@@ -52,7 +52,7 @@ final class PhoneTaskChecks {
                 JSONObject row=task(display,component);if(row!=null){int id=row.getInt("id");call(s->s.taskOperation(display,id,"close",0,0,0,0));}
             }catch(Exception ignored){}
             main(()->{
-                DockService.stop(context,false);SharedPreferences.Editor e=prefs.edit();
+                ShellRuntime.stop(context,false);SharedPreferences.Editor e=prefs.edit();
                 for(String key:new String[]{"enabled","primary_mode","phone_window_management","phone_sidebar","workspace_display","active_display","preferred_display","recent","last_error"}){
                     Object old=before.get(key);if(old instanceof Boolean)e.putBoolean(key,(Boolean)old);else if(old instanceof Integer)e.putInt(key,(Integer)old);else if(old instanceof String)e.putString(key,(String)old);else e.remove(key);
                 }e.commit();

@@ -55,7 +55,7 @@ public final class QuickSettingsActivity extends Activity {
     private void label(int value){volumeLabel.setText(getString(R.string.quick_media_volume)+"  "+Math.round(100f*value/Math.max(1,volume.getMax()))+"%");}
     private void update(){
         if(network==null)return;
-        if(getSystemService(android.hardware.display.DisplayManager.class).getDisplay(displayId)==null||!Launches.prefs(this).getBoolean("enabled",false)){finish();return;}
+        if(getSystemService(android.hardware.display.DisplayManager.class).getDisplay(displayId)==null||!ShellRuntime.enabled(this)){finish();return;}
         if(!screenBusy){screen.setChecked(Bridge.get(this).screenOff());screen.setEnabled(displayId>0&&Bridge.get(this).ready());}
         if(!dragging){int value=audio.getStreamVolume(AudioManager.STREAM_MUSIC);volume.setProgress(value);label(value);}
         try{

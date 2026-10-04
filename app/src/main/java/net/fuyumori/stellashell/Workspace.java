@@ -7,95 +7,108 @@ import java.util.*;
 
 /** Session-only task identities: never adopt unrelated tasks or relaunch a lost task. */
 final class Workspace {
-    private static final Map<Integer,String> owned=new LinkedHashMap<>();
-    private static final Map<Integer,Rect> phoneBounds=new HashMap<>();
-    private static final Set<Integer> roleFailures=new HashSet<>();
-    private static final Set<Integer> recoveryDisplays=new LinkedHashSet<>();
-    private static int primary=-1;
-    private static final WorkspaceOperations operations=new WorkspaceOperations();
-    private static boolean desktopShown=true;
-    static boolean isBusy(){return operations.busy();}
-    static long session(){return operations.generation();}
-    static boolean currentSession(long session){return operations.current(session);}
-    static int primary(){return primary;}
-    static boolean owns(TaskSession.Task task){return task.component.equals(owned.get(task.id));}
-    /** Register an explicitly converted task without launch/role/transfer side effects. */
-    static void adoptFloating(TaskSession.Task task,long session){
-        if(!currentSession(session)||task.mode!=5)return;
-        owned.put(task.id,task.component);
+    private final Map<Integer,String> owned=new LinkedHashMap<>();
+    private final Map<Integer,Rect> phoneBounds=new HashMap<>();
+    private final Set<Integer> roleFailures=new HashSet<>();
+    private final Set<Integer> recoveryDisplays=new LinkedHashSet<>();
+    private int primary=-1;
+    private final WorkspaceOperations operations=new WorkspaceOperations();
+    private boolean desktopShown=true;
+    boolean isBusy(){return operations.busy();}
+    long session(){return operations.generation();}
+    boolean currentSession(long session){return operations.current(session);}
+    void enqueue(Runnable operation){if(!operations.defer(operation))operation.run();}
+    long beginCommand(){return operations.begin();}
+    void finishCommand(long ticket){if(operations.release(ticket))operations.drain();}
+    int primary(){return primary;}
+    boolean owns(TaskSnapshot.Task task){return task.component.equals(owned.get(task.id));}
+    private void replaceOwned(TaskSnapshot.Identity identity){
+        String previous=owned.put(identity.id,identity.component);
+        if(!identity.component.equals(previous)){
+            phoneBounds.remove(identity.id);roleFailures.remove(identity.id);
+            if(primary==identity.id)primary=-1;
+        }
     }
-    static void forgetFloating(TaskSession.Task task,long session){
+    /** Register an explicitly converted task without launch/role/transfer side effects. */
+    void adoptFloating(TaskSnapshot.Task task,long session){
+        if(!currentSession(session)||task.mode!=5)return;
+        replaceOwned(task.identity());
+    }
+    void forgetFloating(TaskSnapshot.Task task,long session){
         if(!currentSession(session)||task.mode!=1||!owns(task))return;
         owned.remove(task.id);phoneBounds.remove(task.id);roleFailures.remove(task.id);
         if(primary==task.id)primary=-1;
     }
-    static String label(Context c,TaskSession.Task task){return !owns(task)?"":c.getString(task.id==primary?R.string.workspace_primary_label:R.string.workspace_secondary_label);}
-    static void observe(Context c,int display,List<TaskSession.Task> tasks){
-        if(isBusy()||display!=(enabled(c)?target(c):0))return;
-        Map<Integer,String> live=new HashMap<>();for(TaskSession.Task task:tasks)live.put(task.id,task.component);
+    void forgetClosedTask(TaskSnapshot.Identity identity,long session){
+        if(!currentSession(session)||!identity.component.equals(owned.get(identity.id)))return;
+        owned.remove(identity.id);phoneBounds.remove(identity.id);roleFailures.remove(identity.id);
+        if(primary==identity.id)primary=-1;
+    }
+    String label(Context c,TaskSnapshot.Task task){return !owns(task)?"":c.getString(task.id==primary?R.string.workspace_primary_label:R.string.workspace_secondary_label);}
+    void observe(Context c,int display,List<TaskSnapshot.Task> tasks,boolean enabled,int target){
+        if(isBusy()||display!=(enabled?target:0))return;
+        Map<Integer,String> live=new HashMap<>();for(TaskSnapshot.Task task:tasks)live.put(task.id,task.component);
         // One display snapshot cannot retire identities left on another display
         // by an incomplete transfer/rollback. The next recovery checks them.
-        if(recoveryDisplays.isEmpty())owned.entrySet().removeIf(e->!e.getValue().equals(live.get(e.getKey())));
+        if(recoveryDisplays.isEmpty())owned.entrySet().removeIf(e->{
+            if(e.getValue().equals(live.get(e.getKey())))return false;
+            phoneBounds.remove(e.getKey());roleFailures.remove(e.getKey());
+            if(primary==e.getKey())primary=-1;
+            return true;
+        });
         phoneBounds.keySet().retainAll(owned.keySet());if(!owned.containsKey(primary))primary=-1;
         roleFailures.retainAll(owned.keySet());
-        if(compact(c,display))for(TaskSession.Task task:tasks){
+        if(compact(c,display))for(TaskSnapshot.Task task:tasks){
             if(!owns(task)||!task.visible||roleFailures.contains(task.id))continue;
             // Apps may request fullscreen again after launch/resume. Keep session roles authoritative.
-            if(task.mode!=(task.id==primary?1:5)){role(c,task.id,display,task.id==primary);break;}
+            if(task.mode!=(task.id==primary?1:5)){role(c,task.identity(),display,task.id==primary,()->{});break;}
         }
     }
-    static boolean enabled(Context c){return Displays.primary(c)&&(WorkspaceProfile.standard(c,0)||Launches.prefs(c).getBoolean("compact_workspace",false));}
-    static int target(Context c){return enabled(c)?Launches.prefs(c).getInt("workspace_display",0):0;}
-    static boolean compact(Context c,int display){return !WorkspaceProfile.standard(c,display)&&Displays.primary(c)&&display==0&&WorkArea.get(c,display).compact;}
-    static void reset(Context c){operations.reset();owned.clear();phoneBounds.clear();roleFailures.clear();recoveryDisplays.clear();primary=-1;desktopShown=true;Launches.prefs(c).edit().remove("workspace_display").apply();}
-    static void desktopShown(Context c,int display){if(compact(c,display))desktopShown=true;}
-    static boolean needsPrimary(){return desktopShown||primary<0;}
-    static boolean secondaryLaunch(String requested,String resolved,boolean newWindow){
+    boolean compact(Context c,int display){return !WorkspaceProfile.standard(c,display)&&Displays.primary(c)&&display==0&&WorkArea.get(c,display).compact;}
+    void reset(){operations.reset();owned.clear();phoneBounds.clear();roleFailures.clear();recoveryDisplays.clear();primary=-1;desktopShown=true;}
+    void desktopShown(Context c,int display){if(compact(c,display))desktopShown=true;}
+    boolean needsPrimary(){return desktopShown||primary<0;}
+    boolean secondaryLaunch(String requested,String resolved,boolean newWindow){
         return defaultSecondary(desktopShown,owned.get(primary),requested,resolved,newWindow);
     }
     static boolean defaultSecondary(boolean desktop,String main,String requested,String resolved,boolean newWindow){
         return !desktop&&main!=null&&(newWindow||(!main.equals(requested)&&!main.equals(resolved)));
     }
-    static void focused(Context c,TaskSession.Task task,int display){
+    void focused(Context c,TaskSnapshot.Task task,int display){
         if(compact(c,display)&&owns(task)&&task.id==primary)desktopShown=false;
     }
-    static void launched(Context c,JSONObject data,int display,boolean floating)throws JSONException{
-        launched(c,data,display,floating,()->{});
-    }
-    static void launched(Context c,JSONObject data,int display,boolean floating,Runnable done)throws JSONException{
-        JSONObject task=data.getJSONObject("task");int id=task.getInt("id");if(enabled(c)||compact(c,display)||WorkspaceProfile.standard(c,display))owned.put(id,task.getString("component"));
+    void launched(Context c,JSONObject data,int display,boolean floating,boolean workspaceEnabled,Runnable done)throws JSONException{
+        JSONObject task=data.getJSONObject("task");int id=task.getInt("id");String component=task.getString("component");if(workspaceEnabled||compact(c,display)||WorkspaceProfile.standard(c,display))replaceOwned(new TaskSnapshot.Identity(id,component));
         // Reused tasks also need their bounds changed: launchProfile may only focus them.
-        if(compact(c,display))role(c,id,display,!floating,done);else done.run();
+        if(compact(c,display))role(c,new TaskSnapshot.Identity(id,component),display,!floating,done);else done.run();
     }
-    static void role(Context c,int id,int display,boolean promote){
-        role(c,id,display,promote,()->{});
-    }
-    static void role(Context c,int id,int display,boolean promote,Runnable done){
+    void role(Context c,TaskSnapshot.Identity target,int display,boolean promote,Runnable done){
+        int id=target.id;
         if(isBusy()){done.run();return;}long ticket=operations.begin();roleFailures.remove(id);int previous=primary;String previousIdentity=owned.get(previous);
         Bridge.get(c).call(s->{
             operations.requireCurrent(ticket);
             WorkArea.get(c,display).sync(s,display);
             if(promote){
-                check(s.taskOperation(display,id,"fullscreen",0,0,0,0));
-                check(s.taskOperation(display,id,"focus",0,0,0,0));
+                check(s.checkedTaskOperation(display,id,target.component,"fullscreen",0,0,0,0));
+                check(s.checkedTaskOperation(display,id,target.component,"focus",0,0,0,0));
                 if(previous>=0&&previous!=id){
                     JSONArray live=new JSONObject(s.taskSnapshot(display)).getJSONArray("tasks");
                     for(int i=0;i<live.length();i++)if(live.getJSONObject(i).getInt("id")==previous&&live.getJSONObject(i).getString("component").equals(previousIdentity)){
                         Rect a=WorkArea.get(c,display).content;
-                        check(s.taskOperation(display,previous,"bounds",a.left+a.width()/6,a.top+a.height()/6,a.right-a.width()/6,a.bottom-a.height()/6));
-                        check(s.taskOperation(display,previous,"minimize",0,0,0,0));
+                        check(s.checkedTaskOperation(display,previous,previousIdentity,"bounds",a.left+a.width()/6,a.top+a.height()/6,a.right-a.width()/6,a.bottom-a.height()/6));
+                        check(s.checkedTaskOperation(display,previous,previousIdentity,"minimize",0,0,0,0));
                     }
                 }
             }else {
                 Rect a=WorkArea.get(c,display).content;
-                check(s.taskOperation(display,id,"bounds",a.left+a.width()/6,a.top+a.height()/6,a.right-a.width()/6,a.bottom-a.height()/6));
-                check(s.taskOperation(display,id,"focus",0,0,0,0));
+                check(s.checkedTaskOperation(display,id,target.component,"bounds",a.left+a.width()/6,a.top+a.height()/6,a.right-a.width()/6,a.bottom-a.height()/6));
+                check(s.checkedTaskOperation(display,id,target.component,"focus",0,0,0,0));
             }
             JSONArray rows=new JSONObject(s.taskSnapshot(display)).getJSONArray("tasks");
-            for(int i=0;i<rows.length();i++)if(rows.getJSONObject(i).getInt("id")==id){
+            for(int i=0;i<rows.length();i++)if(rows.getJSONObject(i).getInt("id")==id&&target.component.equals(rows.getJSONObject(i).getString("component"))){
                 JSONObject actual=rows.getJSONObject(i);
                 if(actual.getInt("mode")!=(promote?1:5)){
-                    if(!promote)check(s.taskOperation(display,id,"minimize",0,0,0,0));
+                    if(!promote)check(s.checkedTaskOperation(display,id,target.component,"minimize",0,0,0,0));
                     throw new IllegalStateException(c.getString(R.string.workspace_role_unavailable));
                 }
                 return actual.toString();
@@ -105,7 +118,7 @@ final class Workspace {
             if(!operations.release(ticket)){done.run();return;}
             try{
                 if(error!=null){roleFailures.add(id);Launches.problem(c,error);return;}
-                owned.put(id,new JSONObject(result).getString("component"));primary=promote?id:(primary==id?-1:primary);
+                replaceOwned(new TaskSnapshot.Identity(id,new JSONObject(result).getString("component")));primary=promote?id:(primary==id?-1:primary);
                 if(promote)desktopShown=false;
             }catch(JSONException e){Launches.problem(c,e.getMessage());}
             finally{try{done.run();}finally{operations.drain();}}
@@ -122,12 +135,11 @@ final class Workspace {
         }
         throw new IllegalStateException("Transferred task is no longer available: "+id);
     }
-    static void transfer(Context c,int destination,Runnable done){
-        if(operations.defer(()->transfer(c,destination,done)))return;
-        if(!enabled(c)){done.run();return;}
-        int source=target(c);if(source==destination&&recoveryDisplays.isEmpty()){done.run();return;}
+    void transfer(Context c,int source,int destination,java.util.function.IntConsumer commitTarget,Runnable done){
+        if(operations.defer(()->transfer(c,source,destination,commitTarget,done)))return;
+        if(source==destination&&recoveryDisplays.isEmpty()){done.run();return;}
         if(!Displays.allIds(c).contains(destination)){done.run();return;}
-        if(owned.isEmpty()){Launches.prefs(c).edit().putInt("workspace_display",destination).apply();done.run();return;}
+        if(owned.isEmpty()){commitTarget.accept(destination);done.run();return;}
         long ticket=operations.begin();Map<Integer,String> identities=new LinkedHashMap<>(owned);
         Map<Integer,Rect> savedBounds=new HashMap<>(phoneBounds);
         Set<Integer> sources=new LinkedHashSet<>();sources.add(source);sources.addAll(recoveryDisplays);sources.remove(destination);
@@ -153,14 +165,14 @@ final class Workspace {
                     JSONObject row=rows.getJSONObject(i);int id=row.getInt("id");
                     if(!row.getString("component").equals(identities.get(id)))continue;
                     Rect b=area.clamp(destination==0&&savedBounds.containsKey(id)?savedBounds.get(id):new Rect(row.getInt("left"),row.getInt("top"),row.getInt("right"),row.getInt("bottom")));
-                    check(s.taskOperation(destination,id,"bounds",b.left,b.top,b.right,b.bottom));
+                    check(s.checkedTaskOperation(destination,id,identities.get(id),"bounds",b.left,b.top,b.right,b.bottom));
                 }
                 JSONArray show=new JSONArray();
-                if(mainTask>=0&&identities.containsKey(mainTask))show.put(mainTask);
+                if(mainTask>=0&&identities.containsKey(mainTask))show.put(new JSONObject().put("id",mainTask).put("component",identities.get(mainTask)));
                 for(int i=rows.length()-1;i>=0;i--){
                     JSONObject row=rows.getJSONObject(i);int id=row.getInt("id");
                     JSONObject previous=original.get(id);
-                    if(id!=mainTask&&row.getString("component").equals(identities.get(id))&&(previous==null?row.optBoolean("visible"):previous.optBoolean("visible")))show.put(id);
+                    if(id!=mainTask&&row.getString("component").equals(identities.get(id))&&(previous==null?row.optBoolean("visible"):previous.optBoolean("visible")))show.put(new JSONObject().put("id",id).put("component",identities.get(id)));
                 }
                 return show.toString();
             }catch(Exception failure){
@@ -170,7 +182,7 @@ final class Workspace {
                     if(actual!=origin)check(s.moveWorkspaceTask(actual,origin,id,identities.get(id)));
                     WorkArea area=WorkArea.get(c,origin);area.sync(s,origin);JSONObject r=original.get(id);
                     Rect restore=origin!=originalDisplay&&savedBounds.containsKey(id)?savedBounds.get(id):new Rect(r.getInt("left"),r.getInt("top"),r.getInt("right"),r.getInt("bottom"));
-                    restore=area.clamp(restore);check(s.taskOperation(origin,id,"bounds",restore.left,restore.top,restore.right,restore.bottom));
+                    restore=area.clamp(restore);check(s.checkedTaskOperation(origin,id,identities.get(id),"bounds",restore.left,restore.top,restore.right,restore.bottom));
                 },failure);
             }
         },(result,error)->{
@@ -180,22 +192,28 @@ final class Workspace {
                 // handoff must also search this destination for our identities.
                 recoveryDisplays.add(destination);recoveryDisplays.addAll(sources);recoveryDisplays.add(0);
                 phoneBounds.clear();phoneBounds.putAll(savedBounds);
-                if(!Displays.allIds(c).contains(source))Launches.prefs(c).edit().putInt("workspace_display",0).apply();
+                if(!Displays.allIds(c).contains(source))commitTarget.accept(0);
                 operations.release(ticket);try{Launches.problem(c,error);done.run();}finally{operations.drain();}return;
             }
             recoveryDisplays.clear();
             phoneBounds.clear();phoneBounds.putAll(savedBounds);
-            Launches.prefs(c).edit().putInt("workspace_display",destination).apply();
+            commitTarget.accept(destination);
             Bridge.get(c).call(s->{
                 operations.requireCurrent(ticket);
                 JSONArray show=new JSONArray(result);
-                for(int i=0;i<show.length();i++)check(s.taskOperation(destination,show.getInt(i),"focus",0,0,0,0));
+                for(int i=0;i<show.length();i++){
+                    JSONObject task=show.getJSONObject(i);
+                    check(s.checkedTaskOperation(destination,task.getInt("id"),task.getString("component"),"focus",0,0,0,0));
+                }
                 return "OK";
             },(focusResult,focusError)->{
                 if(!operations.release(ticket))return;
                 try{
                     if(focusError!=null)Launches.problem(c,focusError);
-                    else if(destination==0&&primary>=0&&!WorkspaceProfile.standard(c,0))role(c,primary,0,true);
+                    else if(destination==0&&primary>=0&&!WorkspaceProfile.standard(c,0)){
+                        String identity=owned.get(primary);
+                        if(identity!=null)role(c,new TaskSnapshot.Identity(primary,identity),0,true,()->{});
+                    }
                     done.run();
                 }finally{operations.drain();}
             });

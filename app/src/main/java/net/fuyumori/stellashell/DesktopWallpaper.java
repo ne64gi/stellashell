@@ -23,7 +23,7 @@ final class DesktopWallpaper {
     private final ExecutorService io=Executors.newSingleThreadExecutor();
     private final Handler main=new Handler(Looper.getMainLooper());
     private volatile boolean closed;
-    private int generation;
+    private volatile int generation;
     private final boolean phone;
     private String key(String name){return WorkspaceProfile.key(activity,name);}
     private void matrix(ImageView image,boolean fit,float x,float y){
@@ -83,16 +83,20 @@ final class DesktopWallpaper {
         });return true;
     }
     void reload(){
+        if(closed)return;
         final int ticket=++generation;
         place();
         if(!Launches.prefs(activity).getBoolean(key("wallpaper_image"),false)){view.setImageDrawable(null);view.setVisibility(View.GONE);return;}
         io.execute(()->{
+            if(closed||ticket!=generation)return;
             try{
                 // Recover any interrupted atomic write before decoding the private file.
                 try(java.io.FileInputStream ignored=file.openRead()){}
+                if(closed||ticket!=generation)return;
                 Bitmap bitmap=decode(ImageDecoder.createSource(file.getBaseFile()));
+                if(closed||ticket!=generation){bitmap.recycle();return;}
                 main.post(()->{if(closed||ticket!=generation){bitmap.recycle();return;}view.setImageBitmap(bitmap);view.setVisibility(View.VISIBLE);place();});
-            }catch(Exception e){main.post(()->{if(!closed&&ticket==generation){view.setImageDrawable(null);view.setVisibility(View.GONE);Ui.message(activity,activity.getString(R.string.ui_could_not_read_the_saved_wallpaper_choose_an_image_again));}});}
+            }catch(Exception e){if(!closed&&ticket==generation)main.post(()->{if(!closed&&ticket==generation){view.setImageDrawable(null);view.setVisibility(View.GONE);Ui.message(activity,activity.getString(R.string.ui_could_not_read_the_saved_wallpaper_choose_an_image_again));}});}
         });
     }
     void position(){

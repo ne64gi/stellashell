@@ -31,29 +31,29 @@ final class PhoneSidebarChecks {
             rendering(context);menus(context);taskbarActions(context);
         }
     }
-    private static TaskSession.Task task(int id,String component,boolean focused)throws Exception{
+    private static TaskSnapshot.Task task(int id,String component,boolean focused)throws Exception{
         return task(id,component,focused,1);
     }
-    private static TaskSession.Task task(int id,String component,boolean focused,int mode)throws Exception{
-        return new TaskSession.Task(new JSONObject().put("id",id).put("component",component).put("mode",mode)
+    private static TaskSnapshot.Task task(int id,String component,boolean focused,int mode)throws Exception{
+        return new TaskSnapshot.Task(new JSONObject().put("id",id).put("component",component).put("mode",mode)
             .put("visible",focused).put("focused",focused).put("left",0).put("top",0).put("right",360).put("bottom",720));
     }
-    private static String snapshot(TaskSession.Task...tasks)throws Exception{
+    private static String snapshot(TaskSnapshot.Task...tasks)throws Exception{
         JSONArray rows=new JSONArray();
-        for(TaskSession.Task task:tasks)rows.put(new JSONObject().put("id",task.id).put("component",task.component).put("mode",task.mode)
+        for(TaskSnapshot.Task task:tasks)rows.put(new JSONObject().put("id",task.id).put("component",task.component).put("mode",task.mode)
             .put("visible",task.visible).put("focused",task.focused).put("left",0).put("top",0).put("right",360).put("bottom",720));
         return new JSONObject().put("tasks",rows).toString();
     }
     private static final class FakeBackend implements PhoneRunningTasks.Backend {
         boolean ready=true;int observed,removed,requests,connections;Runnable observer;Bridge.Reply snapshot,focus;
-        TaskSession.Task focused,operated;int operations;String action;Rect bounds;Bridge.Reply operation;
+        TaskSnapshot.Task focused,operated;int operations;String action;Rect bounds;Bridge.Reply operation;
         public boolean ready(){return ready;}
         public void connect(){connections++;}
         public void observe(Runnable listener){observed++;observer=listener;}
         public void remove(Runnable listener){check(observer==listener,"removed different observer");removed++;observer=null;}
         public void snapshot(Bridge.Reply reply){requests++;check(snapshot==null,"overlapping snapshot request");snapshot=reply;}
-        public void focus(TaskSession.Task task,Bridge.Reply reply){focused=task;focus=reply;}
-        public void operation(TaskSession.Task task,String action,Rect bounds,Bridge.Reply reply){operations++;operated=task;this.action=action;this.bounds=new Rect(bounds);operation=reply;}
+        public void focus(TaskSnapshot.Task task,Bridge.Reply reply){focused=task;focus=reply;}
+        public void operation(TaskSnapshot.Task task,String action,Rect bounds,Bridge.Reply reply){operations++;operated=task;this.action=action;this.bounds=new Rect(bounds);operation=reply;}
         void answer(String result,String error){Bridge.Reply reply=snapshot;check(reply!=null,"no pending snapshot");snapshot=null;reply.done(result,error);}
     }
     private static void recovery()throws Exception{
@@ -77,7 +77,7 @@ final class PhoneSidebarChecks {
     private static void lifecycle()throws Exception{
         FakeBackend backend=new FakeBackend();int[] changes={0},focused={0},failures={0};
         PhoneRunningTasks feed=new PhoneRunningTasks(backend,()->changes[0]++);
-        TaskSession.Task first=task(401,"fixture.chat/.Main",true),second=task(402,"fixture.chat/.Main",false),other=task(403,"fixture.mail/.Main",false);
+        TaskSnapshot.Task first=task(401,"fixture.chat/.Main",true),second=task(402,"fixture.chat/.Main",false),other=task(403,"fixture.mail/.Main",false);
         try{
             feed.refresh();check(backend.requests==0,"hidden feed queried tasks");
             feed.start();feed.start();feed.refresh();feed.refresh();
@@ -85,7 +85,7 @@ final class PhoneSidebarChecks {
             backend.answer(snapshot(first,second,other),null);
             check(feed.tasks().size()==3&&changes[0]==1,"synthetic tasks missing or combined by app");
             feed.refresh();backend.answer(snapshot(first,second,other),null);check(changes[0]==1,"unchanged feed rebuilt views");
-            TaskSession.Task floating=task(first.id,first.component,first.focused,5);
+            TaskSnapshot.Task floating=task(first.id,first.component,first.focused,5);
             feed.refresh();backend.answer(snapshot(floating,second,other),null);check(changes[0]==2&&feed.tasks().get(0).mode==5,"mode-only change did not invalidate cached task menu");
             feed.refresh();backend.answer(snapshot(first,second,other),null);check(changes[0]==3&&feed.tasks().get(0).mode==1,"fullscreen mode-only change did not refresh task menu");
             feed.focus(second,()->focused[0]++,error->failures[0]++);
@@ -119,7 +119,7 @@ final class PhoneSidebarChecks {
     private static void fullscreen()throws Exception{
         FakeBackend backend=new FakeBackend();int[] completed={0},failed={0},changes={0};
         PhoneRunningTasks feed=new PhoneRunningTasks(backend,()->changes[0]++);
-        TaskSession.Task floating=task(601,"fixture.chat/.Main",true,5),main=task(601,"fixture.chat/.Main",true,1),other=task(602,"fixture.mail/.Main",false);
+        TaskSnapshot.Task floating=task(601,"fixture.chat/.Main",true,5),main=task(601,"fixture.chat/.Main",true,1),other=task(602,"fixture.mail/.Main",false);
         try{
             feed.start();feed.refresh();backend.answer(snapshot(floating,other),null);
             feed.operation(floating,"fullscreen",null,()->completed[0]++,error->failed[0]++);
@@ -140,7 +140,7 @@ final class PhoneSidebarChecks {
     private static void operations()throws Exception{
         FakeBackend backend=new FakeBackend();int[] completed={0},failed={0};
         PhoneRunningTasks feed=new PhoneRunningTasks(backend,()->{});
-        TaskSession.Task first=task(501,"fixture.chat/.Main",true),second=task(502,"fixture.chat/.Main",false);
+        TaskSnapshot.Task first=task(501,"fixture.chat/.Main",true),second=task(502,"fixture.chat/.Main",false);
         Rect bounds=PhoneTaskMenu.floatingBounds(new Rect(10,20,910,1220));
         check(bounds.equals(new Rect(160,220,760,1020)),"float bounds differ from existing centered two-thirds rule");
         check(PhoneTaskMenu.floatingBounds(new Rect(10,20,11,21)).equals(new Rect(10,20,11,21)),"tiny content bounds empty/outside");
@@ -172,7 +172,7 @@ final class PhoneSidebarChecks {
     }
     private static void pipFullscreen()throws Exception{
         FakeBackend backend=new FakeBackend();int[] completed={0};PhoneRunningTasks feed=new PhoneRunningTasks(backend,()->{});
-        TaskSession.Task pip=task(711,"fixture.video/.Player",true,2),main=task(711,"fixture.video/.Player",true,1),other=task(712,"fixture.mail/.Main",false,1);
+        TaskSnapshot.Task pip=task(711,"fixture.video/.Player",true,2),main=task(711,"fixture.video/.Player",true,1),other=task(712,"fixture.mail/.Main",false,1);
         try{
             feed.start();feed.refresh();backend.answer(snapshot(pip,other),null);
             feed.operation(pip,"fullscreen",null,()->completed[0]++,error->{throw new AssertionError(error);});
@@ -207,7 +207,7 @@ final class PhoneSidebarChecks {
     /** Production legacy Taskbar commands, without constructing TaskSession or contacting the OS. */
     private static void taskbarActions(Context context)throws Exception{
         for(int mode:new int[]{1,2,5}){
-            TaskSession.Task selected=task(8800+mode,"fixture.taskbar/.Mode"+mode,true,mode);
+            TaskSnapshot.Task selected=task(8800+mode,"fixture.taskbar/.Mode"+mode,true,mode);
             PopupMenu popup=new PopupMenu(context,new ImageButton(context));List<String> commands=new ArrayList<>();
             AppContextMenu.addTaskActions(context,popup.getMenu(),selected,action->commands.add(selected.id+"|"+selected.component+"|"+action));
             Menu menu=popup.getMenu();
@@ -220,8 +220,8 @@ final class PhoneSidebarChecks {
         }
     }
     private static void rendering(Context context)throws Exception{
-        List<TaskSession.Task> clicked=new ArrayList<>(),menuTasks=new ArrayList<>();
-        TaskSession.Task first=task(401,"fixture.chat/.Main",true),second=task(402,"fixture.chat/.Main",false);
+        List<TaskSnapshot.Task> clicked=new ArrayList<>(),menuTasks=new ArrayList<>();
+        TaskSnapshot.Task first=task(401,"fixture.chat/.Main",true),second=task(402,"fixture.chat/.Main",false);
         LinearLayout rows=Ui.column(context);PhoneSidebar.renderTasks(context,rows,Arrays.asList(first,second),clicked::add,(anchor,task)->menuTasks.add(task));
         check(rows.getChildCount()==2,"same-app active tasks combined");
         ImageButton a=(ImageButton)rows.getChildAt(0),b=(ImageButton)rows.getChildAt(1);

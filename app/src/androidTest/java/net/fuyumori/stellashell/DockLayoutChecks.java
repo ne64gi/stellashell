@@ -38,7 +38,10 @@ final class DockLayoutChecks {
     private final Context actual;
     private final String prefix="dock_layout_fixture_"+java.util.UUID.randomUUID()+"_";
     private final Set<String> preferenceFiles=new HashSet<>();
-    private DockService fixture;
+    private SelectedOutputSurface fixture;
+    private ShellSettings fixtureSettings;
+    private TaskState fixtureTasks;
+    private PhoneNavigationOwner fixturePhone;
     private FixtureContext sandbox;
     private VirtualDisplay display;
     private ImageReader reader;
@@ -50,9 +53,9 @@ final class DockLayoutChecks {
     private static Field field(Class<?> owner,String name)throws ReflectiveOperationException{
         Field value=owner.getDeclaredField(name);value.setAccessible(true);return value;
     }
-    private Object get(String name){try{return field(DockService.class,name).get(fixture);}catch(ReflectiveOperationException e){throw new AssertionError(e);}}
+    private Object get(String name){try{return field(SelectedOutputSurface.class,name).get(fixture);}catch(ReflectiveOperationException e){throw new AssertionError(e);}}
     private Object dockField(String name){try{return field(DesktopDock.class,name).get(get("desktopDock"));}catch(ReflectiveOperationException e){throw new AssertionError(e);}}
-    private void invoke(String name){try{Method m=DockService.class.getDeclaredMethod(name);m.setAccessible(true);m.invoke(fixture);}catch(ReflectiveOperationException e){throw new AssertionError(name,e);}}
+    private void invoke(String name){try{Method m=SelectedOutputSurface.class.getDeclaredMethod(name);m.setAccessible(true);m.invoke(fixture);}catch(ReflectiveOperationException e){throw new AssertionError(name,e);}}
     private void main(Runnable action){
         Throwable[] failure={null};test.runOnMainSync(()->{try{action.run();}catch(Throwable e){failure[0]=e;}});
         if(failure[0]!=null)throw new AssertionError(failure[0]);
@@ -67,7 +70,7 @@ final class DockLayoutChecks {
     /** Resume only the already-selected session after instrumentation replaces its process. */
     static void prepare(Instrumentation test)throws Exception{
         Context context=test.getTargetContext();SharedPreferences prefs=Launches.prefs(context);
-        int selected=Workspace.enabled(context)?Workspace.target(context):prefs.getInt("preferred_display",-1);
+        int selected=TaskState.of(context).enabled(context)?TaskState.of(context).target(context):prefs.getInt("preferred_display",-1);
         check(selected>=0&&(!prefs.contains("active_display")||prefs.getInt("active_display",-1)==selected),"Existing selected workspace must be stable; fixture never changes it");
         Display target=context.getSystemService(DisplayManager.class).getDisplay(selected);
         check(target!=null&&target.isValid()&&(target.getFlags()&Display.FLAG_PRIVATE)==0,"Selected workspace disconnected; fixture does not fall back");
@@ -82,8 +85,7 @@ final class DockLayoutChecks {
         });
         long until=SystemClock.uptimeMillis()+15000;
         while(SystemClock.uptimeMillis()<until){
-            Object service=field(DockService.class,"instance").get(null);
-            if(Bridge.get(context).ready()&&service!=null&&field(DockService.class,"displayId").getInt(service)==selected)return;
+            if(Bridge.get(context).ready()&&ShellRuntime.running()&&ShellRuntime.selectedDisplay()==selected)return;
             Thread.sleep(100);
         }
         throw new AssertionError("Existing selected session did not resume");
@@ -94,9 +96,9 @@ final class DockLayoutChecks {
         int selected=production.getInt("active_display",-1);
         check(selected>=0,"Requires stable existing workspace; fixture never changes it");
         check(Settings.canDrawOverlays(actual),"Existing overlay permission is required");
-        Object live=field(DockService.class,"instance").get(null);
-        boolean alive=DockService.running();
-        check(live!=null&&alive&&field(DockService.class,"displayId").getInt(live)==selected,"Existing service must retain selected display");
+        long live=ShellRuntime.snapshot().generation;
+        boolean alive=ShellRuntime.running();
+        check(alive&&ShellRuntime.selectedDisplay()==selected,"Existing service must retain selected display");
         boolean autoPresent=production.contains("workspace_auto"),auto=production.getBoolean("workspace_auto",false);
         // A public fixture display must not trigger the real service's auto-handoff.
         try{
@@ -112,9 +114,9 @@ final class DockLayoutChecks {
                 try{taskbarLabel=actual.getPackageManager().getApplicationInfo(test.getContext().getPackageName(),0).loadLabel(actual.getPackageManager()).toString();dockLabel=actual.getApplicationInfo().loadLabel(actual.getPackageManager()).toString();}catch(android.content.pm.PackageManager.NameNotFoundException e){throw new AssertionError(e);}
                 check(!taskbarLabel.equals(dockLabel),"Fixture packages need distinguishable labels");
                 check(p.edit().putBoolean("phone_profile_initialized",true).putBoolean("primary_mode",false).putBoolean("enabled",false).putInt("active_display",displayId).putInt("workspace_display",displayId).putString("shell_layout","desktop").putString("pinned",pins(taskbarPin,6)).putString("dock_pinned",pins(dockPin,8)).commit(),"Fixture preferences failed");
-                fixture=new DockService();
-                try{field(ContextWrapper.class,"mBase").set(fixture,sandbox);field(DockService.class,"displays").set(fixture,actual.getSystemService(DisplayManager.class));field(DockService.class,"displayId").setInt(fixture,displayId);}catch(ReflectiveOperationException e){throw new AssertionError("Cannot safely construct standalone service",e);}
-                check(get("tasks")==null,"Fixture must never create TaskSession");
+                fixturePhone=new PhoneNavigationOwner(sandbox,()->{},()->{});
+                fixture=new SelectedOutputSurface(sandbox,displayId,fixturePhone,false);
+                check(fixtureTasks.snapshot().tasks.isEmpty(),"Layout fixture must never poll OS tasks");
             });
             test.waitForIdleSync();
             if(scope==Scope.NAVIGATION){
@@ -142,7 +144,7 @@ final class DockLayoutChecks {
             resize(1280,720);
             if(scope==Scope.DISPLAY_SCALE)new DisplayScalingChecks(test).run(displayId);
             if(scope==Scope.PIP||scope==Scope.TASK_CLOSE)new PipRestoreChecks(test).run(displayId,scope==Scope.PIP);
-            check(field(DockService.class,"instance").get(null)==live&&DockService.running()==alive,"Fixture altered live service identity/lifecycle");
+            check(ShellRuntime.snapshot().generation==live&&ShellRuntime.running()==alive,"Fixture altered live service identity/lifecycle");
         }finally{
             try{
                 try{main(this::cleanup);}finally{test.waitForIdleSync();}
@@ -155,7 +157,7 @@ final class DockLayoutChecks {
             }
         }
         check(production.contains("workspace_auto")==autoPresent&&production.getBoolean("workspace_auto",false)==auto,"Automatic-handoff preference not restored exactly");
-        check(field(DockService.class,"instance").get(null)==live&&DockService.running()==alive,"Live service identity/lifecycle changed");
+        check(ShellRuntime.snapshot().generation==live&&ShellRuntime.running()==alive,"Live service identity/lifecycle changed");
     }
 
     private ImageReader imageReader(int width,int height){
@@ -165,9 +167,10 @@ final class DockLayoutChecks {
     private void cleanup(){
         Throwable failure=null;
         Runnable[] actions={
-            ()->{if(fixture!=null)invoke("closeAreaObserver");},
-            ()->{if(fixture!=null)invoke("removeDock");},
-            ()->{if(fixture!=null)((ExecutorService)get("menuLoader")).shutdownNow();},
+            ()->{if(fixture!=null)fixture.close();},
+            ()->{if(fixturePhone!=null)fixturePhone.close();},
+            ()->{if(fixtureTasks!=null)fixtureTasks.closeOwner();},
+            ()->{if(fixtureSettings!=null)fixtureSettings.close();},
             ()->{if(display!=null){display.release();display=null;}},
             ()->{if(reader!=null){reader.close();reader=null;}},
             ()->{if(displayId>0)WorkArea.remove(displayId);}
@@ -218,7 +221,7 @@ final class DockLayoutChecks {
         mount("bottom",50,100,true,false);
         for(String layout:new String[]{"compact","desktop","compact","auto"}){
             boolean compact="compact".equals(layout);
-            main(()->{SharedPreferences prefs=Launches.prefs(sandbox);check(prefs.edit().putString("shell_layout",layout).commit(),"Presentation fixture write failed");fixture.onSharedPreferenceChanged(prefs,"shell_layout");});
+            main(()->{SharedPreferences prefs=Launches.prefs(sandbox);check(prefs.edit().putString("shell_layout",layout).commit(),"Presentation fixture write failed");fixture.settingsChanged(java.util.EnumSet.of(ShellSettings.Change.SHELL_LAYOUT));});
             awaitViews(true,false);validate("bottom",50,100,true,false,false,compact);
             View bar=(View)get("dock");
             main(()->{
@@ -234,7 +237,7 @@ final class DockLayoutChecks {
     }
     private static int scaled(Context c,int dp,String key){return Math.round(c.getResources().getDisplayMetrics().density*dp*Launches.prefs(c).getInt(key,100)/100f);}
     private void preferenceEvent(String key,boolean value){
-        main(()->{SharedPreferences p=Launches.prefs(sandbox);check(p.edit().putBoolean(key,value).commit(),"Fixture switch write failed");fixture.onSharedPreferenceChanged(p,key);});
+        main(()->{SharedPreferences p=Launches.prefs(sandbox);check(p.edit().putBoolean(key,value).commit(),"Fixture switch write failed");if("desktop_dock".equals(key))fixture.settingsChanged(java.util.EnumSet.of(ShellSettings.Change.EXTERNAL_DOCK_ENABLED));});
     }
     private void independentPins()throws Exception{
         main(()->Launches.toggleDockPin(sandbox.createDisplayContext(display.getDisplay()),new ComponentName(actual,HomeActivity.class).flattenToString()));
@@ -348,7 +351,9 @@ final class DockLayoutChecks {
     }
     private static int descriptions(View view,String label){int count=view.getVisibility()==View.VISIBLE&&label.contentEquals(view.getContentDescription()==null?"":view.getContentDescription())?1:0;if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++)count+=descriptions(((ViewGroup)view).getChildAt(i),label);return count;}
 
-    private final class FixtureContext extends ContextWrapper {
+    private final class FixtureContext extends ContextWrapper implements ShellSettings.Provider,TaskState.Provider {
+        public ShellSettings shellSettings(){if(fixtureSettings==null)fixtureSettings=ShellSettings.isolated(getSharedPreferences("desktop",0));return fixtureSettings;}
+        public TaskState taskState(){if(fixtureTasks==null)fixtureTasks=TaskState.isolated(this);return fixtureTasks;}
         FixtureContext(Context base){super(base);}
         @Override public Context getApplicationContext(){return this;}
         @Override public SharedPreferences getSharedPreferences(String name,int mode){String isolated=prefix+name;preferenceFiles.add(isolated);return actual.getSharedPreferences(isolated,mode);}

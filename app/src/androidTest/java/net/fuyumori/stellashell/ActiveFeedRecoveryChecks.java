@@ -21,15 +21,16 @@ final class ActiveFeedRecoveryChecks {
     }
     void run()throws Exception{
         check(Launches.prefs(context).getBoolean("enabled",false)&&Launches.prefs(context).getBoolean("primary_mode",false),"Requires an already enabled phone session");
-        Bridge bridge=Bridge.get(context);main(()->{check(bridge.authorized(),"Shizuku must already be running and authorized");DockService.start(context,0,false);bridge.connect();});
-        await(bridge::ready,"Initial Shizuku connection unavailable");await(DockService::phoneNavigationReady,"Phone sidebar unavailable");test.waitForIdleSync();
+        Bridge bridge=Bridge.get(context);main(()->{check(bridge.authorized(),"Shizuku must already be running and authorized");ShellRuntime.start(context,0,false);bridge.connect();});
+        await(bridge::ready,"Initial Shizuku connection unavailable");await(ShellRuntime::phoneNavigationReady,"Phone sidebar unavailable");test.waitForIdleSync();
         Field serviceField=field(Bridge.class,"service");IDesktopBridge previous=(IDesktopBridge)serviceField.get(bridge);
         PhoneRunningTasks[] feed={null};PhoneSidebar[] sidebar={null};
         try{
             main(()->{
                 try{
-                    DockService service=(DockService)field(DockService.class,"instance").get(null);
-                    sidebar[0]=(PhoneSidebar)field(DockService.class,"phoneSidebar").get(service);sidebar[0].show(true);
+                    sidebar[0]=ShellFixtureAccess.sidebar();
+                    check(sidebar[0]!=null,"Phone Sidebar is not owned by the current navigation runtime");
+                    sidebar[0].show(true);
                     feed[0]=(PhoneRunningTasks)field(PhoneSidebar.class,"running").get(sidebar[0]);
                     serviceField.set(bridge,null);
                     check(!bridge.ready(),"Client cache did not disconnect");feed[0].refresh();
@@ -45,7 +46,7 @@ final class ActiveFeedRecoveryChecks {
                     PhoneRunningTasks running=(PhoneRunningTasks)field(PhoneSidebar.class,"running").get(sidebar[0]);
                     LinearLayout rows=(LinearLayout)field(PhoneSidebar.class,"activeTasks").get(sidebar[0]);
                     Context phoneContext=(Context)field(PhoneSidebar.class,"context").get(sidebar[0]);
-                    java.util.List<TaskSession.Task> tasks=running.tasks();
+                    java.util.List<TaskSnapshot.Task> tasks=running.tasks();
                     int expected=PhoneSidebar.unpinnedTasks(tasks,Launches.pins(phoneContext)).size();
                     LinearLayout section=(LinearLayout)field(PhoneSidebar.class,"activeSection").get(sidebar[0]);
                     return running.state()==PhoneRunningTasks.State.READY&&rows.getChildCount()==expected&&section.getVisibility()==(expected==0?View.GONE:View.VISIBLE);
@@ -57,10 +58,9 @@ final class ActiveFeedRecoveryChecks {
                     try{
                         PhoneRunningTasks running=(PhoneRunningTasks)field(PhoneSidebar.class,"running").get(sidebar[0]);
                         LinearLayout rows=(LinearLayout)field(PhoneSidebar.class,"activeTasks").get(sidebar[0]);
-                        DockService service=(DockService)field(DockService.class,"instance").get(null);
                         diagnostic[0]="shown="+field(PhoneSidebar.class,"shown").getBoolean(sidebar[0])
                                 +", closed="+field(PhoneSidebar.class,"closed").getBoolean(sidebar[0])
-                                +", current="+(service!=null&&field(DockService.class,"phoneSidebar").get(service)==sidebar[0])
+                                +", current="+(ShellFixtureAccess.sidebar()==sidebar[0])
                                 +", state="+running.state()+", tasks="+running.tasks().size()
                                 +", rows="+(rows==null?-1:rows.getChildCount())
                                 +", bridgeReady="+bridge.ready()+", authorized="+bridge.authorized();

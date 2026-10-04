@@ -4,7 +4,6 @@ import android.app.Instrumentation;
 import android.content.Context;
 import android.graphics.Rect;
 import android.os.SystemClock;
-import java.lang.reflect.Field;
 import java.util.LinkedHashMap;
 import java.util.ArrayList;
 import java.util.List;
@@ -68,11 +67,11 @@ final class TaskCloseChecks {
         PhoneRunningTasks[] feed={null};
         try{
             test.runOnMainSync(()->{feed[0]=new PhoneRunningTasks(context,()->{});feed[0].start();feed[0].refresh();});
-            TaskSession.Task[] selected={null};
+            TaskSnapshot.Task[] selected={null};
             await(()->{
                 test.runOnMainSync(()->{
                     selected[0]=null;
-                    for(TaskSession.Task task:feed[0].tasks())if(task.id==id&&component.equals(task.component)){selected[0]=task;break;}
+                    for(TaskSnapshot.Task task:feed[0].tasks())if(task.id==id&&component.equals(task.component)){selected[0]=task;break;}
                 });
                 return selected[0]!=null;
             },"production phone feed did not find exact fixture");
@@ -81,9 +80,9 @@ final class TaskCloseChecks {
             check(done.await(20,TimeUnit.SECONDS),"production phone "+action+" callback timeout");
             check(error[0]==null,"production phone "+action+" failed: "+error[0]);
             JSONObject row=fixture(id,component);check(row!=null,"production phone "+action+" lost fixture");
-            TaskSession.Task actual=new TaskSession.Task(row);boolean[] adopted={false},phoneOutput={false};
+            TaskSnapshot.Task actual=new TaskSnapshot.Task(row);boolean[] adopted={false},phoneOutput={false};
             check(actual.mode==("float".equals(action)?5:1),"production phone "+action+" returned wrong actual mode");
-            test.runOnMainSync(()->{phoneOutput[0]=Launches.prefs(context).getInt("active_display",-1)==0;adopted[0]=Workspace.owns(actual);});
+            test.runOnMainSync(()->{phoneOutput[0]=ShellRuntime.selectedDisplay()==0;adopted[0]=TaskState.of(context).owns(actual);});
             if("fullscreen".equals(action))check(!adopted[0],"fullscreen task retained floating workspace ownership");
             else if(phoneOutput[0])check(adopted[0],"phone float not adopted for local window chrome");
             else check(!adopted[0],"phone float mixed into external workspace ownership");
@@ -95,13 +94,15 @@ final class TaskCloseChecks {
             }
         }
     }
-    @SuppressWarnings("unchecked")
     private void clearFixtureOwnership()throws Exception {
-        Field field=Workspace.class.getDeclaredField("owned");field.setAccessible(true);
-        Map<Integer,String> owned=(Map<Integer,String>)field.get(null);
+        JSONArray remaining=phoneTasks();
+        List<TaskSnapshot.Identity> absent=new ArrayList<>();
+        for(Map.Entry<Integer,String> entry:created.entrySet())
+            if(find(remaining,entry.getKey(),entry.getValue())==null)
+                absent.add(new TaskSnapshot.Identity(entry.getKey(),entry.getValue()));
         test.runOnMainSync(()->{
-            for(Map.Entry<Integer,String> entry:created.entrySet())
-                if(entry.getValue().equals(owned.get(entry.getKey())))owned.remove(entry.getKey());
+            TaskState owner=TaskState.of(context);long epoch=owner.session();
+            for(TaskSnapshot.Identity identity:absent)owner.phoneTaskClosed(identity,epoch);
         });
     }
     private void rejectOperation(int id,String component,String action,Rect bounds,String message)throws Exception {

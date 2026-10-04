@@ -10,6 +10,7 @@ import java.util.concurrent.*;
 /** Display-0 navigation, independent of the Desktop session's current output. */
 final class PhoneSidebar implements AutoCloseable {
     private final Context context;
+    private final ShellSettings settings;
     private final WindowManager windows;
     private final ExecutorService loader=Executors.newSingleThreadExecutor();
     final AppMenu menu;
@@ -22,11 +23,12 @@ final class PhoneSidebar implements AutoCloseable {
     private View panel;
     private Float pullX;
     private HubActivity.SidebarDrag drag;
-    private boolean shown,right=true,closed,home;
+    private boolean shown,right=true,closed,home,taskbarReady;
     PhoneSidebar(Context service,Runnable areaChanged){this(service,areaChanged,null,null);}
     PhoneSidebar(Context service,Runnable areaChanged,PhoneRunningTasks.Backend backend,java.util.function.Supplier<WorkArea> geometry){
         context=new android.view.ContextThemeWrapper(service.createDisplayContext(service.getSystemService(android.hardware.display.DisplayManager.class).getDisplay(0))
                 .createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,null),Appearance.theme());
+        settings=ShellSettings.of(context);
         windows=context.getSystemService(WindowManager.class);
         menu=new AppMenu(context,windows,0);
         taskMenu=new PhoneTaskMenu(context);
@@ -37,9 +39,10 @@ final class PhoneSidebar implements AutoCloseable {
     }
     boolean ready(){return !closed&&panel!=null&&handles.size()==2;}
     void homeVisible(boolean visible){home=visible;relayout();}
-    private boolean allowed(){return Launches.prefs(context).getBoolean("phone_sidebar_over_apps",true)||home;}
+    void taskbarReady(boolean ready){if(closed||taskbarReady==ready)return;taskbarReady=ready;rebuild();}
+    private boolean allowed(){return settings.snapshot().phoneDock.overApps||home;}
     void toggleStart(){hide();menu.toggle(loader,0);}
-    void show(boolean fromRight){if(!allowed())return;String side=Launches.prefs(context).getString("phone_sidebar_side","both");right="right".equals(side)||!"left".equals(side)&&fromRight;shown=true;relayout();}
+    void show(boolean fromRight){if(!allowed())return;ShellSettings.PhoneSide side=settings.snapshot().phoneDock.phoneSide;right=side==ShellSettings.PhoneSide.RIGHT||side!=ShellSettings.PhoneSide.LEFT&&fromRight;shown=true;relayout();}
     void hide(){taskMenu.close();shown=false;pullX=null;relayout();}
     private HubActivity.SidebarDrag pull(boolean fromRight,float distance){
         return HubActivity.beginPull(context,fromRight,distance,leading->{
@@ -50,7 +53,7 @@ final class PhoneSidebar implements AutoCloseable {
     void rebuild(){removeViews();build();}
     private void build(){
         LinearLayout column=Ui.column(context);column.setGravity(Gravity.CENTER_HORIZONTAL);
-        if(!Launches.prefs(context).getBoolean("phone_taskbar",false)){
+        if(!taskbarReady){
             ImageButton start=new ImageButton(context);start.setImageResource(R.mipmap.ic_launcher);start.setScaleType(ImageView.ScaleType.FIT_CENTER);
             start.setBackground(null);start.setPadding(dp(14),dp(6),dp(14),dp(6));start.setContentDescription(context.getString(R.string.ui_app_menu));
             start.setOnClickListener(v->toggleStart());column.addView(start,new LinearLayout.LayoutParams(-1,dp(48)));
@@ -120,18 +123,20 @@ final class PhoneSidebar implements AutoCloseable {
     void relayout(){
         if(closed||panel==null)return;WorkArea bounds=area.get();android.graphics.Rect available=bounds.dockAvailable;
         if(!allowed())shown=false;
-        String side=Launches.prefs(context).getString("phone_sidebar_side","both");
-        if("left".equals(side))right=false;else if("right".equals(side))right=true;
+        ShellSettings.Snapshot settingsSnapshot=settings.snapshot();ShellSettings.PhoneSide side=settingsSnapshot.phoneDock.phoneSide;
+        if(side==ShellSettings.PhoneSide.LEFT)right=false;else if(side==ShellSettings.PhoneSide.RIGHT)right=true;
         WindowManager.LayoutParams p=(WindowManager.LayoutParams)panel.getLayoutParams();
         int width=Math.min(dp(76),available.width()),height=Math.min(dp(500),available.height());p.width=shown?width:1;p.height=shown?height:1;
         p.x=pullX==null?(right?available.right-width:available.left):Math.round(pullX);p.y=available.bottom-height;panel.setVisibility(shown?View.VISIBLE:View.GONE);windows.updateViewLayout(panel,p);
-        int percent=Math.max(0,Math.min(100,Launches.prefs(context).getInt("sidebar_height",80)));
+        int percent=settingsSnapshot.phoneDock.triggerPercent;
         for(int i=0;i<handles.size();i++){
             View handle=handles.get(i);WindowManager.LayoutParams h=(WindowManager.LayoutParams)handle.getLayoutParams();
             h.width=Math.min(dp(16),available.width());h.height=Math.min(dp(64),available.height());
             h.x=i==0?Math.max(available.left,bounds.gestureLeft)+dp(8):Math.min(available.right,bounds.physical.right-bounds.gestureRight)-dp(24);
             h.x=Math.max(available.left,Math.min(h.x,available.right-h.width));
-            h.y=available.top+Math.round(Math.max(0,available.height()-h.height)*percent/100f);handle.setVisibility(allowed()&&!(i==0?"right":"left").equals(side)?View.VISIBLE:View.GONE);windows.updateViewLayout(handle,h);
+            h.y=available.top+Math.round(Math.max(0,available.height()-h.height)*percent/100f);
+            boolean hiddenBySide=i==0?side==ShellSettings.PhoneSide.RIGHT:side==ShellSettings.PhoneSide.LEFT;
+            handle.setVisibility(allowed()&&!hiddenBySide?View.VISIBLE:View.GONE);windows.updateViewLayout(handle,h);
         }
         menu.relayout();
         if(shown)running.start();else{taskMenu.close();running.stop();}
@@ -142,23 +147,23 @@ final class PhoneSidebar implements AutoCloseable {
     }
     private void renderRunning(){
         taskMenu.close();if(activeTasks==null)return;
-        List<TaskSession.Task> allTasks=running.tasks();
-        List<TaskSession.Task> tasks=running.state()==PhoneRunningTasks.State.READY?unpinnedTasks(allTasks,Launches.pins(context)):Collections.emptyList();
+        List<TaskSnapshot.Task> allTasks=running.tasks();
+        List<TaskSnapshot.Task> tasks=running.state()==PhoneRunningTasks.State.READY?unpinnedTasks(allTasks,Launches.pins(context)):Collections.emptyList();
         activeSection.setVisibility(tasks.isEmpty()?View.GONE:View.VISIBLE);
         renderTasks(context,activeTasks,tasks,task->running.focus(task,this::hide,error->Launches.problem(context,error)),this::taskMenu);
         for(int i=0;i<activeTasks.getChildCount();i++){
             View icon=activeTasks.getChildAt(i);icon.setPadding(dp(14),dp(8),dp(14),dp(8));icon.setLayoutParams(new LinearLayout.LayoutParams(-1,dp(52)));
         }
     }
-    static List<TaskSession.Task> unpinnedTasks(List<TaskSession.Task> tasks,List<String> pins){
+    static List<TaskSnapshot.Task> unpinnedTasks(List<TaskSnapshot.Task> tasks,List<String> pins){
         Set<String> packages=new HashSet<>();
         for(String pin:pins){ComponentName name=ComponentName.unflattenFromString(pin);if(name!=null)packages.add(name.getPackageName());}
-        List<TaskSession.Task> visible=new ArrayList<>();
+        List<TaskSnapshot.Task> visible=new ArrayList<>();
         // Launcher aliases and internal task Activities can differ within the same app.
-        for(TaskSession.Task task:tasks)if(!packages.contains(task.packageName()))visible.add(task);
+        for(TaskSnapshot.Task task:tasks)if(!packages.contains(task.packageName()))visible.add(task);
         return visible;
     }
-    private void taskMenu(View anchor,TaskSession.Task task){
+    private void taskMenu(View anchor,TaskSnapshot.Task task){
         if(closed||!shown)return;
         taskMenu.show(anchor,TaskModes.canReturnToMain(task.mode),action->{
             if(closed||!shown)return;
@@ -166,13 +171,13 @@ final class PhoneSidebar implements AutoCloseable {
             running.operation(task,action,bounds,"close".equals(action)?running::refresh:this::hide,error->Launches.problem(context,error));
         });
     }
-    static void renderTasks(Context context,LinearLayout rows,List<TaskSession.Task> tasks,java.util.function.Consumer<TaskSession.Task> focus){
+    static void renderTasks(Context context,LinearLayout rows,List<TaskSnapshot.Task> tasks,java.util.function.Consumer<TaskSnapshot.Task> focus){
         renderTasks(context,rows,tasks,focus,null);
     }
-    static void renderTasks(Context context,LinearLayout rows,List<TaskSession.Task> tasks,java.util.function.Consumer<TaskSession.Task> focus,java.util.function.BiConsumer<View,TaskSession.Task> menu){
+    static void renderTasks(Context context,LinearLayout rows,List<TaskSnapshot.Task> tasks,java.util.function.Consumer<TaskSnapshot.Task> focus,java.util.function.BiConsumer<View,TaskSnapshot.Task> menu){
         rows.removeAllViews();Map<String,Integer> totals=new HashMap<>(),seen=new HashMap<>();
-        for(TaskSession.Task task:tasks)totals.put(task.component,totals.getOrDefault(task.component,0)+1);
-        for(TaskSession.Task task:tasks){
+        for(TaskSnapshot.Task task:tasks)totals.put(task.component,totals.getOrDefault(task.component,0)+1);
+        for(TaskSnapshot.Task task:tasks){
             android.content.ComponentName name=android.content.ComponentName.unflattenFromString(task.component);if(name==null)continue;
             CharSequence label=name.getPackageName();android.graphics.drawable.Drawable image=context.getDrawable(android.R.drawable.sym_def_app_icon);
             try{android.content.pm.ApplicationInfo app=context.getPackageManager().getApplicationInfo(name.getPackageName(),0);label=app.loadLabel(context.getPackageManager());image=AppIcons.forApp(context,task.component,app.loadIcon(context.getPackageManager()));}
@@ -191,7 +196,7 @@ final class PhoneSidebar implements AutoCloseable {
             rows.addView(icon,new LinearLayout.LayoutParams(-1,Ui.dp(context,52)));
         }
     }
-    private int scale(){return Launches.prefs(context).getInt(NavigationScale.key(true,false),NavigationScale.DEFAULT);}
+    private int scale(){return settings.snapshot().phoneDock.scalePercent;}
     private float factor(){return NavigationScale.factor(scale());}
     private int dp(int value){return NavigationScale.pixels(context.getResources().getDisplayMetrics().density,value,scale());}
     private void removeViews(){taskMenu.close();running.stop();activeTasks=null;activeSection=null;menu.close();if(panel!=null){windows.removeViewImmediate(panel);panel=null;}for(View v:handles)windows.removeViewImmediate(v);handles.clear();}

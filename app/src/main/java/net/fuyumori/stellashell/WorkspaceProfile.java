@@ -1,14 +1,16 @@
 package net.fuyumori.stellashell;
 
 import android.content.*;
+import android.app.Service;
 import android.view.Display;
 import java.util.*;
 
 /** Profile identity follows the display, never its dimensions or rotation. */
 final class WorkspaceProfile {
     static boolean phone(Context c){
-        try{Display d=c instanceof android.app.Service?null:c.getDisplay();if(d!=null)return d.getDisplayId()==0;}catch(UnsupportedOperationException ignored){}
-        return Launches.prefs(c).getInt("active_display",Launches.prefs(c).getInt("workspace_display",0))==0;
+        try{Display d=c instanceof Service?null:c.getDisplay();if(d!=null)return d.getDisplayId()==0;}catch(UnsupportedOperationException ignored){}
+        int selected=ShellRuntime.selectedDisplay();
+        return (selected>=0?selected:TaskState.of(c).target(c))==0;
     }
     static boolean standard(Context c,int display){return display==0;}
     static String key(Context c,String key){initialize(c);return phone(c)?"phone_"+key:key;}

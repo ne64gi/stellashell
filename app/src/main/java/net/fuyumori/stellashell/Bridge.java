@@ -27,6 +27,9 @@ public final class Bridge {
     public void screenOff(boolean off,Reply reply){call(s->{String result=s.syncPrimaryScreen(mouseDisplay,off,mouseOwner);if(!result.equals(off?"off":"on"))throw new IllegalStateException(result);return result;},(result,error)->{if(error==null)screenOff=off&&mouseDisplay>0;reply.done(result,error);});}
 
     private String mouseStatus="",imeStatus="";
+    private boolean shellHasExternalWorkspace(ShellSettings.Snapshot settings){
+        return ShellRuntime.enabled(context)&&(!settings.primaryMode||TaskState.of(context).target(context)>0);
+    }
     public void mouseDisplay(int displayId){
         int next=displayId>0?displayId:-1;
         if(mouseDisplay==next)return;
@@ -97,17 +100,18 @@ public final class Bridge {
             try {
                 IDesktopBridge current = service;
                 if (current == null || !current.asBinder().isBinderAlive()) throw new IllegalStateException(status());
-                current.setPrimaryMode(Displays.primaryActive(context));
+                ShellSettings.Snapshot settings=ShellSettings.of(context).snapshot();
+                current.setPrimaryMode(settings.primaryMode&&ShellRuntime.enabled(context));
                 // Input restoration must not be gated by an unrelated pin cleanup failure.
                 String routing;
-                try{routing=current.syncMouseRouting(Launches.prefs(context).getBoolean("enabled",false)&&(!Displays.primary(context)||Workspace.target(context)>0)?mouseDisplay:-1,mouseOwner);}
+                try{routing=current.syncMouseRouting(shellHasExternalWorkspace(settings)?mouseDisplay:-1,mouseOwner);}
                 catch(Exception e){routing="unavailable: "+e.getClass().getSimpleName();}
                 if(!java.util.Objects.equals(mouseStatus,routing)){
                     mouseStatus=routing;String diagnostic=routing;
                     main.post(()->Launches.prefs(context).edit().putString("mouse_diagnostics",diagnostic).apply());
                 }
                 String ime;
-                try{ime=current.syncVirtualKeyboard(Launches.prefs(context).getBoolean("enabled",false)&&(!Displays.primary(context)||Workspace.target(context)>0)?mouseDisplay:-1,
+                try{ime=current.syncVirtualKeyboard(shellHasExternalWorkspace(settings)?mouseDisplay:-1,
                         Launches.prefs(context).getBoolean("hide_virtual_ime",false),mouseOwner);}
                 catch(Exception e){ime="unavailable: "+e.getClass().getSimpleName();}
                 if(!java.util.Objects.equals(imeStatus,ime)){
@@ -115,7 +119,7 @@ public final class Bridge {
                     main.post(()->Launches.prefs(context).edit().putString("ime_diagnostics",diagnostic).apply());
                 }
                 if(syncPins){
-                    String pins=current.syncWindowPins(Launches.prefs(context).getBoolean("enabled",false),mouseOwner);
+                    String pins=current.syncWindowPins(ShellRuntime.enabled(context),mouseOwner);
                     if(pins.startsWith("ERROR:"))throw new IllegalStateException(pins);
                 }
                 value = work.run(current);

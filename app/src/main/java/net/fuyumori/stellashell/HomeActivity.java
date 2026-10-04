@@ -12,13 +12,15 @@ public final class HomeActivity extends DesktopActivity {
     private FrameLayout fallback;
     private final java.util.concurrent.ExecutorService menuLoader=java.util.concurrent.Executors.newSingleThreadExecutor();
     private boolean resumed,returnPending=true;
+    private ShellRuntime.HomeVisibilityLease homeVisibility;
+    private AutoCloseable homeSettingsSubscription;
     private final HomeOutputRecovery homeRecovery=new HomeOutputRecovery();
     private final Runnable bridgeChanged=this::refreshHome;
     private final Runnable navigationChanged=this::updateFallback;
     @Override protected boolean homeSurface(){return true;}
     static boolean extensions(Context c){
-        return !WorkspaceProfile.standard(c,0)&&HomeMode.extensions(Launches.prefs(c).getBoolean("enabled",false),
-                Displays.primary(c)&&Workspace.target(c)==0,Bridge.get(c).ready(),Settings.canDrawOverlays(c));
+        return !WorkspaceProfile.standard(c,0)&&HomeMode.extensions(ShellRuntime.enabled(c),
+                Displays.primary(c)&&TaskState.of(c).target(c)==0,Bridge.get(c).ready(),Settings.canDrawOverlays(c));
     }
     @Override public void onCreate(Bundle state){
         super.onCreate(state);if(root==null)return;
@@ -53,13 +55,13 @@ public final class HomeActivity extends DesktopActivity {
         fallback.addView(homeApps,new FrameLayout.LayoutParams(Ui.dp(this,48),Ui.dp(this,48),Gravity.TOP|Gravity.LEFT));
         fallback.setOnApplyWindowInsetsListener((v,insets)->{positionHomeEdges(insets);return insets;});
         fallback.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->positionHomeEdges(getWindow().getDecorView().getRootWindowInsets()));
-        Bridge.get(this).observe(bridgeChanged);DockService.observeNavigation(navigationChanged);updateFallback();
+        Bridge.get(this).observe(bridgeChanged);ShellRuntime.observeNavigation(navigationChanged);homeSettingsSubscription=ShellSettings.of(this).observe((changes,snapshot)->refreshHome());updateFallback();
     }
     void openApps(){if(apps==null)apps=new AppMenu(this,getWindowManager(),0);if(!apps.isOpen())apps.open(menuLoader);}
     private void positionHomeEdges(WindowInsets insets){
         if(fallback==null||insets==null)return;
-        WorkArea area=WorkArea.read(this,insets);int percent=Math.max(0,Math.min(100,Launches.prefs(this).getInt("sidebar_height",80)));
-        boolean enabled=Launches.prefs(this).getBoolean("phone_sidebar",true);String side=Launches.prefs(this).getString("phone_sidebar_side","both");
+        WorkArea area=WorkArea.read(this,insets);ShellSettings.Dock config=ShellSettings.of(this).snapshot().phoneDock;int percent=config.triggerPercent;
+        boolean enabled=config.enabled;String side=config.phoneSide.storedValue();
         for(int i=0;i<2;i++){
             View child=fallback.getChildAt(i);FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)child.getLayoutParams();
             child.setVisibility(enabled&&!(i==0?"right":"left").equals(side)?View.VISIBLE:View.GONE);
@@ -75,7 +77,7 @@ public final class HomeActivity extends DesktopActivity {
         if(fallback==null||isFinishing()||isDestroyed())return;
         // HOME must stay navigable even when the only Shell is on another display,
         // still starting, or failed to attach. Preference targets are not proof of UI.
-        fallback.setVisibility(Settings.canDrawOverlays(this)&&DockService.phoneNavigationReady()?View.GONE:View.VISIBLE);
+        fallback.setVisibility(Settings.canDrawOverlays(this)&&ShellRuntime.phoneNavigationReady()?View.GONE:View.VISIBLE);
         positionHomeEdges(getWindow().getDecorView().getRootWindowInsets());
     }
     private void refreshHome(){
@@ -86,26 +88,25 @@ public final class HomeActivity extends DesktopActivity {
             boolean extended=extensions(this);
             updateFallback();
             if(!resumed)return;
-            if(WorkspaceProfile.standard(this,0)&&Launches.prefs(this).getBoolean("phone_sidebar",true)&&Settings.canDrawOverlays(this)&&!DockService.running()) {
-                SharedPreferences prefs=Launches.prefs(this);
-                int preferred=HomeOutputRecovery.target(prefs.getInt("workspace_display",-1),prefs.getInt("preferred_display",-1),Displays.ids(this));
+            if(WorkspaceProfile.standard(this,0)&&ShellSettings.of(this).snapshot().phoneDock.enabled&&Settings.canDrawOverlays(this)&&!ShellRuntime.running()) {
+                int preferred=HomeOutputRecovery.target(TaskState.of(this).savedTarget(this),ShellSettings.of(this).snapshot().preferredDisplayId,Displays.ids(this));
                 boolean external=preferred>0;
-                if(!external)prefs.edit().putBoolean("primary_mode",true).putInt("workspace_display",0).apply();
-                if(!prefs.contains("workspace_auto"))prefs.edit().putBoolean("workspace_auto",true).apply();
-                DockService.start(this,external?preferred:0,false);
-            } else if(extended&&!DockService.running())DockService.start(this,0,false);
+                if(!external){ShellSettings.of(this).setPrimaryMode(true);TaskState.of(this).initializeTarget(this,0);}
+                ShellSettings.of(this).initializeWorkspaceAuto();
+                ShellRuntime.start(this,external?preferred:0,false);
+            } else if(extended&&!ShellRuntime.running())ShellRuntime.start(this,0,false);
             if(returnPending&&hasWindowFocus()&&extended){returnPending=false;ShellPanels.dismiss(0);Launches.returnedHome(this);}
         });
     }
     @Override protected void onNewIntent(Intent intent){
         super.onNewIntent(intent);if(apps!=null)apps.close();returnPending=true;refreshHome();
     }
-    @Override protected void onStart(){super.onStart();DockService.homeVisible(true);}
-    @Override protected void onStop(){DockService.homeVisible(false);super.onStop();}
+    @Override protected void onStart(){super.onStart();if(homeVisibility==null)homeVisibility=ShellRuntime.attachHomeSurface();homeVisibility.visible(true);}
+    @Override protected void onStop(){if(homeVisibility!=null)homeVisibility.visible(false);super.onStop();}
     @Override protected void onResume(){super.onResume();resumed=true;Bridge.get(this).connect();refreshHome();}
     @Override protected void onPause(){resumed=false;super.onPause();}
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)refreshHome();}
-    @Override public void onSharedPreferenceChanged(SharedPreferences prefs,String key){super.onSharedPreferenceChanged(prefs,key);if("sidebar_height".equals(key)||"phone_sidebar_side".equals(key)||"enabled".equals(key)||"primary_mode".equals(key)||"workspace_display".equals(key)||"phone_sidebar".equals(key)||"phone_window_management".equals(key))refreshHome();}
+    @Override public void onSharedPreferenceChanged(SharedPreferences prefs,String key){super.onSharedPreferenceChanged(prefs,key);if("phone_window_management".equals(key))refreshHome();}
     @Override public void onBackPressed(){if(apps!=null&&apps.isOpen())apps.close();else super.onBackPressed();}
-    @Override public void onDestroy(){DockService.unobserveNavigation(navigationChanged);Bridge.get(this).remove(bridgeChanged);if(apps!=null)apps.close();menuLoader.shutdownNow();super.onDestroy();}
+    @Override public void onDestroy(){ShellRuntime.unobserveNavigation(navigationChanged);if(homeVisibility!=null)homeVisibility.close();if(homeSettingsSubscription!=null)try{homeSettingsSubscription.close();}catch(Exception e){Launches.problem(this,e.getMessage());}Bridge.get(this).remove(bridgeChanged);if(apps!=null)apps.close();menuLoader.shutdownNow();super.onDestroy();}
 }
