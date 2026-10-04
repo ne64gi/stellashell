@@ -1,5 +1,7 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.layout.DesktopPlacement;
+
 import android.app.Activity;
 import android.content.*;
 import android.graphics.Color;

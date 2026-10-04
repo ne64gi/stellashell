@@ -1,5 +1,7 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.tasks.TaskModes;
+
 import android.content.ComponentName;
 import android.content.Context;
 import android.graphics.Rect;

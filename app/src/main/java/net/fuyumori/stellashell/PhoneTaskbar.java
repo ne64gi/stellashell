@@ -1,5 +1,8 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.navigation.NavigationScale;
+import net.fuyumori.stellashell.core.tasks.TaskModes;
+
 import android.content.*;
 import android.graphics.PixelFormat;
 import android.os.*;

@@ -1,5 +1,7 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.launch.Policy;
+
 import android.app.*;
 import android.content.*;
 import android.content.pm.PackageManager;
@@ -82,6 +84,8 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
     private void buildSettings(){
         LinearLayout root=pages[1],card=DashboardUi.card(root);
         card.addView(DashboardUi.row(this,android.R.drawable.ic_menu_gallery,getString(R.string.icons_title),getString(R.string.icons_settings_note),()->IconSettingsActivity.open(this,getDisplay()==null?0:getDisplay().getDisplayId(),"")));
+        DashboardUi.divider(card);
+        card.addView(DashboardUi.row(this,android.R.drawable.ic_menu_search,getString(net.fuyumori.stellashell.feature.search.R.string.web_search_settings_title),getString(net.fuyumori.stellashell.feature.search.R.string.web_search_settings_summary),()->SearchSettingsActivity.open(this,getDisplay()==null?0:getDisplay().getDisplayId())));
         DashboardUi.divider(card);
         card.addView(DashboardUi.row(this,android.R.drawable.ic_menu_myplaces,getString(R.string.home_change),getString(R.string.home_change_note),()->HomeRegistration.settings(this)));
         DashboardUi.divider(card);

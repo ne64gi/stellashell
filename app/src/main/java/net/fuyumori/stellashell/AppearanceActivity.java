@@ -1,5 +1,7 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.assets.FontCollection;
+
 import android.app.*;
 import android.content.*;
 import android.graphics.*;

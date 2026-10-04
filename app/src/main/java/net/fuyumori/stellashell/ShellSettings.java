@@ -1,5 +1,7 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.navigation.NavigationScale;
+
 import android.content.Context;
 import android.content.SharedPreferences;
 import java.util.EnumSet;

@@ -1,10 +1,14 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.tasks.TaskModes;
+
 import android.app.*;
 import android.content.*;
 import android.net.Uri;
 import android.view.*;
 import android.widget.*;
+import net.fuyumori.stellashell.core.launch.AppLaunchProfile;
+import net.fuyumori.stellashell.core.launch.LaunchProfileSnapshot;
 
 /** The same launch profile on Start, desktop shortcuts and the taskbar. */
 final class AppContextMenu {
@@ -13,7 +17,7 @@ final class AppContextMenu {
     }
     static void show(Context c,View anchor,String requested,int display,Runnable dismiss,TaskSnapshot.Task task,TaskState taskState,Runnable move){
         TaskState state=taskState==null?TaskState.of(c):taskState;
-        String component=Profiles.requestedComponent(c,requested);AppLaunchProfile p=Profiles.get(c,component);PopupMenu popup=new PopupMenu(c,anchor);Menu menu=popup.getMenu();
+        String component=Profiles.requestedComponent(c,requested);LaunchProfileSnapshot p=Profiles.snapshot(c,component);PopupMenu popup=new PopupMenu(c,anchor);Menu menu=popup.getMenu();
         menu.add(c.getString(R.string.ui_open)).setOnMenuItemClickListener(m->{dismiss.run();if(task!=null)Launches.focus(c,task,display,state);else Launches.app(c,component,display);return true;});
         if(WorkspaceProfile.standard(c,display)&&Bridge.get(c).ready())menu.add(R.string.phone_floating).setOnMenuItemClickListener(m->{dismiss.run();Launches.app(c,component,display,false,true);return true;});
         if(!Launches.basicHome(c,display)){
@@ -24,12 +28,12 @@ final class AppContextMenu {
             launch.add(R.string.workspace_floating).setCheckable(task!=null).setChecked(task!=null&&state.owns(task)&&state.primary()!=task.id).setOnMenuItemClickListener(m->{dismiss.run();if(task!=null)Launches.role(c,task,display,false);else Launches.app(c,component,display,false,true);return true;});
         }
         SubMenu mode=launch.addSubMenu(c.getString(R.string.ui_launch_mode_next_launch));String[] modes={c.getString(R.string.ui_windowed),c.getString(R.string.ui_maximized),c.getString(R.string.ui_fullscreen),c.getString(R.string.ui_last_state)};
-        for(AppLaunchProfile.Mode value:AppLaunchProfile.Mode.values())mode.add(1,value.ordinal(),value.ordinal(),modes[value.ordinal()]).setCheckable(true).setChecked(p.launchMode==value).setOnMenuItemClickListener(m->{p.launchMode=value;Profiles.save(c,component,p);return true;});mode.setGroupCheckable(1,true,true);
+        for(AppLaunchProfile.Mode value:AppLaunchProfile.Mode.values())mode.add(1,value.ordinal(),value.ordinal(),modes[value.ordinal()]).setCheckable(true).setChecked(p.launchMode==value).setOnMenuItemClickListener(m->{Profiles.setMode(c,component,value);return true;});mode.setGroupCheckable(1,true,true);
         SubMenu size=launch.addSubMenu(c.getString(R.string.ui_initial_window_size));String[] sizes={"800 × 600","1280 × 720",c.getString(R.string.ui_50_of_screen_width_and_height),c.getString(R.string.ui_last_size),c.getString(R.string.ui_custom)};
-        for(AppLaunchProfile.Size value:AppLaunchProfile.Size.values())size.add(2,value.ordinal(),value.ordinal(),sizes[value.ordinal()]).setCheckable(true).setChecked(p.size==value).setOnMenuItemClickListener(m->{if(value==AppLaunchProfile.Size.CUSTOM)customSize(c,component,p);else{p.size=value;Profiles.save(c,component,p);}return true;});size.setGroupCheckable(2,true,true);
+        for(AppLaunchProfile.Size value:AppLaunchProfile.Size.values())size.add(2,value.ordinal(),value.ordinal(),sizes[value.ordinal()]).setCheckable(true).setChecked(p.size==value).setOnMenuItemClickListener(m->{if(value==AppLaunchProfile.Size.CUSTOM)customSize(c,component);else{Profiles.setSize(c,component,value);}return true;});size.setGroupCheckable(2,true,true);
         SubMenu position=launch.addSubMenu(c.getString(R.string.ui_initial_position));String[] positions={c.getString(R.string.ui_automatic),c.getString(R.string.ui_center),c.getString(R.string.ui_last_position)};
-        for(AppLaunchProfile.Position value:AppLaunchProfile.Position.values())position.add(3,value.ordinal(),value.ordinal(),positions[value.ordinal()]).setCheckable(true).setChecked(p.position==value).setOnMenuItemClickListener(m->{p.position=value;Profiles.save(c,component,p);return true;});position.setGroupCheckable(3,true,true);
-        launch.add(c.getString(R.string.ui_remember_position_and_size)).setCheckable(true).setChecked(p.rememberBounds).setOnMenuItemClickListener(m->{p.rememberBounds=!p.rememberBounds;Profiles.save(c,component,p);return true;});
+        for(AppLaunchProfile.Position value:AppLaunchProfile.Position.values())position.add(3,value.ordinal(),value.ordinal(),positions[value.ordinal()]).setCheckable(true).setChecked(p.position==value).setOnMenuItemClickListener(m->{Profiles.setPosition(c,component,value);return true;});position.setGroupCheckable(3,true,true);
+        launch.add(c.getString(R.string.ui_remember_position_and_size)).setCheckable(true).setChecked(p.rememberBounds).setOnMenuItemClickListener(m->{Profiles.setRememberBounds(c,component,!m.isChecked());return true;});
         }
         if(task!=null&&state!=null){
             addTaskActions(c,menu,task,action->{dismiss.run();state.action(task,action);});
@@ -62,11 +66,12 @@ final class AppContextMenu {
         menu.add(0,CLOSE_TASK,2,R.string.phone_sidebar_close_task)
                 .setOnMenuItemClickListener(item->{selected.accept("close");return true;});
     }
-    private static void customSize(Context c,String component,AppLaunchProfile p){
+    private static void customSize(Context c,String component){
+        LaunchProfileSnapshot p=Profiles.snapshot(c,component);
         LinearLayout form=Ui.column(c);form.setPadding(Ui.dp(c,20),0,Ui.dp(c,20),0);
         EditText width=new EditText(c),height=new EditText(c);width.setHint(c.getString(R.string.ui_width_px));height.setHint(c.getString(R.string.ui_height_px));width.setContentDescription(c.getString(R.string.ui_initial_width));height.setContentDescription(c.getString(R.string.ui_initial_height));width.setInputType(2);height.setInputType(2);width.setText(String.valueOf(p.width));height.setText(String.valueOf(p.height));form.addView(width);form.addView(height);
         AlertDialog dialog=new AlertDialog.Builder(c).setTitle(c.getString(R.string.ui_initial_size_display_pixels)).setView(form).setNegativeButton(c.getString(R.string.ui_cancel),null).setPositiveButton(c.getString(R.string.ui_save),null).create();
         if(!(c instanceof Activity))dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
-        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{int w=Integer.parseInt(width.getText().toString()),h=Integer.parseInt(height.getText().toString());if(w<240||w>16384||h<160||h>16384)throw new NumberFormatException();p.width=w;p.height=h;p.size=AppLaunchProfile.Size.CUSTOM;Profiles.save(c,component,p);dialog.dismiss();}catch(NumberFormatException e){width.setError(c.getString(R.string.ui_width_must_be_240_16384_and_height_160_16384));}}));dialog.show();
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{int w=Integer.parseInt(width.getText().toString()),h=Integer.parseInt(height.getText().toString());if(w<240||w>16384||h<160||h>16384)throw new NumberFormatException();Profiles.setCustomSize(c,component,w,h);dialog.dismiss();}catch(NumberFormatException e){width.setError(c.getString(R.string.ui_width_must_be_240_16384_and_height_160_16384));}}));dialog.show();
     }
 }

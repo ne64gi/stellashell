@@ -1,5 +1,9 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.launch.AppLaunchProfile;
+import net.fuyumori.stellashell.core.layout.DockPlacement;
+import net.fuyumori.stellashell.core.navigation.NavigationScale;
+
 import android.content.*;
 import android.graphics.PixelFormat;
 import android.view.*;

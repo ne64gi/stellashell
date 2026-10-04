@@ -1,5 +1,7 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.feature.search.WebSearchSettings;
+
 import android.app.Instrumentation;
 import android.content.Context;
 import android.content.ContextWrapper;
@@ -51,6 +53,10 @@ final class AppMenuLifecycleChecks {
     private Map<String,Object> productionBefore;
     private boolean workspaceAutoPresent,workspaceAuto,suppressionAttempted,runtimeRunningBefore;
     private ShellRuntime.Snapshot runtimeBefore;
+    private android.content.Intent capturedWebIntent;
+    private Bundle capturedWebOptions;
+    private int webLaunchAttempts;
+    private boolean rejectWebLaunch;
 
     AppMenuLifecycleChecks(Instrumentation test){this.test=test;actual=test.getTargetContext();}
 
@@ -75,17 +81,32 @@ final class AppMenuLifecycleChecks {
         test.runOnMainSync(()->{try{action.run();}catch(Throwable error){failure[0]=error;}});
         if(failure[0]!=null)throw new AssertionError(failure[0]);
     }
+    /** Cross actual UI frames without requiring the entire live shell to stop scheduling work. */
+    private void settleUi(){
+        java.util.concurrent.CountDownLatch frames=new java.util.concurrent.CountDownLatch(1);
+        main(()->android.view.Choreographer.getInstance().postFrameCallback(first->
+                android.view.Choreographer.getInstance().postFrameCallback(second->frames.countDown())));
+        try{check(frames.await(8,TimeUnit.SECONDS),"UI frame barrier timed out");}
+        catch(InterruptedException error){Thread.currentThread().interrupt();throw new AssertionError(error);}
+    }
+    private static Map<String,Object> persistentPreferences(Map<String,?> source){
+        Map<String,Object> result=new HashMap<>();result.putAll(source);
+        // Runtime caches are not user settings. Selection is independently checked against ShellRuntime.
+        for(String key:new String[]{"active_display","mouse_diagnostics","ime_diagnostics","task_diagnostics",
+                "work_area_diagnostics","last_error","icons_revision"})result.remove(key);
+        return result;
+    }
     private void suppressAutoHandoffForOwnedDisplay(){
         production=Launches.prefs(actual);
-        productionBefore=new HashMap<>();productionBefore.putAll(production.getAll());
+        productionBefore=persistentPreferences(production.getAll());
         workspaceAutoPresent=production.contains("workspace_auto");workspaceAuto=production.getBoolean("workspace_auto",false);
         runtimeBefore=ShellFixtureAccess.runtimeSnapshot();
         runtimeRunningBefore=runtimeBefore.running;
         suppressionAttempted=true;
         main(()->check(production.edit().putBoolean("workspace_auto",false).commit(),"Could not temporarily suppress workspace auto-handoff"));
-        test.waitForIdleSync();
+        settleUi();
         Map<String,Object> expected=new HashMap<>(productionBefore);expected.put("workspace_auto",false);
-        check(production.getAll().equals(expected),"Temporary auto-handoff suppression changed another production preference");
+        check(persistentPreferences(production.getAll()).equals(expected),"Temporary auto-handoff suppression changed another persistent preference");
     }
 
     void run()throws Exception{
@@ -107,12 +128,12 @@ final class AppMenuLifecycleChecks {
             check(secondRoot!=firstRoot&&loader.size()==2,"Reopen did not create a new menu generation and catalog request");
 
             // Complete the closed generation first. It must not publish into the reopened window.
-            loader.runNext();test.waitForIdleSync();
+            loader.runNext();settleUi();
             main(()->{
                 check(value(menu,"root")==secondRoot&&!flag(menu,"loaded"),"A stale catalog reply marked the reopened menu loaded");
                 check(catalog.isEmpty(),"A stale catalog reply repopulated the cleared catalog");
             });
-            loader.runNext();test.waitForIdleSync();
+            loader.runNext();settleUi();
             main(()->{
                 check(value(menu,"root")==secondRoot&&flag(menu,"loaded"),"The current catalog reply was not accepted");
                 check(value(menu,"content") instanceof LinearLayout,"Fresh catalog load did not render the current content view");
@@ -129,7 +150,7 @@ final class AppMenuLifecycleChecks {
                 LinearLayout content=(LinearLayout)value(menu,"content");
                 content.addView(new View(windowContext),new LinearLayout.LayoutParams(-1,2400));
             });
-            test.waitForIdleSync();
+            settleUi();
             main(()->check(retiredScroll.getChildAt(0).getHeight()>retiredScroll.getHeight(),"Fixture could not establish a real scroll range"));
             main(()->{
                 retiredScroll.scrollTo(0,0);
@@ -155,25 +176,25 @@ final class AppMenuLifecycleChecks {
             });
             thirdRoot=openedRoot();
             check(thirdRoot!=secondRoot&&loader.size()==1,"Close/reopen did not retire the queued-render generation");
-            test.waitForIdleSync();
+            settleUi();
             main(()->{
                 check(lateScrollChanges[0]==0&&retiredScroll.getScrollY()==31,"A retired render callback touched its detached ScrollView");
                 check(freshScrollChanges[0]==0&&freshScroll[0].getScrollY()==93,"A retired render callback changed the reopened menu's scroll position");
                 check(value(menu,"scroll")!=retiredScroll&&value(menu,"root")==thirdRoot,"Reopened menu retained the retired ScrollView");
             });
-            loader.runNext();test.waitForIdleSync();
+            loader.runNext();settleUi();
             main(()->check(flag(menu,"loaded"),"Fresh load after queued-render close/reopen failed"));
 
             // A TextWatcher on the old EditText must not rerender/reset the current menu.
             ScrollView currentScroll=(ScrollView)mainValue("scroll");
             EditText currentSearch=(EditText)mainValue("search");
             main(()->currentSearch.setText("lifecycle-current-query"));
-            test.waitForIdleSync();
+            settleUi();
             main(()->{
                 LinearLayout content=(LinearLayout)value(menu,"content");
                 content.addView(new View(windowContext),new LinearLayout.LayoutParams(-1,2400));
             });
-            test.waitForIdleSync();
+            settleUi();
             main(()->{
                 currentScroll.scrollTo(0,72);
                 check(currentScroll.getScrollY()==72,"Fixture could not establish a nonzero current scroll position");
@@ -190,13 +211,14 @@ final class AppMenuLifecycleChecks {
                 View cycleRoot=openedRoot();
                 lastRoot=cycleRoot;
                 check(loader.size()==1,"Repeated reopen did not queue a fresh catalog request");
-                loader.runNext();test.waitForIdleSync();
+                loader.runNext();settleUi();
                 main(()->check(flag(menu,"loaded"),"Repeated reopen did not accept its fresh catalog reply"));
                 closeAndCheck(cycleRoot,catalog,"Repeated close "+cycle);
             }
             check(firstRoot.getParent()==null&&!firstRoot.isAttachedToWindow(),"First menu root remained attached after repeated close/reopen");
             check(secondRoot.getParent()==null&&!secondRoot.isAttachedToWindow(),"Second menu root remained attached after repeated close/reopen");
             check(lastRoot.getParent()==null&&!lastRoot.isAttachedToWindow(),"Last repeated menu root remained attached after close");
+            checkWebSearch();
         }catch(Throwable error){failure=error;}
         finally{
             try{cleanup();}catch(Throwable cleanup){if(failure==null)failure=cleanup;else failure.addSuppressed(cleanup);}
@@ -210,7 +232,7 @@ final class AppMenuLifecycleChecks {
         Object[] result={null};main(()->result[0]=value(menu,name));return result[0];
     }
     private View openedRoot(){
-        test.waitForIdleSync();
+        settleUi();
         View root=(View)mainValue("root");
         check(root!=null&&root.isAttachedToWindow()&&root.getWidth()>0&&root.getHeight()>0&&root.getDisplay()!=null&&root.getDisplay().getDisplayId()==displayId,"Start did not attach as a real window on the owned display");
         return root;
@@ -219,13 +241,68 @@ final class AppMenuLifecycleChecks {
         main(()->{
             menu.close();
             check(!menu.isOpen(),phase+" left Start logically open");
-            for(String name:new String[]{"root","folderLayer","main","content","scroll","search","folderAnchor"})
+            for(String name:new String[]{"root","folderLayer","main","content","scroll","search","webSearchAction","webSearchSession","folderAnchor"})
                 check(value(menu,name)==null,phase+" retained the "+name+" view reference");
             check(catalog.isEmpty(),phase+" retained catalog entries");
             check(!flag(menu,"loaded"),phase+" retained its loaded state");
         });
-        test.waitForIdleSync();
+        settleUi();
         check(root.getParent()==null&&!root.isAttachedToWindow(),phase+" root did not detach from WindowManager");
+    }
+
+    /** Actual Start Views, but intercept browser intents: never send the fixture query to a server. */
+    private void checkWebSearch(){
+        WebSearchSettings settings=WebSearchSettings.of(windowContext);
+        String query="Fixture & 日本 🚀";
+        main(()->menu.open(loader));openedRoot();
+        EditText editor=(EditText)mainValue("search");android.widget.Button action=(android.widget.Button)mainValue("webSearchAction");
+        main(()->{
+            editor.setText(query);
+            check(action.getVisibility()==View.GONE&&webLaunchAttempts==0,"Default-off or typing dispatched a Web search");
+            settings.save(WebSearchSettings.Provider.CUSTOM,"Fixture engine","https://example.invalid/search?q={query}");
+        });settleUi();
+        main(()->{
+            check(action.getVisibility()==View.VISIBLE&&action.getText().toString().contains("Fixture engine"),"Configured search did not appear while catalog was loading");
+            check(query.contentEquals(editor.getText())&&webLaunchAttempts==0,"Settings update changed text or started a browser");
+            @SuppressWarnings("unchecked") List<Launches.App> apps=(List<Launches.App>)value(menu,"all");
+            apps.add(new Launches.App("net.fuyumori.fixture/.WebApp",query+" app",new android.graphics.drawable.ColorDrawable(android.graphics.Color.WHITE)));
+            try{field(AppMenu.class,"loaded").setBoolean(menu,true);}catch(IllegalAccessException error){throw new AssertionError(error);}
+            invokeRender(menu);
+            check(hasText((View)value(menu,"content"),query+" app")&&action.getVisibility()==View.VISIBLE,"Web action replaced matching apps");
+            rejectWebLaunch=true;action.performClick();
+            check(menu.isOpen()&&query.contentEquals(editor.getText())&&webLaunchAttempts==1,"Failed browser launch closed Start or lost its query");
+            rejectWebLaunch=false;action.performClick();
+            check(!menu.isOpen()&&webLaunchAttempts==2,"Explicit Web action did not launch once and close Start");
+            check(android.content.Intent.ACTION_VIEW.equals(capturedWebIntent.getAction())
+                            &&capturedWebIntent.hasCategory(android.content.Intent.CATEGORY_BROWSABLE)
+                            &&(capturedWebIntent.getFlags()&android.content.Intent.FLAG_ACTIVITY_NEW_TASK)!=0,
+                    "Browser intent changed Android routing semantics");
+            check(query.equals(capturedWebIntent.getData().getQueryParameter("q"))
+                            &&capturedWebIntent.getData().getFragment()==null,
+                    "Reserved/unicode query was not encoded as one search parameter");
+            check(capturedWebOptions.getInt("android.activity.launchDisplayId",-1)==displayId,"Web search targeted another display");
+            check(value(menu,"webSearchAction")==null&&value(menu,"webSearchSession")==null,"Closed Start retained search View/subscription");
+            menu.open(loader);
+        });openedRoot();
+        EditText freshEditor=(EditText)mainValue("search");android.widget.Button freshAction=(android.widget.Button)mainValue("webSearchAction");
+        main(()->{
+            freshEditor.setText("new fixture");action.performClick();
+            check(webLaunchAttempts==2&&menu.isOpen(),"Retired search button affected the new window");
+            settings.save(WebSearchSettings.Provider.NONE,"Fixture engine","https://example.invalid/search?q={query}");
+        });settleUi();
+        main(()->{
+            check(freshAction.getVisibility()==View.GONE&&"new fixture".contentEquals(freshEditor.getText()),"Disabling Web search removed the app query or left a spacer");
+            settings.save(WebSearchSettings.Provider.GOOGLE,"Fixture engine","https://example.invalid/search?q={query}");
+        });settleUi();
+        main(()->{
+            freshAction.requestFocus();freshAction.dispatchKeyEvent(new android.view.KeyEvent(android.view.KeyEvent.ACTION_UP,android.view.KeyEvent.KEYCODE_ESCAPE));
+            check(!menu.isOpen()&&webLaunchAttempts==2,"Escape on the search action did not close Start without launching");
+        });settleUi();
+    }
+    private static boolean hasText(View view,String text){
+        if(view instanceof android.widget.TextView&&text.contentEquals(((android.widget.TextView)view).getText()))return true;
+        if(view instanceof android.view.ViewGroup){android.view.ViewGroup group=(android.view.ViewGroup)view;for(int i=0;i<group.getChildCount();i++)if(hasText(group.getChildAt(i),text))return true;}
+        return false;
     }
 
     private void createOwnedWindow(){
@@ -296,13 +373,20 @@ final class AppMenuLifecycleChecks {
         Throwable[] failure={null};
         attempt(failure,()->{if(menu!=null)main(menu::close);});
         attempt(failure,loader::shutdownNow);
-        attempt(failure,test::waitForIdleSync);
+        attempt(failure,this::settleUi);
         attempt(failure,()->{if(sandbox!=null)sandbox.closeOwners();});
+        // Failure-path checks display a real LENGTH_LONG toast. Its SystemUI
+        // animation must finish before removing the display that owns it.
+        if(webLaunchAttempts>0){
+            android.view.accessibility.AccessibilityManager access=actual.getSystemService(android.view.accessibility.AccessibilityManager.class);
+            int toastMillis=access==null?3500:access.getRecommendedTimeoutMillis(3500,android.view.accessibility.AccessibilityManager.FLAG_CONTENT_TEXT);
+            android.os.SystemClock.sleep(Math.max(3500,toastMillis)+1500L);
+        }
         attempt(failure,()->{if(display!=null){main(()->{display.release();display=null;});}});
         attempt(failure,()->{if(reader!=null){main(()->{reader.close();reader=null;});}});
         attempt(failure,()->{if(displayId>0)WorkArea.remove(displayId);});
         attempt(failure,()->{for(String name:preferenceFiles)actual.deleteSharedPreferences(name);});
-        attempt(failure,test::waitForIdleSync);
+        attempt(failure,this::settleUi);
         if(suppressionAttempted)attempt(failure,this::restoreAndVerifyProductionState);
         if(failure[0]!=null)throw new AssertionError("AppMenu lifecycle fixture cleanup failed",failure[0]);
     }
@@ -315,10 +399,10 @@ final class AppMenuLifecycleChecks {
             if(workspaceAutoPresent)restore.putBoolean("workspace_auto",workspaceAuto);else restore.remove("workspace_auto");
             check(restore.commit(),"Could not restore workspace_auto presence/value");
         });
-        test.waitForIdleSync();
+        settleUi();
         check(production.contains("workspace_auto")==workspaceAutoPresent&&production.getBoolean("workspace_auto",false)==workspaceAuto,
                 "workspace_auto was not restored exactly");
-        check(production.getAll().equals(productionBefore),"Production preferences or display selection changed during the fixture");
+        check(persistentPreferences(production.getAll()).equals(productionBefore),"Persistent preferences changed during the fixture");
         ShellRuntime.Snapshot after=ShellFixtureAccess.runtimeSnapshot();
         check(after.generation==runtimeBefore.generation&&after.running==runtimeRunningBefore
                         &&after.selectedDisplay==runtimeBefore.selectedDisplay,
@@ -372,6 +456,14 @@ final class AppMenuLifecycleChecks {
         @Override public TaskState taskState(){return owners.tasks(this);}
         @Override public Context createDisplayContext(Display target){return new FixtureContext(super.createDisplayContext(target),owners);}
         @Override public Context createWindowContext(int type,Bundle options){return new FixtureContext(super.createWindowContext(type,options),owners);}
+        @Override public void startActivity(android.content.Intent intent,Bundle options){
+            if(android.content.Intent.ACTION_VIEW.equals(intent.getAction())){
+                webLaunchAttempts++;capturedWebIntent=new android.content.Intent(intent);capturedWebOptions=new Bundle(options);
+                if(rejectWebLaunch)throw new android.content.ActivityNotFoundException("Fixture browser unavailable");
+                return; // Capture only: never launch a real browser or perform a network query.
+            }
+            super.startActivity(intent,options);
+        }
         void closeOwners(){owners.close();}
     }
 }

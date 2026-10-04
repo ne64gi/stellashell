@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="web_search_settings_title">Search engine</string>
+    <string name="web_search_settings_summary">Set up Web search from Start</string>
+    <string name="web_search_back">Back</string>
+    <string name="web_search_settings_note">App search stays available. Web search opens only when you choose its search button.</string>
+    <string name="web_search_off">Web search off</string>
+    <string name="web_search_custom">Custom search engine</string>
+    <string name="web_search_custom_name">Name</string>
+    <string name="web_search_custom_url">Search URL</string>
+    <string name="web_search_template_note" formatted="false">Replace the search words in the URL with {query} or %s. Example: https://example.com/search?q={query}</string>
+    <string name="web_search_name_invalid">Enter a name of up to 60 characters.</string>
+    <string name="web_search_url_invalid" formatted="false">Enter an http or https URL with one {query} or %s in its path or query.</string>
+    <string name="web_search_hint">Search apps or the Web</string>
+    <string name="web_search_action">Search the Web for “%2$s” with %1$s</string>
+    <string name="web_search_open_failed">Could not open the search. Check that a browser is available.</string>
+    <string name="web_search_settings_open_failed">Could not open search settings.</string>
+</resources>

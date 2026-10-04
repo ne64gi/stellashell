@@ -1,5 +1,6 @@
 package net.fuyumori.stellashell;
 
+
 import org.junit.Test;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -47,6 +48,8 @@ public final class StateOwnershipFitnessTest {
                 checkTaskSessionOwnership(relative, source, violations);
                 checkOwnerFacadeCalls(relative, source, violations);
                 checkOwnedPreferenceKeys(relative, source, violations);
+                if(!relative.equals("WebSearchSettings.java")&&Pattern.compile("getSharedPreferences\\s*\\(\\s*\"web_search\"").matcher(source).find())
+                    violations.add(relative+" opens search preferences outside WebSearchSettings");
             });
         }
         assertTrue("Production state ownership bypasses:\n" + String.join("\n", violations),

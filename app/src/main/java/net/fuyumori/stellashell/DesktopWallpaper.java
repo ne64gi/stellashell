@@ -1,5 +1,7 @@
 package net.fuyumori.stellashell;
 
+import net.fuyumori.stellashell.core.layout.WallpaperPlacement;
+
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
