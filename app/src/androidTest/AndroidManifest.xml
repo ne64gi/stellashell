@@ -1,4 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries><package android:name="net.fuyumori.stellashell" /></queries>
     <application>
         <activity android:name="net.fuyumori.stellashell.PinInputActivity" android:exported="true" android:resizeableActivity="true" android:taskAffinity="stellashell.pin.first" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
         <activity android:name="net.fuyumori.stellashell.PinOtherActivity" android:exported="true" android:resizeableActivity="true" android:taskAffinity="stellashell.pin.second" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
@@ -19,5 +20,7 @@
         <activity android:name="net.fuyumori.stellashell.PolishPrimaryActivity" android:exported="true" android:resizeableActivity="true" android:taskAffinity="stellashell.polish.primary" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
         <activity android:name="net.fuyumori.stellashell.PolishSecondaryActivity" android:exported="true" android:resizeableActivity="true" android:taskAffinity="stellashell.polish.secondary" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
         <activity android:name="net.fuyumori.stellashell.PipFixtureActivity" android:exported="true" android:resizeableActivity="true" android:supportsPictureInPicture="true" android:taskAffinity="stellashell.pip.fixture" android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <activity android:name="net.fuyumori.stellashell.HomeWindowFixtureActivity" android:exported="true" android:resizeableActivity="true" android:taskAffinity="stellashell.backdrop.fixture" android:excludeFromRecents="true" android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <activity android:name="net.fuyumori.stellashell.MouseMotionProbeActivity" android:exported="true" android:permission="android.permission.DUMP" android:process=":mouse_probe" android:resizeableActivity="false" android:taskAffinity="stellashell.mouse.motion.probe" android:excludeFromRecents="true" android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation" android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen" />
     </application>
 </manifest>

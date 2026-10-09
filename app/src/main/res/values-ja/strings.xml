@@ -74,6 +74,7 @@
     <string name="ui_2_connect_authorize_shizuku_retry" formatted="false">Shizukuに接続</string>
     <string name="ui_3_configure_desktop_mode" formatted="false">ウィンドウ機能を有効にする</string>
     <string name="ui_enable_desktop_features" formatted="false">"デスクトップ機能を有効にする"</string>
+    <string name="ui_enable_freeform_preserve_desktop_mode">自由形式ウィンドウを有効にし、Android の強制デスクトップモード設定はそのまま保持します。StellaShell が外部ホームとタスクバーを担当します。元の設定は保存します。反映には外部画面を再接続してください。</string>
     <string name="ui_enable_freeform_windows_and_turn_off_android_s_force_desktop_mode" formatted="false">"自由形式ウィンドウを有効にし、Android の強制デスクトップモードをオフにします。StellaShell が外部ホームとバーを担当します。元の設定は保存します。反映には scrcpy の再接続または USB の抜き差しが必要です。"</string>
     <string name="ui_enable" formatted="false">"有効にする"</string>
     <string name="ui_start_external_desktop" formatted="false">"外部デスクトップを開始"</string>

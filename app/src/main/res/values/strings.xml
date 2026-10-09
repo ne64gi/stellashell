@@ -74,6 +74,7 @@
     <string name="ui_2_connect_authorize_shizuku_retry" formatted="false">Connect to Shizuku</string>
     <string name="ui_3_configure_desktop_mode" formatted="false">Enable window support</string>
     <string name="ui_enable_desktop_features" formatted="false">"Enable desktop features"</string>
+    <string name="ui_enable_freeform_preserve_desktop_mode">Enable freeform windows while keeping Android’s current desktop-mode setting. StellaShell provides the external home and taskbar. Original settings are saved. Reconnect the external display afterward.</string>
     <string name="ui_enable_freeform_windows_and_turn_off_android_s_force_desktop_mode" formatted="false">"Enable freeform windows and turn off Android’s force-desktop mode. StellaShell provides the external home and taskbar. Original settings are saved. Reconnect scrcpy or the USB display afterward."</string>
     <string name="ui_enable" formatted="false">"Enable"</string>
     <string name="ui_start_external_desktop" formatted="false">"Start external desktop"</string>

@@ -22,6 +22,6 @@ final class WidgetItemBackground {
         dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
             String text=input.getText().toString().trim();if(!text.matches("#[a-fA-F0-9]{6}")){input.setError(a.getString(R.string.appearance_invalid_color));return;}
             save.accept(Color.parseColor(text),slider.getProgress());dialog.dismiss();
-        }));dialog.show();return dialog;
+        }));DesktopBackdrop.showDialog(a,dialog);return dialog;
     }
 }

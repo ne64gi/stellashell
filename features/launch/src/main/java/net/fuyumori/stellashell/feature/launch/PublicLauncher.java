@@ -1,6 +1,7 @@
 package net.fuyumori.stellashell.feature.launch;
 
 import android.app.ActivityOptions;
+import android.app.ActivityManager;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Context;
@@ -8,6 +9,9 @@ import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.hardware.display.DisplayManager;
+import android.os.Bundle;
+import android.view.Display;
 import java.util.Objects;
 import net.fuyumori.stellashell.core.launch.Policy;
 
@@ -45,5 +49,30 @@ public final class PublicLauncher {
     public void launch(String component,int displayId){
         Intent target=intent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
         context.startActivity(target,ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle());
+    }
+
+    /** Explicit, one-shot external launch; never changes a profile or falls back to the phone. */
+    public void launchExternalFullscreen(String component,int displayId){
+        requireExternalDisplay(displayId);
+        if(!context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_ACTIVITIES_ON_SECONDARY_DISPLAYS))
+            throw new UnsupportedOperationException("Secondary activities are unavailable");
+        Intent target=intent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+        ActivityManager manager=context.getSystemService(ActivityManager.class);
+        if(manager==null||!manager.isActivityStartAllowedOnDisplay(context,displayId,target))
+            throw new SecurityException("External activity launch is unavailable");
+        Bundle options=ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle();
+        // AOSP ActivityOptions' fullscreen request, also used by the app's backdrop.
+        // This is a request, not permission to override an OEM's activity policy.
+        options.putInt("android.activity.windowingMode",1);
+        requireExternalDisplay(displayId); // A menu may have stayed open across unplug.
+        context.startActivity(target,options);
+    }
+
+    private void requireExternalDisplay(int displayId){
+        DisplayManager manager=context.getSystemService(DisplayManager.class);
+        Display display=manager==null?null:manager.getDisplay(displayId);
+        if(displayId<=Display.DEFAULT_DISPLAY||display==null||!display.isValid()
+                ||(display.getFlags()&Display.FLAG_PRIVATE)!=0)
+            throw new IllegalArgumentException("External display is disconnected");
     }
 }

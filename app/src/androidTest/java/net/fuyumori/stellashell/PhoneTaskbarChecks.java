@@ -81,7 +81,7 @@ final class PhoneTaskbarChecks {
                 check(Launches.taskbarPins(mainContext).size()==5&&Launches.prefs(sandbox).getString("phone_pinned","").equals(phoneDockPins),"Main Taskbar pin helper modified PhoneDock pins");
                 check(icons((View)get(bar,"panel"),barLabel)==5,"Main Taskbar did not rebind its own pin removal");
                 String mainPins=Launches.prefs(sandbox).getString("phone_taskbar_pinned","");
-                Launches.toggleDockPin(mainContext,dockPin);dock.rebuild();
+                Launches.toggleDockPin(mainContext,dockPin);dock.rebuild();dock.show(true);
                 check(Launches.pins(mainContext).size()==1&&Launches.prefs(sandbox).getString("phone_taskbar_pinned","").equals(mainPins),"PhoneDock pin helper modified main Taskbar pins");
             });
             await(this::laidOut,"Rebuilt main overlays did not lay out");
@@ -96,7 +96,7 @@ final class PhoneTaskbarChecks {
                 check(feed.tasks().isEmpty()&&barBackend.observed==barBackend.removed,"Hidden main Taskbar retained task feed/observer");
                 int requests=barBackend.requests;late[0].done(barBackend.payload,null);barBackend.pending=null;feed.refresh();
                 check(feed.tasks().isEmpty()&&barBackend.requests==requests&&get(bar,"panel")==null,"Late reply resurrected hidden main Taskbar");
-                dock.rebuild();WorkArea mainArea=area();check(mainArea.application.equals(mainArea.usable)&&mainArea.dockAvailable.equals(mainArea.usable),"External-only Taskbar reserved a phantom main strip");
+                dock.rebuild();dock.show(true);WorkArea mainArea=area();check(mainArea.application.equals(mainArea.usable)&&mainArea.dockAvailable.equals(mainArea.usable),"External-only Taskbar reserved a phantom main strip");
                 check(dock.ready()&&get(dock,"panel")!=null,"Disabling main Taskbar discarded PhoneDock");
                 check(descriptions((View)get(dock,"panel"),actual.getString(R.string.ui_app_menu))==1,"PhoneDock failed to restore Start without main Taskbar");
             });
@@ -106,8 +106,9 @@ final class PhoneTaskbarChecks {
             int requests=barBackend.requests;Thread.sleep(1200);test.waitForIdleSync();
             check(barBackend.requests==requests,"Hidden main Taskbar kept polling");
             main(()->check(!removedPanel.isAttachedToWindow()&&get(bar,"panel")==null&&feed.tasks().isEmpty(),"Late reply resurrected detached main Taskbar"));
-            main(()->{barBackend.hold=false;switchFlags(true,false);bar=new PhoneTaskbar(sandbox,()->{},barBackend,this::area);dock.taskbarReady(bar.ready());dock.rebuild();});
+            main(()->{barBackend.hold=false;switchFlags(true,false);bar=new PhoneTaskbar(sandbox,()->{},barBackend,this::area);dock.taskbarReady(bar.ready());dock.rebuild();dock.show(true);});
             await(this::laidOut,"Main Taskbar did not recreate after toggle");main(this::validate);
+            AttachedDockRevealChecks.phone(test);
             check(barBackend.operations==2&&dockBackend.operations==0,"Unexpected operation outside the two synthetic Taskbar close-menu checks");
         }finally{
             main(()->{
@@ -152,16 +153,22 @@ final class PhoneTaskbarChecks {
     private void scales()throws Exception{
         main(()->{check(Launches.prefs(sandbox).edit().putString("phone_pinned",String.join("\n",java.util.Collections.nCopies(24,dockPin))).commit(),"Main scale fixture pins failed");barBackend.payload=snapshot(dockPin,32);((PhoneRunningTasks)get(bar,"running")).refresh();});
         for(int[] pair:new int[][]{{50,100},{200,100},{100,100},{100,50},{100,200}}){
-            main(()->{check(Launches.prefs(sandbox).edit().putInt("phone_dock_scale",pair[0]).putInt("phone_taskbar_scale",pair[1]).commit(),"Main scale fixture write failed");bar.rebuild();dock.rebuild();});
+            main(()->{check(Launches.prefs(sandbox).edit().putInt("phone_dock_scale",pair[0]).putInt("phone_taskbar_scale",pair[1]).commit(),"Main scale fixture write failed");bar.rebuild();dock.rebuild();dock.show(true);});
             await(this::laidOut,"Scaled main overlays did not lay out");test.waitForIdleSync();
             main(()->{
                 validate();HorizontalScrollView panel=(HorizontalScrollView)get(bar,"panel");LinearLayout row=(LinearLayout)get(bar,"row");
                 check(row.getWidth()>panel.getWidth()&&panel.canScrollHorizontally(1),"Scaled main Taskbar lost whole-axis scroll");
                 Rect visible=new Rect();panel.scrollTo(row.getWidth(),0);check(row.getChildAt(row.getChildCount()-1).getGlobalVisibleRect(visible),"Scaled main Taskbar last control unreachable");panel.scrollTo(0,0);check(row.getChildAt(0).getGlobalVisibleRect(visible),"Scaled main Taskbar Start unreachable");
-                ScrollView sidebar=(ScrollView)get(dock,"panel");ViewGroup column=(ViewGroup)sidebar.getChildAt(0);
-                check(column.getHeight()>sidebar.getHeight()&&sidebar.canScrollVertically(1),"Scaled PhoneDock lost pin/Home scroll");
-                check(column.getChildAt(0).getHeight()==scaled(sidebar.getContext(),52,"phone_dock_scale"),"PhoneDock pins did not scale independently");
-                sidebar.scrollTo(0,column.getHeight());check(column.getChildAt(column.getChildCount()-1).getGlobalVisibleRect(visible),"Scaled PhoneDock Home unreachable");sidebar.scrollTo(0,0);check(column.getChildAt(0).getGlobalVisibleRect(visible),"Scaled PhoneDock first pin unreachable");
+                View sidebar=(View)get(dock,"strip");LinearLayout column=(LinearLayout)get(dock,"entries");
+                boolean horizontal=sidebar instanceof HorizontalScrollView;
+                check(horizontal?column.getWidth()>sidebar.getWidth()&&sidebar.canScrollHorizontally(1)
+                    :sidebar instanceof ScrollView&&column.getHeight()>sidebar.getHeight()&&sidebar.canScrollVertically(1),"Scaled PhoneDock lost whole-axis pin/Home scroll");
+                View pin=column.getChildAt(0);
+                check((horizontal?pin.getWidth():pin.getHeight())==scaled(sidebar.getContext(),52,"phone_dock_scale"),"PhoneDock pins did not scale independently");
+                if(horizontal)((HorizontalScrollView)sidebar).scrollTo(column.getWidth(),0);else ((ScrollView)sidebar).scrollTo(0,column.getHeight());
+                check(column.getChildAt(column.getChildCount()-1).getGlobalVisibleRect(visible),"Scaled PhoneDock Home unreachable");
+                if(horizontal)((HorizontalScrollView)sidebar).scrollTo(0,0);else ((ScrollView)sidebar).scrollTo(0,0);
+                check(column.getChildAt(0).getGlobalVisibleRect(visible),"Scaled PhoneDock first pin unreachable");
             });
         }
     }
@@ -177,7 +184,18 @@ final class PhoneTaskbarChecks {
         int[] location=new int[2];panel.getLocationOnScreen(location);check(location[0]==p.x&&location[1]==p.y,"Main Taskbar actual screen position differs from geometry");
         Rect dockBounds=new Rect(s.x,s.y,s.x+s.width,s.y+s.height),barBounds=new Rect(p.x,p.y,p.x+p.width,p.y+p.height);
         check(a.dockAvailable.contains(dockBounds)&&!Rect.intersects(dockBounds,barBounds),"PhoneDock overlaps main Taskbar reserved strip");
-        check(s.width==Math.min(scaled(sidebar.getContext(),76,"phone_dock_scale"),a.dockAvailable.width())&&s.height==Math.min(scaled(sidebar.getContext(),500,"phone_dock_scale"),a.dockAvailable.height()),"PhoneDock scale/available bounds mismatch");
+        boolean landscape=a.physical.width()>a.physical.height();
+        String edge=ShellSettings.of(sandbox).snapshot().phoneLandscapeDock.edge.storedValue();
+        boolean horizontal=landscape&&("top".equals(edge)||"bottom".equals(edge));
+        View scroll=(View)get(dock,"strip");LinearLayout entries=(LinearLayout)get(dock,"entries");
+        check(horizontal?scroll instanceof HorizontalScrollView:scroll instanceof ScrollView,"PhoneDock scroll axis differs from physical orientation/selected landscape edge");
+        check(entries.getOrientation()==(horizontal?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL),"PhoneDock content axis differs from selected edge");
+        int thicknessDock=scaled(sidebar.getContext(),76,"phone_dock_scale"),maxSpan=scaled(sidebar.getContext(),500,"phone_dock_scale");
+        int wantedWidth=horizontal?Math.min(maxSpan,Math.max(1,entries.getMeasuredWidth())):thicknessDock;
+        int wantedHeight=horizontal?thicknessDock:landscape?Math.min(maxSpan,Math.max(1,entries.getMeasuredHeight())):maxSpan;
+        int expectedWidth=Math.min(wantedWidth,a.dockAvailable.width()),expectedHeight=Math.min(wantedHeight,a.dockAvailable.height());
+        check(s.width==expectedWidth&&s.height==expectedHeight,"PhoneDock scale/available bounds mismatch: actual "+s.width+"x"+s.height
+            +" expected "+expectedWidth+"x"+expectedHeight+" physical "+a.physical.width()+"x"+a.physical.height()+" landscape="+landscape+" edge="+edge+" scale="+Launches.prefs(sidebar.getContext()).getInt("phone_dock_scale",100));
         check(descriptions(panel,actual.getString(R.string.ui_app_menu))==1&&descriptions(sidebar,actual.getString(R.string.ui_app_menu))==0,"Start duplicated or lost when main Taskbar enabled");
         View first=((LinearLayout)get(bar,"row")).getChildAt(0);check(first.getHeight()==scaled(panel.getContext(),44,"phone_taskbar_scale"),"Main Taskbar controls did not scale independently");
         for(View handle:dock.handles){WindowManager.LayoutParams h=(WindowManager.LayoutParams)handle.getLayoutParams();check(a.dockAvailable.contains(new Rect(h.x,h.y,h.x+h.width,h.y+h.height)),"PhoneDock edge handle intrudes into main Taskbar");}

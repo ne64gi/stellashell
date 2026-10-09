@@ -7,6 +7,38 @@ import java.util.List;
 import static org.junit.Assert.*;
 
 public final class PhoneNavigationOwnerTest {
+    @Test public void dedicatedModeSuspendsBothSurfacesAndRestoresLatestPreferences() {
+        MutableConfig config = new MutableConfig(true, true, true);
+        FakeFactory factory = new FakeFactory();
+        PhoneNavigationOwner owner = owner(config, factory);
+        owner.reconcile();
+        FakeSidebar sidebar = factory.sidebars.get(0);
+        FakeSurface taskbar = factory.taskbars.get(0);
+        owner.toggleStart();
+        owner.suspend(true);
+        assertFalse(owner.ready()); assertFalse(owner.toggleStart()); assertFalse(owner.isStartOpen());
+        assertEquals(1, sidebar.closeCount); assertEquals(1, taskbar.closeCount);
+        assertTrue(config.sidebar); assertTrue(config.taskbar);
+        owner.reconcile(); owner.geometryChanged(); owner.suspend(true);
+        assertEquals(1, factory.sidebars.size()); assertEquals(1, factory.taskbars.size());
+        config.taskbar = false;
+        owner.suspend(false);
+        assertTrue(owner.ready()); assertEquals(2, factory.sidebars.size());
+        assertEquals("resumption must respect a change made while suspended", 1, factory.taskbars.size());
+        assertTrue(owner.toggleStart()); assertEquals(1, factory.sidebars.get(1).toggleCount);
+        owner.close();
+    }
+
+    @Test public void aShellCreatedDuringDedicatedModeDoesNotAttachNavigation() {
+        MutableConfig config = new MutableConfig(true, true, true);
+        FakeFactory factory = new FakeFactory();
+        PhoneNavigationOwner owner = owner(config, factory);
+        owner.suspend(true); owner.reconcile();
+        assertTrue(factory.sidebars.isEmpty()); assertTrue(factory.taskbars.isEmpty());
+        owner.close(); owner.suspend(false);
+        assertTrue(factory.sidebars.isEmpty()); assertTrue(factory.taskbars.isEmpty());
+    }
+
     @Test public void reconcileIsIdempotentAndUsesTaskbarThenSidebarForStart() {
         MutableConfig config = new MutableConfig(true, true, true);
         FakeFactory factory = new FakeFactory();

@@ -22,6 +22,7 @@ final class Workspace {
     void enqueue(Runnable operation){if(!operations.defer(operation))operation.run();}
     long beginCommand(){return operations.begin();}
     void finishCommand(long ticket){if(operations.release(ticket))operations.drain();}
+    AutoCloseable whenIdle(Runnable callback){return operations.whenIdle(callback);}
     int primary(){return primary;}
     boolean owns(TaskSnapshot.Task task){return task.component.equals(owned.get(task.id));}
     private void replaceOwned(TaskSnapshot.Identity identity){
@@ -137,8 +138,12 @@ final class Workspace {
         }
         throw new IllegalStateException("Transferred task is no longer available: "+id);
     }
-    void transfer(Context c,int source,int destination,java.util.function.IntConsumer commitTarget,Runnable done){
-        if(operations.defer(()->transfer(c,source,destination,commitTarget,done)))return;
+    void transfer(Context c,java.util.function.IntSupplier currentSource,java.util.function.BooleanSupplier permitted,
+            int destination,java.util.function.IntConsumer commitTarget,Runnable done){
+        operations.enqueueTransfer(currentSource,permitted,source->transferNow(c,source,destination,commitTarget,done),done);
+    }
+    private void transferNow(Context c,int source,int destination,java.util.function.IntConsumer commitTarget,Runnable done){
+        if(source<0){done.run();return;}
         if(source==destination&&recoveryDisplays.isEmpty()){done.run();return;}
         if(!Displays.allIds(c).contains(destination)){done.run();return;}
         if(owned.isEmpty()){commitTarget.accept(destination);done.run();return;}

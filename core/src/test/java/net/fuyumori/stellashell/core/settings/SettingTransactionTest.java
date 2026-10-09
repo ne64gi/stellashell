@@ -22,6 +22,19 @@ public class SettingTransactionTest {
         Store s=new Store();SettingTransaction.apply(s,"1","1");assertEquals("1",s.values.get(SettingTransaction.FREEFORM));
         SettingTransaction.apply(s,"0","null");assertEquals("0",s.values.get(SettingTransaction.DESKTOP));assertEquals("null",s.values.get(SettingTransaction.FREEFORM));
     }
+    @Test public void preparationDoesNotUndoAnEnabledLegacyPointerPolicy()throws Exception{
+        for(int sdk:new int[]{30,34})for(String original:new String[]{"1","0","null"}){
+            Store s=new Store();s.values.put(SettingTransaction.DESKTOP,original);
+            SettingTransaction.apply(s,SettingTransaction.desktopForPreparation(sdk,s.read(SettingTransaction.DESKTOP)),"1");
+            assertEquals(original,s.values.get(SettingTransaction.DESKTOP));assertEquals("1",s.values.get(SettingTransaction.FREEFORM));
+        }
+        for(int sdk:new int[]{35,36}){
+            Store s=new Store();s.values.put(SettingTransaction.DESKTOP,"1");
+            SettingTransaction.apply(s,SettingTransaction.desktopForPreparation(sdk,"1"),"1");
+            assertEquals("0",s.values.get(SettingTransaction.DESKTOP));
+        }
+        assertThrows(IllegalArgumentException.class,()->SettingTransaction.desktopForPreparation(34,"invalid"));
+    }
     @Test public void partialFailureRestoresBothOriginalValues(){
         Store s=new Store();s.failFreeform=true;
         assertThrows(IOException.class,()->SettingTransaction.apply(s,"1","1"));

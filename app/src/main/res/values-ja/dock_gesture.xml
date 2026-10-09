@@ -1,0 +1,15 @@
+<resources>
+    <string name="dock_handle_position">ハンドル位置</string>
+    <string name="dock_gesture_title">ジェスチャー</string>
+    <string name="dock_gesture_tutorial">Dockの出し方を見る</string>
+    <string name="dock_gesture_instruction">指一本で上へ動かし、そのまま左か右へ曲げます。指を離すと、指の近くに縦並びのDockが開きます。上下でアプリをスクロール、Dockをさらに横へ引くとウィジェットが開きます。</string>
+    <string name="dock_gesture_practice">下の枠内で試してみましょう</string>
+    <string name="dock_gesture_retry">上へ動かしてから横へ曲げ、指を離します</string>
+    <string name="dock_gesture_use">この方法を使う</string>
+    <string name="dock_gesture_overlap">画面の端を避けて操作してください。下のアプリが一緒にスクロールする場合があります。この操作を使えない場合は、端のハンドルから開けます。</string>
+    <string name="home_recovery_note">設定を開けなくなったら：StellaShellをホームアプリにしている場合、ホームを素早く3回（1.5秒以内）押すと設定が開きます。</string>
+    <string name="dock_gesture_ok">できました：指の近くに縦のDockが開きます</string>
+    <string name="dock_gesture_up">そのまま上へ動かします</string>
+    <string name="dock_gesture_turn">左か右へ曲げます</string>
+    <string name="dock_gesture_release">指を離すと開きます</string>
+</resources>

@@ -18,8 +18,15 @@ final class Launches {
         App(String component,String label,Drawable icon){this.component=component;this.label=label;this.icon=icon;}
     }
     static List<App> catalog(Context c){
+        return catalogApps(new AppCatalog(c).entries());
+    }
+    static List<App> cachedCatalog(Context c){
+        List<AppCatalog.Entry> entries=new AppCatalog(c).cachedEntries();
+        return entries==null?null:catalogApps(entries);
+    }
+    private static List<App> catalogApps(List<AppCatalog.Entry> entries){
         List<App> result=new ArrayList<>();
-        for(AppCatalog.Entry entry:new AppCatalog(c).entries())result.add(new App(entry.component,entry.label,entry.icon));
+        for(AppCatalog.Entry entry:entries)result.add(new App(entry.component,entry.label,entry.icon));
         return result;
     }
     private static LaunchItems items(Context c){return new LaunchItems(prefs(c));}

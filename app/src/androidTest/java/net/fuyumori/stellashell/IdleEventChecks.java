@@ -306,8 +306,8 @@ final class IdleEventChecks {
                                 && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED,
                         "Requires existing Shizuku authorization");
                 peeked[0] = true;
-                check(Shizuku.peekUserService(args, connection) == 33,
-                        "Requires already installed event-capable Shizuku33 server");
+                check(Shizuku.peekUserService(args, connection) == 38,
+                        "Requires already installed event-capable Shizuku36 server");
             });
             check(connected.await(10, TimeUnit.SECONDS), "Installed task-event server unavailable");
             IDesktopBridge server = remote[0];

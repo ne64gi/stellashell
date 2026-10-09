@@ -16,9 +16,14 @@ final class AppContextMenu {
         show(c,anchor,requested,display,dismiss,task,taskState,null);
     }
     static void show(Context c,View anchor,String requested,int display,Runnable dismiss,TaskSnapshot.Task task,TaskState taskState,Runnable move){
+        show(c,anchor,requested,display,dismiss,task,taskState,move,null);
+    }
+    /** Overlay callers may retain the popup's anchor until dismissal. */
+    static PopupMenu show(Context c,View anchor,String requested,int display,Runnable dismiss,TaskSnapshot.Task task,TaskState taskState,Runnable move,Runnable onDismiss){
         TaskState state=taskState==null?TaskState.of(c):taskState;
         String component=Profiles.requestedComponent(c,requested);LaunchProfileSnapshot p=Profiles.snapshot(c,component);PopupMenu popup=new PopupMenu(c,anchor);Menu menu=popup.getMenu();
         menu.add(c.getString(R.string.ui_open)).setOnMenuItemClickListener(m->{dismiss.run();if(task!=null)Launches.focus(c,task,display,state);else Launches.app(c,component,display);return true;});
+        ExternalAppLaunch.addToMenu(c,menu,component,dismiss);
         if(WorkspaceProfile.standard(c,display)&&Bridge.get(c).ready())menu.add(R.string.phone_floating).setOnMenuItemClickListener(m->{dismiss.run();Launches.app(c,component,display,false,true);return true;});
         if(!Launches.basicHome(c,display)){
         menu.add(c.getString(R.string.ui_open_in_new_window)).setOnMenuItemClickListener(m->{dismiss.run();Launches.app(c,component,display,true);return true;});
@@ -46,7 +51,7 @@ final class AppContextMenu {
         SubMenu placement=menu.addSubMenu(1,0,20,c.getString(R.string.menu_placement));
         if(move!=null)placement.add(R.string.ui_move_2).setOnMenuItemClickListener(m->{move.run();return true;});
         placement.add(Launches.desktop(c).contains(component)?c.getString(R.string.ui_remove_from_desktop):c.getString(R.string.ui_add_to_desktop)).setOnMenuItemClickListener(m->{Launches.toggleDesktop(c,component);return true;});
-        placement.add(StartPins.get(c).contains(component)?c.getString(R.string.start_unpin):c.getString(R.string.start_pin)).setOnMenuItemClickListener(m->{StartPins.toggle(c,component);return true;});
+        placement.add(StartPins.get(c,display).contains(component)?c.getString(R.string.start_unpin):c.getString(R.string.start_pin)).setOnMenuItemClickListener(m->{StartPins.toggle(c,display,component);return true;});
         placement.add(Launches.dockPins(c).contains(component)?R.string.phone_unpin:R.string.phone_pin).setOnMenuItemClickListener(m->{Launches.toggleDockPin(c,component);return true;});
         placement.add(Launches.taskbarPins(c).contains(component)?R.string.ui_unpin_from_taskbar:R.string.ui_pin_to_taskbar).setOnMenuItemClickListener(m->{Launches.toggleTaskbarPin(c,component);return true;});
         SubMenu customize=menu.addSubMenu(1,0,30,c.getString(R.string.menu_customize));
@@ -55,8 +60,9 @@ final class AppContextMenu {
         SubMenu groups=placement.addSubMenu(c.getString(R.string.launcher_assign_group));
         java.util.List<String> names=new java.util.ArrayList<>();names.add("");names.addAll(AppOrganization.groups(c));
         for(String group:names)groups.add(group.isEmpty()?c.getString(R.string.launcher_ungrouped):group).setCheckable(true).setChecked(group.equals(AppOrganization.group(c,component))).setOnMenuItemClickListener(item->{AppOrganization.assign(c,component,group);return true;});
-        customize.add(c.getString(AppOrganization.hidden(c,component)?R.string.launcher_show_app:R.string.launcher_hide_app)).setOnMenuItemClickListener(item->{AppOrganization.hide(c,component,!AppOrganization.hidden(c,component));return true;});
-        menu.setGroupDividerEnabled(true);popup.show();
+        customize.add(c.getString(AppOrganization.hidden(c,display,component)?R.string.launcher_show_app:R.string.launcher_hide_app)).setOnMenuItemClickListener(item->{AppOrganization.hide(c,display,component,!AppOrganization.hidden(c,display,component));return true;});
+        if(onDismiss!=null)popup.setOnDismissListener(ignored->onDismiss.run());
+        menu.setGroupDividerEnabled(true);DesktopBackdrop.showPopup(c,popup);return popup;
     }
     static final int RETURN_TO_MAIN=21001,CLOSE_TASK=21002;
     /** Direct task commands, separate from launch/profile options. No package-wide stop. */
@@ -72,6 +78,7 @@ final class AppContextMenu {
         EditText width=new EditText(c),height=new EditText(c);width.setHint(c.getString(R.string.ui_width_px));height.setHint(c.getString(R.string.ui_height_px));width.setContentDescription(c.getString(R.string.ui_initial_width));height.setContentDescription(c.getString(R.string.ui_initial_height));width.setInputType(2);height.setInputType(2);width.setText(String.valueOf(p.width));height.setText(String.valueOf(p.height));form.addView(width);form.addView(height);
         AlertDialog dialog=new AlertDialog.Builder(c).setTitle(c.getString(R.string.ui_initial_size_display_pixels)).setView(form).setNegativeButton(c.getString(R.string.ui_cancel),null).setPositiveButton(c.getString(R.string.ui_save),null).create();
         if(!(c instanceof Activity))dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
-        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{int w=Integer.parseInt(width.getText().toString()),h=Integer.parseInt(height.getText().toString());if(w<240||w>16384||h<160||h>16384)throw new NumberFormatException();Profiles.setCustomSize(c,component,w,h);dialog.dismiss();}catch(NumberFormatException e){width.setError(c.getString(R.string.ui_width_must_be_240_16384_and_height_160_16384));}}));dialog.show();
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{int w=Integer.parseInt(width.getText().toString()),h=Integer.parseInt(height.getText().toString());if(w<240||w>16384||h<160||h>16384)throw new NumberFormatException();Profiles.setCustomSize(c,component,w,h);dialog.dismiss();}catch(NumberFormatException e){width.setError(c.getString(R.string.ui_width_must_be_240_16384_and_height_160_16384));}}));
+        if(c instanceof Activity)DesktopBackdrop.showDialog((Activity)c,dialog);else dialog.show();
     }
 }

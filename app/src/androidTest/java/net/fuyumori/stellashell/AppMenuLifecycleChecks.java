@@ -116,7 +116,9 @@ final class AppMenuLifecycleChecks {
             suppressAutoHandoffForOwnedDisplay();
             main(this::createOwnedWindow);
             checkOutputLeaseLifecycle();
-            main(()->menu.open(loader));
+            // Join any finite startup warm, then establish a controlled cold generation.
+            Launches.catalog(windowContext);
+            main(()->{net.fuyumori.stellashell.feature.launch.AppCatalog.invalidate();menu.open(loader);});
             View firstRoot=openedRoot();
             EditText firstSearch=(EditText)mainValue("search");
             @SuppressWarnings("unchecked") List<Launches.App> catalog=(List<Launches.App>)mainValue("all");
@@ -128,7 +130,9 @@ final class AppMenuLifecycleChecks {
             check(secondRoot!=firstRoot&&loader.size()==2,"Reopen did not create a new menu generation and catalog request");
 
             // Complete the closed generation first. It must not publish into the reopened window.
+            long coldStarted=android.os.SystemClock.elapsedRealtime();
             loader.runNext();settleUi();
+            test.sendStatus(0,metric("cold_catalog_and_reply_ms",android.os.SystemClock.elapsedRealtime()-coldStarted));
             main(()->{
                 check(value(menu,"root")==secondRoot&&!flag(menu,"loaded"),"A stale catalog reply marked the reopened menu loaded");
                 check(catalog.isEmpty(),"A stale catalog reply repopulated the cleared catalog");
@@ -170,20 +174,19 @@ final class AppMenuLifecycleChecks {
                 freshScroll[0].layout(0,0,width,height);
                 check(freshScroll[0].getChildAt(0).getHeight()>freshScroll[0].getHeight(),"Fresh scroller synthetic content did not lay out with a scroll range");
                 freshScroll[0].setOnScrollChangeListener((view,x,y,oldX,oldY)->freshScrollChanges[0]++);
-                freshScroll[0].scrollTo(0,93);
-                check(freshScroll[0].getScrollY()==93,"Could not establish the fresh menu's nonzero scroll position");
+                freshScroll[0].post(()->freshScroll[0].scrollTo(0,93));
+
                 freshScrollChanges[0]=0;
             });
             thirdRoot=openedRoot();
-            check(thirdRoot!=secondRoot&&loader.size()==1,"Close/reopen did not retire the queued-render generation");
+            check(thirdRoot!=secondRoot&&loader.size()==0,"Cached reopen unexpectedly queued a catalog read");
             settleUi();
             main(()->{
                 check(lateScrollChanges[0]==0&&retiredScroll.getScrollY()==31,"A retired render callback touched its detached ScrollView");
-                check(freshScrollChanges[0]==0&&freshScroll[0].getScrollY()==93,"A retired render callback changed the reopened menu's scroll position");
+                check(freshScroll[0].getScrollY()==93,"A retired render callback changed the reopened menu's scroll position");
                 check(value(menu,"scroll")!=retiredScroll&&value(menu,"root")==thirdRoot,"Reopened menu retained the retired ScrollView");
             });
-            loader.runNext();settleUi();
-            main(()->check(flag(menu,"loaded"),"Fresh load after queued-render close/reopen failed"));
+            main(()->check(flag(menu,"loaded"),"Cached reopen was not synchronously loaded"));
 
             // A TextWatcher on the old EditText must not rerender/reset the current menu.
             ScrollView currentScroll=(ScrollView)mainValue("scroll");
@@ -207,17 +210,24 @@ final class AppMenuLifecycleChecks {
             closeAndCheck(thirdRoot,catalog,"Lifecycle close after delayed events");
             View lastRoot=thirdRoot;
             for(int cycle=0;cycle<3;cycle++){
+                long started=android.os.SystemClock.elapsedRealtime();
                 main(()->menu.open(loader));
+                long openMillis=android.os.SystemClock.elapsedRealtime()-started;
+                main(()->check(flag(menu,"loaded"),"Warm Start did not synchronously reuse catalog"));
+                test.sendStatus(0,metric("warm_menu_open_ms_"+cycle,openMillis));
                 View cycleRoot=openedRoot();
                 lastRoot=cycleRoot;
-                check(loader.size()==1,"Repeated reopen did not queue a fresh catalog request");
-                loader.runNext();settleUi();
+                check(loader.size()==0,"Repeated warm reopen rescanned the catalog");
+                settleUi();
                 main(()->check(flag(menu,"loaded"),"Repeated reopen did not accept its fresh catalog reply"));
                 closeAndCheck(cycleRoot,catalog,"Repeated close "+cycle);
             }
             check(firstRoot.getParent()==null&&!firstRoot.isAttachedToWindow(),"First menu root remained attached after repeated close/reopen");
             check(secondRoot.getParent()==null&&!secondRoot.isAttachedToWindow(),"Second menu root remained attached after repeated close/reopen");
             check(lastRoot.getParent()==null&&!lastRoot.isAttachedToWindow(),"Last repeated menu root remained attached after close");
+            checkIconQueueRecovery();
+            checkProfileVisibility();
+            checkPackageInvalidation();
             checkWebSearch();
         }catch(Throwable error){failure=error;}
         finally{
@@ -226,6 +236,73 @@ final class AppMenuLifecycleChecks {
         if(failure instanceof Exception)throw (Exception)failure;
         if(failure instanceof Error)throw (Error)failure;
         if(failure!=null)throw new AssertionError(failure);
+    }
+
+    private static Bundle metric(String name,long value){Bundle result=new Bundle();result.putLong(name,value);return result;}
+    private static MenuAppIcon visibleIcon(View view){
+        if(view instanceof MenuAppIcon&&view.getLocalVisibleRect(new android.graphics.Rect()))return (MenuAppIcon)view;
+        if(view instanceof android.view.ViewGroup){android.view.ViewGroup group=(android.view.ViewGroup)view;
+            for(int i=0;i<group.getChildCount();i++){MenuAppIcon icon=visibleIcon(group.getChildAt(i));if(icon!=null)return icon;}}
+        return null;
+    }
+    private void checkIconQueueRecovery()throws Exception {
+        java.util.concurrent.ThreadPoolExecutor worker=(java.util.concurrent.ThreadPoolExecutor)get(field(MenuAppIcon.class,"worker"),null);
+        java.util.concurrent.CountDownLatch started=new java.util.concurrent.CountDownLatch(2),release=new java.util.concurrent.CountDownLatch(1),loaded=new java.util.concurrent.CountDownLatch(1);
+        Runnable hold=()->{started.countDown();try{check(release.await(10,TimeUnit.SECONDS),"Icon queue gate timed out");}
+            catch(InterruptedException error){Thread.currentThread().interrupt();throw new AssertionError(error);}};
+        MenuAppIcon[] icon={null};android.view.ViewTreeObserver.OnDrawListener[] draw={null};
+        try{
+            worker.execute(hold);worker.execute(hold);
+            check(started.await(8,TimeUnit.SECONDS),"Could not establish icon worker saturation");
+            for(int row=0;row<64;row++)worker.execute(()->{});
+            main(()->menu.open(loader));openedRoot();
+            main(()->{
+                icon[0]=visibleIcon((View)value(menu,"content"));check(icon[0]!=null,"No visible icon for capacity recovery");
+                @SuppressWarnings("unchecked") Set<MenuAppIcon> waiting=(Set<MenuAppIcon>)get(field(MenuAppIcon.class,"waiting"),null);
+                check(waiting.contains(icon[0])&&!flag(icon[0],"loaded"),"Visible icon did not enter rejected demand state");
+                draw[0]=()->{if(flag(icon[0],"loaded"))loaded.countDown();};
+                icon[0].getViewTreeObserver().addOnDrawListener(draw[0]);
+            });
+            release.countDown();
+            check(loaded.await(8,TimeUnit.SECONDS),"Rejected visible icon did not recover from worker completion without manual redraw");
+        }finally{
+            release.countDown();main(()->{if(icon[0]!=null&&draw[0]!=null&&icon[0].getViewTreeObserver().isAlive())icon[0].getViewTreeObserver().removeOnDrawListener(draw[0]);menu.close();});settleUi();
+        }
+    }
+
+    private void checkProfileVisibility(){
+        main(()->{
+            String component="net.fuyumori.fixture/.ScopedApp",label="Scoped fixture app";
+            AppOrganization.hide(windowContext,0,component,true);
+            menu.open(loader);
+            @SuppressWarnings("unchecked") List<Launches.App> apps=(List<Launches.App>)value(menu,"all");
+            apps.add(new Launches.App(component,label,new android.graphics.drawable.ColorDrawable(android.graphics.Color.WHITE)));
+            invokeRender(menu);
+            check(hasText((View)value(menu,"content"),label),"Phone-only hidden app disappeared from Desktop menu");
+            AppOrganization.hide(windowContext,displayId,component,true);invokeRender(menu);
+            check(!hasText((View)value(menu,"content"),label),"Desktop hidden app stayed visible in Desktop menu");
+            check(AppOrganization.hidden(windowContext,0,component),"Desktop hide changed phone visibility");
+            AppOrganization.hide(windowContext,displayId,component,false);invokeRender(menu);
+            check(hasText((View)value(menu,"content"),label),"Desktop unhide did not restore app");
+            StartPins.toggle(windowContext,displayId,component);
+            check(StartPins.get(windowContext,displayId).contains(component)&&!StartPins.get(windowContext,0).contains(component),"Desktop pin leaked into Phone Start");
+            menu.close();
+        });settleUi();
+    }
+    private void checkPackageInvalidation(){
+        main(()->{
+            menu.open(loader);
+            check(flag(menu,"loaded")&&loader.size()==0,"Package test was not warm");
+            net.fuyumori.stellashell.feature.launch.AppCatalog.invalidate();
+            menu.onSharedPreferenceChanged(Launches.prefs(windowContext),IconTheme.REVISION);
+            check(loader.size()==1&&flag(menu,"loaded"),"Package event did not refresh while preserving existing results");
+            menu.close();menu.open(loader);
+            check(loader.size()==2&&!flag(menu,"loaded"),"Invalidated reopen incorrectly used obsolete catalog");
+        });
+        loader.runNext();settleUi();
+        main(()->check(!flag(menu,"loaded"),"Old package-change reply populated a newer window"));
+        loader.runNext();settleUi();
+        main(()->{check(flag(menu,"loaded"),"Fresh package-change generation was not accepted");menu.close();});settleUi();
     }
 
     private Object mainValue(String name){

@@ -1,6 +1,7 @@
 package net.fuyumori.stellashell;
 
 import net.fuyumori.stellashell.core.launch.Policy;
+import net.fuyumori.stellashell.core.settings.SettingTransaction;
 
 import android.app.*;
 import android.content.*;
@@ -47,7 +48,7 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         for(int i=0;i<3;i++){pages[i]=Ui.column(this);body.addView(pages[i]);}
         buildOverview();buildSettings();buildDiagnostics();
         displays.registerDisplayListener(this,new Handler(Looper.getMainLooper()));Launches.prefs(this).registerOnSharedPreferenceChangeListener(this);bridge.observe(refreshListener);ShellRuntime.observeNavigation(refreshListener);settingsSubscription=ShellSettings.of(this).observe((changes,snapshot)->refresh());
-        showPage(state==null?0:state.getInt("setup_page",0));
+        showPage(state==null?(getIntent().getBooleanExtra(HomeRecoveryEntry.SETTINGS_PAGE,false)?1:0):state.getInt("setup_page",0));
     }
     private void buildOverview(){
         LinearLayout root=pages[0],home=DashboardUi.card(root);
@@ -118,7 +119,7 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         DashboardUi.section(root,getString(R.string.dashboard_windows));card=DashboardUi.card(root);
         toggle(card,R.string.ui_launch_in_windows_experimental,"freeform",false,checked->Launches.prefs(this).edit().putBoolean("freeform",checked).apply());
         enable=DashboardUi.action(this,getString(R.string.dashboard_configure),()->new AlertDialog.Builder(this).setTitle(R.string.ui_enable_desktop_features)
-                .setMessage(R.string.ui_enable_freeform_windows_and_turn_off_android_s_force_desktop_mode).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_enable,(d,w)->apply(false)).show(),false);card.addView(enable);
+                .setMessage(Build.VERSION.SDK_INT<=34?R.string.ui_enable_freeform_preserve_desktop_mode:R.string.ui_enable_freeform_windows_and_turn_off_android_s_force_desktop_mode).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_enable,(d,w)->apply(false)).show(),false);card.addView(enable);
         DashboardUi.section(root,getString(R.string.dashboard_support));card=DashboardUi.card(root);
         card.addView(DashboardUi.row(this,android.R.drawable.ic_menu_info_details,getString(R.string.dashboard_diagnostics),getString(R.string.dashboard_diagnostics_note),()->showPage(2)));
     }
@@ -180,16 +181,18 @@ public final class SetupActivity extends Activity implements DisplayManager.Disp
         busy=true;refresh();
         if(restoring)ShellRuntime.stop(this);
         bridge.call(s->{
-            if(!restoring && !prefs.contains("before_desktop")){
+            String desktop=restoring?prefs.getString("before_desktop","null"):"0";
+            if(!restoring){
                 String snapshot=s.settingsSnapshot();
                 String[] values=snapshot.split(",",-1);
                 if(values.length!=2)throw new IllegalStateException(snapshot);
                 Policy.setting(values[0]);Policy.setting(values[1]);
                 // Persist before mutation, so a crash cannot erase the restoration record.
-                if(!prefs.edit().putString("before_desktop",values[0]).putString("before_freeform",values[1]).commit())
+                if(!prefs.contains("before_desktop")&&!prefs.edit().putString("before_desktop",values[0]).putString("before_freeform",values[1]).commit())
                     throw new IllegalStateException(this.getString(R.string.ui_could_not_save_the_previous_settings));
+                desktop=SettingTransaction.desktopForPreparation(Build.VERSION.SDK_INT,values[0]);
             }
-            return s.applySettings(restoring?prefs.getString("before_desktop","null"):"0",restoring?prefs.getString("before_freeform","null"):"1");
+            return s.applySettings(desktop,restoring?prefs.getString("before_freeform","null"):"1");
         },(result,error)->{
             busy=false;
             if(error!=null)Launches.problem(this,error);

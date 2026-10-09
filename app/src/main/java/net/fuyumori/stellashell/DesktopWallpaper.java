@@ -58,7 +58,7 @@ final class DesktopWallpaper {
     }
     void choose(){
         Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        try{activity.startActivityForResult(intent,PICK);}catch(RuntimeException e){Ui.message(activity,activity.getString(R.string.ui_could_not_choose_an_image)+e.getMessage());}
+        try{DesktopBackdrop.startActivityForResult(activity,intent,PICK);}catch(RuntimeException e){Ui.message(activity,activity.getString(R.string.ui_could_not_choose_an_image)+e.getMessage());}
     }
     private static Bitmap decode(ImageDecoder.Source source)throws java.io.IOException{
         return ImageDecoder.decodeBitmap(source,(decoder,info,s)->{
@@ -138,9 +138,9 @@ final class DesktopWallpaper {
         });
         preview.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->render.run());Ui.note(form,activity.getString(R.string.wallpaper_drag));
         android.widget.ScrollView scroll=new android.widget.ScrollView(activity);scroll.addView(form);
-        new android.app.AlertDialog.Builder(activity).setTitle(R.string.wallpaper_position).setView(scroll).setNegativeButton(R.string.ui_cancel,null).setNeutralButton(R.string.ui_center,(d,w)->{Launches.prefs(activity).edit().putFloat(key("wallpaper_x"),.5f).putFloat(key("wallpaper_y"),.5f).apply();reload();}).setPositiveButton(R.string.ui_save,(d,w)->{
+        DesktopBackdrop.showDialog(activity,new android.app.AlertDialog.Builder(activity).setTitle(R.string.wallpaper_position).setView(scroll).setNegativeButton(R.string.ui_cancel,null).setNeutralButton(R.string.ui_center,(d,w)->{Launches.prefs(activity).edit().putFloat(key("wallpaper_x"),.5f).putFloat(key("wallpaper_y"),.5f).apply();reload();}).setPositiveButton(R.string.ui_save,(d,w)->{
             Launches.prefs(activity).edit().putBoolean(key("wallpaper_fit"),fit[0]).putFloat(key("wallpaper_x"),focal[0]).putFloat(key("wallpaper_y"),focal[1]).apply();reload();
-        }).show();
+        }).create());
     }
     void destroy(){closed=true;generation++;io.shutdown();}
 }

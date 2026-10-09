@@ -42,3 +42,11 @@ ADB=/path/to/adb SCRCPY=/path/to/scrcpy bash tools/unix/start-stellashell.sh
 接続／状態確認は各12秒で打ち切ります。5555開放、Shizuku自動起動、ポートスキャン、既存セッション強制終了は行いません。再接続前には前のscrcpyを終了してください。`--no-vd-destroy-content` で切断時のTask破棄を避けますが、状態復元はアプリ依存です。
 
 Linuxで模擬ADBを使った接続フローを検証。macOS実機での表示・入力は未検証です。
+
+## Windows／CommandキーでStartを開く
+
+scrcpyのショートカットは左Altだけへ設定します（`--shortcut-mod=lalt`）。[scrcpy公式仕様](https://github.com/Genymobile/scrcpy/blob/v3.3.1/doc/shortcuts.md)では、既定のMODに左Super（Windows／Command）も含まれるため、この指定でAndroidへ渡すMeta操作と分けます。左Altの貼り付け・全画面切替などは引き続き使えます。
+
+対応するStellaShellを使用し、scrcpyにフォーカスがあるとき、Androidへ届いたWindows／Command単押しでStartを開閉します。Meta＋Spaceなどの組み合わせではStartを開きません。UHIDを推奨します。Android側の物理キーボード配列とIMEも設定してください。
+
+Linuxのデスクトップ環境やmacOSが予約したキーはAndroidへ届かない場合があります。このスクリプトはOS全体のキーフックやショートカット設定を変更しません。別のPCアプリへ移ると、そのアプリとOSの通常のキー操作を使います。実Windows／Command入力・Linuxの各デスクトップ環境・macOSでの実機動作は未検証です。

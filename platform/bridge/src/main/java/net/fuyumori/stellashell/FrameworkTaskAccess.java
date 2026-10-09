@@ -17,7 +17,7 @@ import java.util.List;
 final class FrameworkTaskAccess {
     static final class Entry {
         final int id, displayId, userId, windowMode, activityType;
-        final ComponentName component;
+        final ComponentName component, topComponent;
         final boolean visible, focused, alwaysOnTop;
         final Object token;
         final Rect bounds;
@@ -25,6 +25,7 @@ final class FrameworkTaskAccess {
                 boolean visible, boolean focused, boolean alwaysOnTop, Object token, Rect area) {
             id=source.taskId;displayId=display;userId=user;windowMode=mode;activityType=type;
             component=source.baseActivity!=null?source.baseActivity:source.topActivity;
+            topComponent=source.topActivity;
             this.visible=visible;this.focused=focused;this.alwaysOnTop=alwaysOnTop;this.token=token;
             bounds=new Rect(area);
         }

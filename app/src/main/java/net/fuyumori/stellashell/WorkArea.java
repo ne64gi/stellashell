@@ -26,21 +26,28 @@ final class WorkArea {
         float density=c.getResources().getDisplayMetrics().density;
         Rect physical=new Rect(0,0,size.x,size.y);
         int types=WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout()|WindowInsets.Type.mandatorySystemGestures();
-        Insets system=insets.getInsets(types);
         Rect stable=inset(physical,insets.getInsetsIgnoringVisibility(types));
         ShellSettings.Snapshot settings=ShellSettings.of(c).snapshot();
         boolean compact=WorkspaceProfile.standard(c,c.getDisplay().getDisplayId())||ShellPresentation.compact(settings.shellLayout.storedValue(),stable.width()/density,stable.height()/density);
-        Insets all=insets.getInsets(types|WindowInsets.Type.ime());
         boolean main=c.getDisplay().getDisplayId()==0;
         boolean taskbarShown=!main||settings.phoneTaskbar.enabled;
         int scale=main?settings.phoneTaskbar.scalePercent:settings.externalTaskbar.scalePercent;
         int taskbar=taskbarShown?NavigationScale.pixels(density,60,scale):0;
-        WorkArea result=new WorkArea(physical,inset(physical,all),compact,Math.round(32*density),taskbar);
+        WorkArea result=new WorkArea(physical,usableBounds(physical,insets,main),compact,Math.round(32*density),taskbar);
         // The icon Dock overlays apps, including when it touches an edge. Only
         // the taskbar reserves a workspace strip; Dock placement still avoids it.
         result.imeVisible=insets.isVisible(WindowInsets.Type.ime());
         Insets gestures=insets.getInsets(WindowInsets.Type.systemGestures());result.gestureLeft=gestures.left;result.gestureRight=gestures.right;
         return result;
+    }
+    static Rect usableBounds(Rect physical,WindowInsets insets,boolean main){
+        int types=WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout()|WindowInsets.Type.ime();
+        // Some external displays retain the full navigation-bar height as a
+        // mandatory gesture region even after the bar is hidden. That region
+        // constrains swipes, not drawing or taps, so it must not shrink the
+        // desktop. Keep the phone's existing edge-gesture clearance.
+        if(main)types|=WindowInsets.Type.mandatorySystemGestures();
+        return inset(physical,insets.getInsets(types));
     }
     private static Rect inset(Rect b,Insets i){
         int l=Math.min(b.right-1,b.left+Math.max(0,i.left)),t=Math.min(b.bottom-1,b.top+Math.max(0,i.top));

@@ -6,6 +6,11 @@ public final class SettingTransaction {
     private SettingTransaction(){}
     static final String DESKTOP="force_desktop_mode_on_external_displays", FREEFORM="enable_freeform_support";
     public interface Store { String read(String key) throws Exception; void write(String key,String value) throws Exception; }
+    /** Legacy shared pointers need the user's OS policy; preparation must not clear it. */
+    public static String desktopForPreparation(int sdk,String current) {
+        Policy.setting(current);
+        return sdk<=34?current:"0";
+    }
     public static void apply(Store store,String desktop,String freeform) throws Exception {
         Policy.setting(desktop);Policy.setting(freeform);
         String oldDesktop=store.read(DESKTOP),oldFreeform=store.read(FREEFORM);

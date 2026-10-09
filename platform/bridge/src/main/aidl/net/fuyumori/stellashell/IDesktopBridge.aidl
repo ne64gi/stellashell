@@ -1,6 +1,8 @@
 package net.fuyumori.stellashell;
 import net.fuyumori.stellashell.ITaskChangeListener;
+import net.fuyumori.stellashell.IDockGestureListener;
 import android.os.ParcelFileDescriptor;
+import android.app.PendingIntent;
 interface IDesktopBridge {
     void destroy() = 16777114;
     String settingsSnapshot() = 1;
@@ -28,4 +30,9 @@ interface IDesktopBridge {
     String checkedTaskOperation(int displayId, int taskId, String component, String action, int left, int top, int right, int bottom) = 23;
     String observeTaskChanges(ITaskChangeListener listener) = 24;
     void removeTaskObserver(ITaskChangeListener listener) = 25;
+    String syncDesktopBackdrop(int displayId, int taskId, boolean enabled, IBinder owner) = 26;
+    String registerStartAction(in PendingIntent action) = 27;
+    String syncExternalDisplayPolicy(boolean enabled, IBinder owner) = 28;
+    String observeDockGesture(IDockGestureListener listener, int width, int height, int densityDpi, int rotation) = 29;
+    void removeDockGesture(IDockGestureListener listener) = 30;
 }

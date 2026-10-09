@@ -14,6 +14,7 @@ final class ShellRuntime {
     static final String HANDOFF="net.fuyumori.stellashell.HANDOFF";
     interface Session {
         boolean toggleStart(int display);
+        default boolean showStart(int display){return false;}
         int[] navigationBounds(int display);
         void homeVisible(boolean visible);
     }
@@ -64,6 +65,7 @@ final class ShellRuntime {
         void remove(Runnable observer){observers.remove(observer);}
         void changed(){for(Runnable observer:new ArrayList<>(observers))observer.run();}
         boolean toggleStart(int display){Session session=current==null?null:current.session.get();return session!=null&&session.toggleStart(display);}
+        boolean showStart(int display){Session session=current==null?null:current.session.get();return session!=null&&session.showStart(display);}
         int[] navigationBounds(int display){Session session=current==null?null:current.session.get();int[] value=session==null?null:session.navigationBounds(display);return value==null?null:value.clone();}
     }
     static final class Binding implements AutoCloseable {
@@ -105,6 +107,7 @@ final class ShellRuntime {
     static void observeNavigation(Runnable observer){registry.observe(observer);}
     static void unobserveNavigation(Runnable observer){registry.remove(observer);}
     static boolean toggleStart(int display){return registry.toggleStart(display);}
+    static boolean showStart(int display){return registry.showStart(display);}
     static int[] navigationBounds(int display){return registry.navigationBounds(display);}
     static void enableHome(Context c,boolean value){
         c.getPackageManager().setComponentEnabledSetting(new ComponentName(c,DesktopActivity.class),value?PackageManager.COMPONENT_ENABLED_STATE_ENABLED:PackageManager.COMPONENT_ENABLED_STATE_DISABLED,PackageManager.DONT_KILL_APP);

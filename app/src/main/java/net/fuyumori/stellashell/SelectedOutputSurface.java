@@ -22,6 +22,9 @@ final class SelectedOutputSurface implements SharedPreferences.OnSharedPreferenc
     private final TaskState.OutputLease taskLease;
     private WindowManager windows;
     private View dock;
+    private LinearLayout taskbarEntries;
+    private boolean taskbarRefreshPending,taskbarContextMenuOpen;
+    private PopupMenu taskbarPopup;
     private DesktopDock desktopDock;
     private AppMenu menu;
     private WindowChrome chrome;
@@ -34,7 +37,8 @@ final class SelectedOutputSurface implements SharedPreferences.OnSharedPreferenc
     private int batteryPercent=-1;
     private boolean batteryCharging;
     private final ExecutorService menuLoader=Executors.newSingleThreadExecutor();
-    private final Runnable panelsChanged=this::updatePanelChrome;
+    private final Runnable flushTaskbar=this::refreshTaskbarTasks;
+    private final Runnable panelsChanged=()->{updatePanelChrome();scheduleTaskbarRefresh();};
     private final BroadcastReceiver batteryReceiver=new BroadcastReceiver(){public void onReceive(Context ignored,Intent intent){
         int level=intent.getIntExtra(BatteryManager.EXTRA_LEVEL,-1),scale=intent.getIntExtra(BatteryManager.EXTRA_SCALE,-1);
         batteryPercent=level>=0&&scale>0?Math.min(100,Math.round(level*100f/scale)):-1;
@@ -71,7 +75,7 @@ final class SelectedOutputSurface implements SharedPreferences.OnSharedPreferenc
         if(displayId==0){phoneAreaChanged();return;}
         if(changes.contains(ShellSettings.Change.EXTERNAL_TASKBAR_SCALE)){removeDock(true);attachDock();}
         if(dock!=null&&(changes.contains(ShellSettings.Change.EXTERNAL_DOCK_ENABLED)||changes.contains(ShellSettings.Change.EXTERNAL_DOCK_EDGE)))syncDesktopDock(dock.getContext());
-        if(desktopDock!=null&&(changes.contains(ShellSettings.Change.EXTERNAL_DOCK_EDGE)||changes.contains(ShellSettings.Change.EXTERNAL_DOCK_SCALE)))desktopDock.rebuild();
+        if(desktopDock!=null&&(changes.contains(ShellSettings.Change.EXTERNAL_DOCK_EDGE)||changes.contains(ShellSettings.Change.EXTERNAL_DOCK_SCALE)||changes.contains(ShellSettings.Change.EXTERNAL_DOCK_REVEAL)||changes.contains(ShellSettings.Change.EXTERNAL_DOCK_OPEN_METHOD)))desktopDock.rebuild();
         areaChanged();
     }
     private String getString(int id,Object... args){return context.getString(id,args);}
@@ -119,10 +123,13 @@ final class SelectedOutputSurface implements SharedPreferences.OnSharedPreferenc
         removeDock(false);
     }
     private void removeDock(boolean keepChrome) {
+        taskbarRefreshPending=false;taskbarContextMenuOpen=false;
+        if(dock!=null)dock.removeCallbacks(flushTaskbar);
+        if(taskbarPopup!=null){taskbarPopup.dismiss();taskbarPopup=null;}
         if(!keepChrome){if(desktopDock!=null)desktopDock.close();desktopDock=null;if(chrome!=null)chrome.clear();chrome=null;}
         if(menu!=null)menu.close();menu=null;
         if(dock!=null && windows!=null)try{windows.removeViewImmediate(dock);}catch(RuntimeException ignored){}
-        dock=null;batteryText=null;if(!keepChrome)windows=null;
+        dock=null;taskbarEntries=null;taskSignature="";batteryText=null;if(!keepChrome)windows=null;
     }
     private void attachDock() {
         try {
@@ -148,7 +155,7 @@ final class SelectedOutputSurface implements SharedPreferences.OnSharedPreferenc
             renderedCompact=WorkArea.get(context,displayId).compact;
             LinearLayout row=new LinearLayout(c);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(taskbarDp(c,6),taskbarDp(c,4),taskbarDp(c,6),taskbarDp(c,4));
             row.setBackground(Appearance.surface(c,18));
-            ImageButton apps=new ImageButton(c);apps.setImageResource(R.mipmap.ic_launcher);apps.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            ImageButton apps=new ImageButton(c);apps.setImageDrawable(AppIcons.stella(c));apps.setScaleType(ImageView.ScaleType.FIT_CENTER);
             apps.setBackgroundTintList(null);apps.setBackground(Ui.toolbarBackground(c,12));apps.setPadding(taskbarDp(c,7),taskbarDp(c,4),taskbarDp(c,7),taskbarDp(c,4));
             watchStart(apps);apps.setOnClickListener(v->{if(collapsed){collapsed=false;removeDock(true);attachDock();}toggleMenu();});
             apps.setContentDescription(getString(R.string.ui_app_menu));apps.setTooltipText(getString(R.string.start_menu_label));
@@ -159,21 +166,12 @@ final class SelectedOutputSurface implements SharedPreferences.OnSharedPreferenc
             Button home=Ui.toolbarButton(c,"▱",()->Launches.home(context,displayId));home.setContentDescription(getString(R.string.ui_show_desktop));home.setTooltipText(getString(R.string.ui_show_desktop));
             row.addView(home,new LinearLayout.LayoutParams(taskbarDp(c,48),taskbarDp(c,44)));
             LinearLayout entries=new LinearLayout(c);entries.setGravity(Gravity.CENTER_VERTICAL);
-            java.util.List<TaskSnapshot.Task> running=tasks==null?new java.util.ArrayList<>():tasks.snapshot().tasks;
-            java.util.Set<Integer> represented=new java.util.HashSet<>();
-            for(String component:Launches.pins(c)){
-                ComponentName name=ComponentName.unflattenFromString(component);if(name==null)continue;
-                String pkg=name.getPackageName();
-                TaskSnapshot.Task match=null;for(TaskSnapshot.Task t:running)if(t.packageName().equals(pkg)){match=t;break;}
-                addEntry(c,entries,component,match,true);if(match!=null)represented.add(match.id);
-            }
-            for(TaskSnapshot.Task t:running)if(!represented.contains(t.id))addEntry(c,entries,t.component,t,false);
+            taskbarEntries=entries;populateTaskbarEntries(c,entries);
             row.addView(entries,new LinearLayout.LayoutParams(-2,taskbarDp(c,44)));
             row.addView(new View(c),new LinearLayout.LayoutParams(0,1,1));
 
             Button shot=Ui.toolbarButton(c,"▣",()->{if(menu!=null)menu.close();DesktopScreenshot.take(context,displayId);});shot.setContentDescription(getString(R.string.screenshot_take));shot.setTooltipText(getString(R.string.screenshot_take));row.addView(shot,new LinearLayout.LayoutParams(taskbarDp(c,44),taskbarDp(c,44)));
             row.addView(batteryView(c),new LinearLayout.LayoutParams(taskbarDp(c,76),taskbarDp(c,44)));
-            Button settings=Ui.toolbarButton(c,"⚙",()->Launches.settings(context,displayId));settings.setContentDescription(getString(R.string.menu_stella_settings));settings.setTooltipText(getString(R.string.menu_stella_settings));row.addView(settings,new LinearLayout.LayoutParams(taskbarDp(c,44),taskbarDp(c,44)));
             {TextClock clock=new TextClock(c);clock.setBackground(Ui.toolbarBackground(c,12));clock.setTypeface(Appearance.face);clock.setFormat24Hour("HH:mm");clock.setFormat12Hour("HH:mm");clock.setTextColor(Ui.TEXT);clock.setTextSize(16);clock.setContentDescription(getString(R.string.hub_title));clock.setTooltipText(getString(R.string.hub_title));clock.setOnClickListener(v->{if(menu!=null)menu.close();HubActivity.open(context,displayId);});row.addView(clock,new LinearLayout.LayoutParams(taskbarDp(c,58),-2));}
             Button hide=Ui.toolbarButton(c,"−",()->{collapsed=true;removeDock(true);attachDock();});hide.setContentDescription(getString(R.string.ui_collapse_taskbar));
             row.addView(hide,new LinearLayout.LayoutParams(taskbarDp(c,44),taskbarDp(c,44)));
@@ -183,8 +181,8 @@ final class SelectedOutputSurface implements SharedPreferences.OnSharedPreferenc
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,PixelFormat.TRANSLUCENT);
             p.gravity=Gravity.BOTTOM|Gravity.LEFT;p.setFitInsetsTypes(displayId==0?WindowInsets.Type.navigationBars():0);p.y=taskbarDp(c,4);p.setTitle("StellaShell taskbar");
             scaleTaskbarWidgets(c,row);
-            HorizontalScrollView viewport=new HorizontalScrollView(c);viewport.setFillViewport(true);viewport.setBackground(Appearance.surface(c,18));viewport.setClipToOutline(true);viewport.addView(row,new FrameLayout.LayoutParams(-2,-1));
-            windows.addView(viewport,p);dock=viewport;positionDock();displayGeometry=geometry(displayId);
+            TaskbarViewport viewport=new TaskbarViewport(c);viewport.setFillViewport(true);viewport.setBackground(Appearance.surface(c,18));viewport.setClipToOutline(true);viewport.addView(row,new FrameLayout.LayoutParams(-2,-1));
+            windows.addView(viewport,p);dock=viewport;positionDock();displayGeometry=geometry(displayId);taskSignature=taskbarSignature();
         }catch(RuntimeException e){removeDock();Launches.problem(context,getString(R.string.ui_could_not_show_the_taskbar)+e.getMessage());}finally{}
     }
     private int taskbarDp(Context c,int value){return NavigationScale.pixels(c.getResources().getDisplayMetrics().density,value,ShellSettings.of(context).snapshot().externalTaskbar.scalePercent);}
@@ -202,11 +200,65 @@ final class SelectedOutputSurface implements SharedPreferences.OnSharedPreferenc
     }
     private void tasksChanged(){
         if(closed||tasks==null||displayId<0)return;
+        refreshTaskbarTasks();updatePanelChrome();
+    }
+    private String taskbarSignature(){
         StringBuilder signature=new StringBuilder(Bridge.get(context).ready()?"ready":"offline");signature.append(TaskState.of(context).primary());
-        for(TaskSnapshot.Task t:tasks.snapshot().tasks)signature.append(t.id).append(t.component).append(t.focused).append(t.visible).append(t.alwaysOnTop).append(TaskState.of(context).label(context,t));
-        boolean menuOpen=isStartOpen();
-        if(displayId>0&&!signature.toString().equals(taskSignature)&&!menuOpen){taskSignature=signature.toString();if(desktopDock!=null)desktopDock.rebuild();removeDock(true);attachDock();}
-        if(chrome!=null)try{chrome.update(tasks.snapshot().tasks);}catch(RuntimeException e){chrome.clear();Launches.problem(context,e.getMessage());}
+        for(TaskSnapshot.Task t:tasks.snapshot().tasks)signature.append(t.id).append(t.component).append(t.mode).append(t.focused).append(t.visible).append(t.alwaysOnTop).append(TaskState.of(context).label(context,t));
+        return signature.toString();
+    }
+    private void populateTaskbarEntries(Context c,LinearLayout entries){
+        java.util.List<TaskSnapshot.Task> running=tasks.snapshot().tasks;
+        java.util.Set<Integer> represented=new java.util.HashSet<>();
+        for(String component:Launches.pins(c)){
+            ComponentName name=ComponentName.unflattenFromString(component);if(name==null)continue;
+            TaskSnapshot.Task match=null;for(TaskSnapshot.Task t:running)if(t.packageName().equals(name.getPackageName())){match=t;break;}
+            addEntry(c,entries,component,match,true);if(match!=null)represented.add(match.id);
+        }
+        for(TaskSnapshot.Task t:running)if(!represented.contains(t.id))addEntry(c,entries,t.component,t,false);
+    }
+    /** Task events replace only icons/state, never the native taskbar Window or Start owner. */
+    private void refreshTaskbarTasks(){
+        if(closed||displayId<=0||!(dock instanceof TaskbarViewport))return;
+        String signature=taskbarSignature();
+        if(signature.equals(taskSignature)){taskbarRefreshPending=false;return;}
+        TaskbarViewport viewport=(TaskbarViewport)dock;
+        if(viewport.tracking()||taskbarContextMenuOpen||isStartOpen()||ShellPanels.isOpen(displayId)){
+            taskbarRefreshPending=true;return;
+        }
+        taskbarRefreshPending=false;
+        if(taskbarEntries!=null){
+            int scrollX=viewport.getScrollX(),scrollY=viewport.getScrollY();
+            taskbarEntries.removeAllViews();populateTaskbarEntries(taskbarEntries.getContext(),taskbarEntries);
+            // Only fresh children are scaled; the retained row/clock must not accumulate scaling.
+            scaleTaskbarWidgets(taskbarEntries.getContext(),taskbarEntries);viewport.scrollTo(scrollX,scrollY);
+        }
+        if(desktopDock!=null)desktopDock.refresh();
+        taskSignature=signature;
+    }
+    private void scheduleTaskbarRefresh(){
+        if(closed||!taskbarRefreshPending||dock==null)return;
+        // Menu.close releases ShellPanels before clearing its root; run after that stack unwinds.
+        dock.removeCallbacks(flushTaskbar);dock.post(flushTaskbar);
+    }
+    private final class TaskbarViewport extends HorizontalScrollView {
+        private boolean touchTracking;private int heldButtons;
+        TaskbarViewport(Context c){super(c);}
+        boolean tracking(){return touchTracking||heldButtons!=0;}
+        @Override public boolean dispatchTouchEvent(MotionEvent event){
+            int action=event.getActionMasked();if(action==MotionEvent.ACTION_DOWN){touchTracking=true;heldButtons=event.getButtonState();}
+            try{return super.dispatchTouchEvent(event);}finally{
+                if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){touchTracking=false;heldButtons=action==MotionEvent.ACTION_CANCEL?0:event.getButtonState();if(dock==this)scheduleTaskbarRefresh();}
+            }
+        }
+        @Override public boolean dispatchGenericMotionEvent(MotionEvent event){
+            int action=event.getActionMasked();
+            if(action==MotionEvent.ACTION_BUTTON_PRESS||action==MotionEvent.ACTION_BUTTON_RELEASE)heldButtons=event.getButtonState();
+            try{return super.dispatchGenericMotionEvent(event);}finally{
+                if(action==MotionEvent.ACTION_BUTTON_RELEASE&&dock==this)scheduleTaskbarRefresh();
+            }
+        }
+        @Override protected void onDetachedFromWindow(){touchTracking=false;heldButtons=0;removeCallbacks(flushTaskbar);super.onDetachedFromWindow();}
     }
     private void addEntry(Context c,LinearLayout row,String component,TaskSnapshot.Task task,boolean pinned){
         try{
@@ -227,7 +279,11 @@ final class SelectedOutputSurface implements SharedPreferences.OnSharedPreferenc
                 else tasks.action(task,"focus");
             }else Launches.app(context,component,displayId);});
             item.setOnLongClickListener(v->{
-                ShellPanels.dismiss(displayId);AppContextMenu.show(c,item,component,displayId,()->{},task,tasks);return true;
+                ShellPanels.dismiss(displayId);View owner=dock;taskbarContextMenuOpen=true;
+                try{taskbarPopup=AppContextMenu.show(c,item,component,displayId,()->{},task,tasks,null,()->{
+                    if(dock!=owner)return;taskbarPopup=null;taskbarContextMenuOpen=false;scheduleTaskbarRefresh();
+                });}catch(RuntimeException error){if(dock==owner){taskbarContextMenuOpen=false;scheduleTaskbarRefresh();}throw error;}
+                return true;
             });
             item.setOnContextClickListener(v->v.performLongClick());
             row.addView(item,new LinearLayout.LayoutParams(taskbarDp(c,48),taskbarDp(c,44)));
@@ -241,7 +297,7 @@ final class SelectedOutputSurface implements SharedPreferences.OnSharedPreferenc
     }
     @Override public void onSharedPreferenceChanged(SharedPreferences prefs,String key){
         if(closed)return;
-        if(WorkspaceProfile.changed(key,"dock_pinned")){if(desktopDock!=null)desktopDock.rebuild();return;}
+        if(WorkspaceProfile.changed(key,"dock_pinned")){if(desktopDock!=null)desktopDock.refresh();return;}
         if(Appearance.KEY.equals(key))Appearance.load(context);
         if(WorkspaceProfile.changed(key,"pinned")||Appearance.KEY.equals(key)||IconTheme.changed(key))rebuild();
     }

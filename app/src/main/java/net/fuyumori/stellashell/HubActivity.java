@@ -27,17 +27,22 @@ public final class HubActivity extends Activity implements DisplayManager.Displa
         final java.util.function.Consumer<Float> leading;
         final Runnable done;
         final float threshold;
+        final Float origin;
         float distance;
         boolean ended,commit,finished;
-        SidebarDrag(Context c,boolean right,float distance,java.util.function.Consumer<Float> leading,Runnable done){this.right=right;this.distance=distance;this.leading=leading;this.done=done;threshold=Ui.dp(c,32);}
+        SidebarDrag(Context c,boolean right,float distance,Float origin,java.util.function.Consumer<Float> leading,Runnable done){this.right=right;this.distance=distance;this.origin=origin;this.leading=leading;this.done=done;threshold=Ui.dp(c,32);}
         void update(float distance){if(finished||ended)return;this.distance=distance;HubActivity current=visible.get();if(current!=null&&current.sidebarDrag==this)current.renderPull();}
         void release(boolean cancel){if(finished||ended)return;ended=true;commit=!cancel&&distance>=threshold;HubActivity current=visible.get();if(current!=null&&current.sidebarDrag==this)current.renderPull();}
         void complete(){if(finished)return;finished=true;if(pendingDrag==this)pendingDrag=null;done.run();}
     }
     static SidebarDrag beginPull(Context c,boolean right,float distance,java.util.function.Consumer<Float> leading,Runnable done){
+        return beginPull(c,right,distance,null,leading,done);
+    }
+    static SidebarDrag beginPull(Context c,boolean right,float distance,Float origin,java.util.function.Consumer<Float> leading,Runnable done){
         if(pendingDrag!=null)pendingDrag.complete();HubActivity current=visible.get();if(current!=null)current.finish();
-        SidebarDrag drag=new SidebarDrag(c,right,distance,leading,done);pendingDrag=drag;
-        try{c.startActivity(new Intent(c,HubActivity.class).putExtra("from_right",right).putExtra("sidebar_pull",drag.token).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),ActivityOptions.makeBasic().setLaunchDisplayId(0).toBundle());}
+        SidebarDrag drag=new SidebarDrag(c,right,distance,origin,leading,done);pendingDrag=drag;
+        // The panel owns its pull animation; a task enter animation would add a second axis.
+        try{c.startActivity(new Intent(c,HubActivity.class).putExtra("from_right",right).putExtra("sidebar_pull",drag.token).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_NO_ANIMATION),ActivityOptions.makeBasic().setLaunchDisplayId(0).toBundle());}
         catch(RuntimeException error){drag.complete();Launches.problem(c,error.getMessage());}
         return drag;
     }
@@ -76,7 +81,7 @@ public final class HubActivity extends Activity implements DisplayManager.Displa
             if(displayId!=0)Displays.require(context,displayId);
             HubActivity current=visible.get();
             if(current!=null&&!current.isFinishing()&&current.displayId==displayId&&current.hasWindowFocus()){current.finish();return;}
-            context.startActivity(new Intent(context,HubActivity.class).putExtra("from_right",fromRight).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle());
+            context.startActivity(new Intent(context,HubActivity.class).putExtra("from_right",fromRight).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_NO_ANIMATION),ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle());
         }catch(RuntimeException e){Launches.problem(context,e.getMessage());}
     }
     @Override public void onCreate(Bundle state){
@@ -122,8 +127,14 @@ public final class HubActivity extends Activity implements DisplayManager.Displa
         showTab(state!=null&&state.getBoolean("notifications"));
     }
     private int dp(int value){return Ui.dp(this,value);}
+    private float pullRange(){
+        if(sidebarDrag.origin==null)return panel.getWidth()+dp(12);
+        int[] location=new int[2];panel.getLocationOnScreen(location);
+        float restingLeading=location[0]-panel.getTranslationX()+(sidebarDrag.right?0:panel.getWidth());
+        return Math.max(1,sidebarDrag.right?sidebarDrag.origin-restingLeading:restingLeading-sidebarDrag.origin);
+    }
     private void applyPull(float progress){
-        pullProgress=progress;float range=panel.getWidth()+dp(12);
+        pullProgress=progress;float range=pullRange();
         panel.setTranslationX((sidebarDrag.right?1:-1)*range*(1-progress));
         backdrop.setBackgroundColor((Math.round(34*progress)<<24)|0x101725);
         int[] location=new int[2];panel.getLocationOnScreen(location);
@@ -132,7 +143,7 @@ public final class HubActivity extends Activity implements DisplayManager.Displa
     }
     private void renderPull(){
         if(sidebarDrag==null||panel.getWidth()==0||isFinishing()||pullAnimation!=null)return;
-        applyPull(Math.min(1,sidebarDrag.distance/(panel.getWidth()+dp(12))));
+        applyPull(Math.min(1,sidebarDrag.distance/pullRange()));
         if(!sidebarDrag.ended)return;
         float target=sidebarDrag.commit?1:0;
         if(!android.animation.ValueAnimator.areAnimatorsEnabled()){applyPull(target);endPull();return;}

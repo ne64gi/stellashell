@@ -36,6 +36,9 @@
         <activity android:name=".SetupActivity" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>
+        <activity android:name=".ExternalAppActivity" android:exported="false" android:resizeableActivity="true"
+            android:taskAffinity="net.fuyumori.stellashell.externalapp" android:excludeFromRecents="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboard|keyboardHidden|density" />
         <activity android:name=".HomeActivity" android:exported="true" android:launchMode="singleTask"
             android:taskAffinity="net.fuyumori.stellashell.home" android:excludeFromRecents="true"
             android:resizeableActivity="true"
@@ -43,6 +46,14 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".StartMenuActivity" android:exported="true" android:theme="@style/HubTheme"
+            android:excludeFromRecents="true" android:taskAffinity="net.fuyumori.stellashell.start" android:resizeableActivity="true">
+            <intent-filter>
+                <action android:name="android.intent.action.ALL_APPS" />
+                <action android:name="launcher.intent_action_all_apps_toggle" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
@@ -54,6 +65,9 @@
                 <category android:name="android.intent.category.SECONDARY_HOME" />
             </intent-filter>
         </activity>
+        <activity android:name=".DesktopInteractionActivity" android:exported="false" android:resizeableActivity="true" android:theme="@style/HubTheme"
+            android:taskAffinity="net.fuyumori.stellashell.desktopinteraction" android:excludeFromRecents="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboard|keyboardHidden|density" />
         <activity android:name=".HubActivity" android:exported="false" android:resizeableActivity="true"
             android:theme="@style/HubTheme" android:launchMode="singleTask"
             android:taskAffinity="net.fuyumori.stellashell.hub" android:excludeFromRecents="true" />

@@ -1,6 +1,7 @@
 package net.fuyumori.stellashell;
 
 import net.fuyumori.stellashell.core.navigation.NavigationScale;
+import net.fuyumori.stellashell.core.layout.EdgeDockReveal.Method;
 
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -27,7 +28,7 @@ final class ShellSettings implements AutoCloseable {
     }
 
     enum PhoneSide {
-        BOTH("both"), LEFT("left"), RIGHT("right");
+        BOTH("both"), LEFT("left"), RIGHT("right"), GESTURE("gesture");
         final String value;
         PhoneSide(String value) { this.value = value; }
         String storedValue() { return value; }
@@ -61,14 +62,19 @@ final class ShellSettings implements AutoCloseable {
 
     enum Change {
         PHONE_DOCK_ENABLED,
+        PHONE_DOCK_OPEN_METHOD,
         PHONE_DOCK_SIDE,
         PHONE_DOCK_OVER_APPS,
         PHONE_DOCK_TRIGGER_POSITION,
         PHONE_DOCK_SCALE,
+        PHONE_DOCK_LANDSCAPE_EDGE,
+        PHONE_DOCK_LANDSCAPE_POSITION,
         EXTERNAL_DOCK_ENABLED,
+        EXTERNAL_DOCK_OPEN_METHOD,
         EXTERNAL_DOCK_EDGE,
         EXTERNAL_DOCK_POSITION,
         EXTERNAL_DOCK_SCALE,
+        EXTERNAL_DOCK_REVEAL,
         PHONE_TASKBAR_ENABLED,
         PHONE_TASKBAR_SCALE,
         EXTERNAL_TASKBAR_SCALE,
@@ -79,9 +85,22 @@ final class ShellSettings implements AutoCloseable {
         PREFERRED_DISPLAY
     }
 
+    /** One reveal handle, placed along the selected edge independently of portrait preferences. */
+    static final class DockTrigger {
+        final DockEdge edge;
+        final int positionPercent;
+
+        private DockTrigger(DockEdge edge, int positionPercent) {
+            this.edge = edge;
+            this.positionPercent = positionPercent;
+        }
+    }
+
     static final class Dock {
         final boolean enabled;
         final boolean overApps;
+        final boolean revealByHandle;
+        final Method openMethod;
         final PhoneSide phoneSide;
         final DockEdge edge;
         final int triggerPercent;
@@ -90,9 +109,11 @@ final class ShellSettings implements AutoCloseable {
         final int scalePercent;
 
         private Dock(boolean enabled, boolean overApps, PhoneSide phoneSide, DockEdge edge,
-                     int triggerPercent, int xPercent, int yPercent, int scalePercent) {
+                     int triggerPercent, int xPercent, int yPercent, int scalePercent, boolean revealByHandle, Method openMethod) {
             this.enabled = enabled;
             this.overApps = overApps;
+            this.revealByHandle = revealByHandle;
+            this.openMethod = openMethod;
             this.phoneSide = phoneSide;
             this.edge = edge;
             this.triggerPercent = triggerPercent;
@@ -117,6 +138,7 @@ final class ShellSettings implements AutoCloseable {
 
     static final class Snapshot {
         final Dock phoneDock;
+        final DockTrigger phoneLandscapeDock;
         final Dock externalDock;
         final Taskbar phoneTaskbar;
         final Taskbar externalTaskbar;
@@ -127,10 +149,11 @@ final class ShellSettings implements AutoCloseable {
         /** Preferred next output; -1 means no saved external target. */
         final int preferredDisplayId;
 
-        private Snapshot(Dock phoneDock, Dock externalDock, Taskbar phoneTaskbar,
+        private Snapshot(Dock phoneDock, DockTrigger phoneLandscapeDock, Dock externalDock, Taskbar phoneTaskbar,
                          Taskbar externalTaskbar, Layout shellLayout, boolean compactWorkspace,
                          boolean workspaceAuto, boolean primaryMode, int preferredDisplayId) {
             this.phoneDock = phoneDock;
+            this.phoneLandscapeDock = phoneLandscapeDock;
             this.externalDock = externalDock;
             this.phoneTaskbar = phoneTaskbar;
             this.externalTaskbar = externalTaskbar;
@@ -204,12 +227,17 @@ final class ShellSettings implements AutoCloseable {
                         PhoneSide.from(preferences.getString("phone_sidebar_side", "both")),
                         DockEdge.BOTTOM,
                         percentRange(preferences.getInt("sidebar_height", 80), 0, 100),
-                        50, 100, NavigationScale.percent(preferences.getInt("phone_dock_scale", NavigationScale.DEFAULT))),
+                        50, 100, NavigationScale.percent(preferences.getInt("phone_dock_scale", NavigationScale.DEFAULT)), true,
+                        Method.parse(preferences.getString("phone_dock_open_method", "swipe"))),
+                new DockTrigger(DockEdge.from(preferences.getString("phone_dock_landscape_edge", "bottom")),
+                        percentRange(preferences.getInt("phone_dock_landscape_position", 50), 0, 100)),
                 new Dock(preferences.getBoolean("desktop_dock", false), false, PhoneSide.BOTH,
                         DockEdge.from(preferences.getString("dock_edge", "bottom")), 80,
                         percentRange(preferences.getInt("dock_x", 50), 0, 100),
                         percentRange(preferences.getInt("dock_y", 100), 0, 100),
-                        NavigationScale.percent(preferences.getInt("desktop_dock_scale", NavigationScale.DEFAULT))),
+                        NavigationScale.percent(preferences.getInt("desktop_dock_scale", NavigationScale.DEFAULT)),
+                        preferences.getBoolean("desktop_dock_by_handle", false),
+                        Method.parse(preferences.getString("desktop_dock_open_method", "swipe"))),
                 new Taskbar(preferences.getBoolean("phone_taskbar", false), false,
                         NavigationScale.percent(preferences.getInt("phone_taskbar_scale", NavigationScale.DEFAULT))),
                 new Taskbar(true, true,
@@ -226,6 +254,16 @@ final class ShellSettings implements AutoCloseable {
         if (closed) throw new IllegalStateException("Settings owner is closed");
         listeners.add(listener);
         return () -> listeners.remove(listener);
+    }
+
+    void setPhoneDockOpenMethod(Method method) {
+        if (method == null) throw new IllegalArgumentException("Phone Dock opening method is required");
+        write(e -> e.putString("phone_dock_open_method", method.storedValue()));
+    }
+
+    void setExternalDockOpenMethod(Method method) {
+        if (method == null) throw new IllegalArgumentException("External Dock opening method is required");
+        write(e -> e.putString("desktop_dock_open_method", method.storedValue()));
     }
 
     void setPhoneDockEnabled(boolean enabled) {
@@ -251,6 +289,20 @@ final class ShellSettings implements AutoCloseable {
         write(e -> e.putInt("phone_dock_scale", value));
     }
 
+    void setPhoneLandscapeDockEdge(DockEdge edge) {
+        if (edge == null) throw new IllegalArgumentException("Phone landscape Dock edge is required");
+        write(e -> e.putString("phone_dock_landscape_edge", edge.value));
+    }
+
+    void setPhoneLandscapeDockPosition(int percent) {
+        int value = percentRange(percent, 0, 100);
+        write(e -> e.putInt("phone_dock_landscape_position", value));
+    }
+
+    void setExternalDockRevealByHandle(boolean enabled) {
+        write(e -> e.putBoolean("desktop_dock_by_handle", enabled));
+    }
+
     void setExternalDockEnabled(boolean enabled) {
         write(e -> e.putBoolean("desktop_dock", enabled));
     }
@@ -259,6 +311,8 @@ final class ShellSettings implements AutoCloseable {
         if (edge == null) throw new IllegalArgumentException("External Dock edge is required");
         write(e -> {
             e.putString("dock_edge", edge.value);
+            // Handle geometry anchors to the edge without replacing the saved floating position.
+            if (preferences.getBoolean("desktop_dock_by_handle", false)) return;
             switch (edge) {
                 case LEFT: e.putInt("dock_x", 0); break;
                 case RIGHT: e.putInt("dock_x", 100); break;
@@ -360,16 +414,21 @@ final class ShellSettings implements AutoCloseable {
     private static Change changeFor(String key) {
         if (key == null) return null;
         switch (key) {
+            case "phone_dock_open_method": return Change.PHONE_DOCK_OPEN_METHOD;
+            case "desktop_dock_open_method": return Change.EXTERNAL_DOCK_OPEN_METHOD;
             case "phone_sidebar": return Change.PHONE_DOCK_ENABLED;
             case "phone_sidebar_side": return Change.PHONE_DOCK_SIDE;
             case "phone_sidebar_over_apps": return Change.PHONE_DOCK_OVER_APPS;
             case "sidebar_height": return Change.PHONE_DOCK_TRIGGER_POSITION;
             case "phone_dock_scale": return Change.PHONE_DOCK_SCALE;
+            case "phone_dock_landscape_edge": return Change.PHONE_DOCK_LANDSCAPE_EDGE;
+            case "phone_dock_landscape_position": return Change.PHONE_DOCK_LANDSCAPE_POSITION;
             case "desktop_dock": return Change.EXTERNAL_DOCK_ENABLED;
             case "dock_edge": return Change.EXTERNAL_DOCK_EDGE;
             case "dock_x":
             case "dock_y": return Change.EXTERNAL_DOCK_POSITION;
             case "desktop_dock_scale": return Change.EXTERNAL_DOCK_SCALE;
+            case "desktop_dock_by_handle": return Change.EXTERNAL_DOCK_REVEAL;
             case "phone_taskbar": return Change.PHONE_TASKBAR_ENABLED;
             case "phone_taskbar_scale": return Change.PHONE_TASKBAR_SCALE;
             case "desktop_taskbar_scale": return Change.EXTERNAL_TASKBAR_SCALE;

@@ -17,7 +17,26 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
     private static final String FREEFORM = "enable_freeform_support";
     public DesktopBridgeService() { context = null; }
     public DesktopBridgeService(Context context) { this.context = context; }
-    @Override public synchronized void destroy() { taskChanges.close();releaseWindowPins();if(primaryScreen!=null)primaryScreen.release();if(mouseRouting!=null)mouseRouting.release();if(virtualKeyboard!=null)virtualKeyboard.release();System.exit(0); }
+    @Override public synchronized String registerStartAction(android.app.PendingIntent action){
+        try{return LauncherSystemAction.register(context,action);}
+        catch(Exception error){return "ERROR: "+TaskBackend.reason(error);}
+    }
+    @Override public synchronized void destroy() { dockGestures.close();if(externalDisplayPolicy!=null)externalDisplayPolicy.close();taskChanges.close();if(desktopBackdrop!=null)desktopBackdrop.close();releaseWindowPins();if(primaryScreen!=null)primaryScreen.release();if(mouseRouting!=null)mouseRouting.release();if(virtualKeyboard!=null)virtualKeyboard.release();System.exit(0); }
+    private final DockGestureMonitor dockGestures=new DockGestureMonitor(DesktopBridgeService::exec);
+    @Override public String observeDockGesture(IDockGestureListener listener,int width,int height,int density,int rotation){return dockGestures.observe(listener,width,height,density,rotation);}
+    @Override public void removeDockGesture(IDockGestureListener listener){dockGestures.remove(listener);}
+    private DesktopBackdropLease desktopBackdrop;
+    private ExternalDisplayPolicy externalDisplayPolicy;
+    private ExternalDisplayPolicy externalPolicy(){if(externalDisplayPolicy==null&&context!=null)externalDisplayPolicy=new ExternalDisplayPolicy(context);return externalDisplayPolicy;}
+    @Override public synchronized String syncExternalDisplayPolicy(boolean enabled,android.os.IBinder owner){
+        if(context==null)return "SAFE:unsupported";
+        try{return externalPolicy().sync(enabled,owner);}
+        catch(Exception error){return "UNSAFE:policy-sync";}
+    }
+    @Override public synchronized String syncDesktopBackdrop(int displayId,int taskId,boolean enabled,android.os.IBinder owner) {
+        try{if(desktopBackdrop==null)desktopBackdrop=new DesktopBackdropLease(context);return desktopBackdrop.sync(displayId,taskId,enabled,owner);}
+        catch(Exception error){return "ERROR: "+TaskBackend.reason(error);}
+    }
     private final TaskChangeMonitor taskChanges = new TaskChangeMonitor();
     @Override public String observeTaskChanges(ITaskChangeListener listener) { return taskChanges.observe(listener); }
     @Override public void removeTaskObserver(ITaskChangeListener listener) { taskChanges.remove(listener); }
@@ -75,10 +94,18 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
         if (!read(key).equals(value)) throw new IOException("Could not verify settings: " + key);
     }
     @Override public synchronized String settingsSnapshot() {
+        if(context!=null){
+            ExternalDisplayPolicy policy=externalPolicy();
+            if(policy!=null){String managed=policy.settingsSnapshot();if(managed!=null)return managed;}
+        }
         try { return read(DESKTOP) + "," + read(FREEFORM); }
         catch (Exception e) { return "ERROR: " + e.getMessage(); }
     }
     @Override public synchronized String applySettings(String desktop, String freeform) {
+        if(context!=null){
+            ExternalDisplayPolicy policy=externalPolicy();
+            if(policy!=null){String managed=policy.applySettings(desktop,freeform);if(managed!=null)return managed;}
+        }
         try {
             SettingTransaction.apply(new SettingTransaction.Store() {
                 public String read(String key) throws Exception { return DesktopBridgeService.read(key); }
@@ -170,7 +197,10 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
     @Override public synchronized String syncMouseRouting(int displayId,android.os.IBinder owner){
         if(context==null)return "unavailable: Shizuku context";
         if(mouseRouting==null)mouseRouting=new MouseRouting(context);
-        return mouseRouting.sync(displayId,owner);
+        int routed=displayId;
+        try{ExternalDisplayPolicy policy=externalPolicy();if(policy!=null)routed=policy.beforeMouseRouting(displayId,owner);}
+        catch(Exception failure){routed=-1;}
+        return mouseRouting.sync(routed,owner);
     }
     private VirtualKeyboardPolicy virtualKeyboard;
     @Override public synchronized String syncVirtualKeyboard(int displayId,boolean hide,android.os.IBinder owner){

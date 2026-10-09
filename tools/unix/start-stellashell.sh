@@ -111,7 +111,7 @@ done
 printf '\nConnected: %s\n' "$address"
 args=(-s "$address" "--keyboard=$keyboard" "--new-display=$resolution/$dpi"
     --no-vd-destroy-content "--display-ime-policy=$ime" --no-vd-system-decorations
-    --start-app=net.fuyumori.stellashell)
+    --start-app=net.fuyumori.stellashell --shortcut-mod=lalt)
 if $fullscreen; then args+=(--fullscreen); fi
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 if [[ -f $script_dir/../windows/stellashell.png ]]; then export SCRCPY_ICON_PATH="$script_dir/../windows/stellashell.png"; fi

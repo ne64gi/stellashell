@@ -1,0 +1,8 @@
+<resources>
+    <string name="external_app_show">Show on external display</string>
+    <string name="external_app_screen">Display %1$d · %2$s</string>
+    <string name="external_app_missing">This app is no longer available.</string>
+    <string name="external_app_unavailable">This app cannot be shown on this external display.</string>
+    <string name="external_app_active">Showing on external display</string>
+    <string name="external_app_end_mode">End dedicated mode</string>
+</resources>

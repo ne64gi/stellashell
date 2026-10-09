@@ -15,6 +15,7 @@ final class PhoneNavigationOwner implements AutoCloseable {
     private Surface taskbar;
     private boolean homeVisible;
     private boolean closed;
+    private boolean suspended;
     private boolean published;
     private int publishedState;
     private long sidebarGeneration;
@@ -47,8 +48,8 @@ final class PhoneNavigationOwner implements AutoCloseable {
     void reconcile() {
         if (closed) return;
         Desired desired = configSource.current();
-        boolean wantTaskbar = desired.overlaysAllowed && desired.taskbarEnabled;
-        boolean wantSidebar = desired.overlaysAllowed && desired.sidebarEnabled;
+        boolean wantTaskbar = !suspended && desired.overlaysAllowed && desired.taskbarEnabled;
+        boolean wantSidebar = !suspended && desired.overlaysAllowed && desired.sidebarEnabled;
         int before = state(wantSidebar, wantTaskbar);
 
         // Attach the Taskbar first so a newly-created Sidebar receives the actual Start owner.
@@ -72,6 +73,13 @@ final class PhoneNavigationOwner implements AutoCloseable {
             closeSidebar();
         }
         publishIfChanged(before, state(wantSidebar, wantTaskbar));
+    }
+
+    /** Temporary dedicated-app mode; never rewrites Dock/Taskbar preferences. */
+    void suspend(boolean value) {
+        if (closed || suspended == value) return;
+        suspended = value;
+        reconcile();
     }
 
     private Surface createTaskbar() {

@@ -7,6 +7,6 @@ import android.content.Intent;
 /** Explicit shell-only shortcut from the desktop session helper; never starts a session. */
 public final class StartMenuReceiver extends BroadcastReceiver {
     @Override public void onReceive(Context context,Intent intent){
-        if(intent!=null&&(context.getPackageName()+".TOGGLE_START").equals(intent.getAction()))ShellRuntime.toggleStart(-1);
+        if(intent!=null&&StartMenuRequests.SHELL_TOGGLE.equals(intent.getAction()))StartMenuRequests.route(intent);
     }
 }

@@ -6,6 +6,7 @@ import android.graphics.drawable.*;
 /** Preserve foreground alpha, without the Android adaptive-icon background plate. */
 final class AppIcons {
     static Drawable forApp(android.content.Context c,String component,Drawable original){return IconTheme.resolve(c,component,original);}
+    static Drawable stella(android.content.Context c){return display(c.getDrawable(R.mipmap.ic_launcher));}
     static Drawable display(Drawable source){
         if(source instanceof AdaptiveIconDrawable){
             Drawable foreground=((AdaptiveIconDrawable)source).getForeground();

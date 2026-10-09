@@ -123,8 +123,15 @@ try {
         if ($mappingOption.Value -isnot [bool]) { throw 'rightAltAsMeta must be a JSON boolean.' }
         $rightAltAsMeta = $mappingOption.Value
     }
-    if ($rightAltAsMeta -and [Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
-        throw 'Right-Alt remapping requires Windows. Set scrcpy.rightAltAsMeta to false to disable it.'
+    $windowsKeyAsMeta = $true
+    $windowsOption = $config.scrcpy.PSObject.Properties['windowsKeyAsMeta']
+    if ($null -ne $windowsOption) {
+        if ($windowsOption.Value -isnot [bool]) { throw 'windowsKeyAsMeta must be a JSON boolean.' }
+        $windowsKeyAsMeta = $windowsOption.Value
+    }
+    $metaRelay = $rightAltAsMeta -or $windowsKeyAsMeta
+    if ($metaRelay -and [Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+        throw 'Meta-key remapping requires Windows. Set scrcpy.rightAltAsMeta and scrcpy.windowsKeyAsMeta to false to disable it.'
     }
 
     Write-Host "`n=== StellaShell session ==="
@@ -139,17 +146,16 @@ try {
     }
     Write-Host "Connected: $address"
     $scrcpyArgs = @('-s', $address, "--keyboard=$keyboard",
-        "--new-display=$resolution/$dpi", "--no-vd-destroy-content", "--display-ime-policy=$imePolicy", "--start-app=$package")
+        "--new-display=$resolution/$dpi", "--no-vd-destroy-content", "--display-ime-policy=$imePolicy", "--start-app=$package", '--shortcut-mod=lalt')
     if (-not $config.scrcpy.systemDecorations) { $scrcpyArgs += '--no-vd-system-decorations' }
     if ($config.scrcpy.fullscreen) { $scrcpyArgs += '--fullscreen' }
-    if ($rightAltAsMeta) {
+    if ($metaRelay) {
         # Meta must reach Android, not scrcpy's own MOD shortcuts (including paste).
-        $scrcpyArgs += '--shortcut-mod=lalt'
         $ErrorActionPreference = 'Continue'
         $inputHelp = & $adb -s $address shell input help 2>&1
         $ErrorActionPreference = 'Stop'
         if (($inputHelp -join "`n") -notmatch 'keycombination') {
-            throw 'This Android input command lacks keycombination. Set rightAltAsMeta=false to use the original launcher.'
+            throw 'This Android input command lacks keycombination. Set rightAltAsMeta=false and windowsKeyAsMeta=false to disable the relay.'
         }
         if (-not ('StellaMetaRelay' -as [type])) {
             Add-Type -TypeDefinition @'
@@ -159,6 +165,49 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
+
+// Pure gesture policy. Only a press begun in the owned scrcpy window can be captured.
+public sealed class StellaMetaGesture {
+    public struct Result { public bool Consumed, Start; public uint Chord; }
+    readonly bool rightAlt, windows;
+    readonly HashSet<uint> held=new HashSet<uint>(), captured=new HashSet<uint>(), consumed=new HashSet<uint>();
+    bool active, used;
+    public StellaMetaGesture(bool rightAltEnabled,bool windowsEnabled) { rightAlt=rightAltEnabled;windows=windowsEnabled; }
+    bool Trigger(uint key) { return rightAlt&&key==0xA5 || windows&&(key==0x5B||key==0x5C); }
+    static bool Modifier(uint key) { return key==0x10||key==0x11||key==0x12 || key>=0xA0&&key<=0xA5 || key==0x5B||key==0x5C; }
+    public void LoseFocus() { active=false;used=true; }
+    public Result Key(uint key,bool up,bool focused,bool otherModifier) {
+        if(!focused)LoseFocus();
+        if(Trigger(key)) {
+            if(up) {
+                held.Remove(key);
+                if(captured.Remove(key)) {
+                    bool start=focused&&active&&!used&&captured.Count==0;
+                    if(captured.Count==0)active=false;
+                    return new Result { Consumed=true, Start=start };
+                }
+            } else {
+                if(!held.Add(key))return new Result { Consumed=captured.Contains(key) };
+                if(focused) {
+                    captured.Add(key);
+                    if(captured.Count==1){active=true;used=otherModifier;}
+                    else used=true;
+                    return new Result { Consumed=true };
+                }
+            }
+            return new Result();
+        }
+        if(up)return new Result { Consumed=consumed.Remove(key) };
+        if(consumed.Contains(key))return new Result { Consumed=true }; // suppress repeat for captured chords
+        if(captured.Count!=0) {
+            used=true; // even an unsupported key or modifier cancels the standalone action
+            if(active&&focused&&!Modifier(key)) {
+                consumed.Add(key);return new Result { Consumed=true, Chord=key };
+            }
+        }
+        return new Result();
+    }
+}
 
 // Original StellaShell helper. ADB receives complete Meta chords, never Windows SendInput.
 public sealed class StellaMetaRelay : IDisposable {
@@ -177,11 +226,11 @@ public sealed class StellaMetaRelay : IDisposable {
     readonly int pid; readonly string adb, serial, package;
     readonly ManualResetEvent stopped=new ManualResetEvent(false), ready=new ManualResetEvent(false);
     readonly BlockingCollection<string> queue=new BlockingCollection<string>(16);
-    readonly HashSet<uint> consumed=new HashSet<uint>();
+    readonly StellaMetaGesture gesture;
     Thread inputThread, worker; Hook callback; IntPtr handle;
-    Exception startError; bool altCaptured, chordUsed, gestureActive;
+    Exception startError;
     volatile bool overflow, unsupported;
-    public StellaMetaRelay(int processId, string adbPath, string address, string appPackage) { pid=processId; adb=adbPath; serial=address; package=appPackage; }
+    public StellaMetaRelay(int processId, string adbPath, string address, string appPackage, bool rightAltEnabled, bool windowsEnabled) { pid=processId; adb=adbPath; serial=address; package=appPackage;gesture=new StellaMetaGesture(rightAltEnabled,windowsEnabled); }
     bool Focused() { uint current; GetWindowThreadProcessId(GetForegroundWindow(),out current); return current==(uint)pid; }
     public static int AndroidKey(uint key) {
         if(key>=0x41&&key<=0x5A)return (int)key-0x41+29;
@@ -205,34 +254,27 @@ public sealed class StellaMetaRelay : IDisposable {
         Key key=(Key)Marshal.PtrToStructure(data,typeof(Key));
         if((key.flags&0x10)!=0)return CallNextHookEx(handle,code,message,data); // ignore injected events
         bool up=(key.flags&0x80)!=0;
-        if(key.vk==0xA5) { // right Alt only; left Alt remains scrcpy's normal shortcut modifier
-            if(up&&altCaptured) {
-                if(gestureActive&&!chordUsed&&Focused())Enqueue("stella-start");
-                altCaptured=false;gestureActive=false;return new IntPtr(1);
-            }
-            if(!up&&(altCaptured||Focused())) {
-                if(!altCaptured){altCaptured=true;gestureActive=true;chordUsed=false;}
-                return new IntPtr(1);
-            }
-        }
-        if(up&&consumed.Remove(key.vk))return new IntPtr(1);
-        if(!up&&consumed.Contains(key.vk))return new IntPtr(1); // one chord per press, not autorepeat
-        bool modifier=key.vk>=0xA0&&key.vk<=0xA4 || key.vk==0x5B || key.vk==0x5C;
-        if(!up&&altCaptured&&gestureActive&&Focused()&&!modifier) {
-            chordUsed=true;consumed.Add(key.vk);int android=AndroidKey(key.vk);
+        bool otherModifier=(GetAsyncKeyState(0x10)&0x8000)!=0 || (GetAsyncKeyState(0x11)&0x8000)!=0 || (GetAsyncKeyState(0xA4)&0x8000)!=0
+            || key.vk!=0xA5&&(GetAsyncKeyState(0xA5)&0x8000)!=0
+            || key.vk!=0x5B&&(GetAsyncKeyState(0x5B)&0x8000)!=0 || key.vk!=0x5C&&(GetAsyncKeyState(0x5C)&0x8000)!=0;
+        StellaMetaGesture.Result result=gesture.Key(key.vk,up,Focused(),otherModifier);
+        if(result.Start)Enqueue("stella-start");
+        if(result.Chord!=0) {
+            int android=AndroidKey(result.Chord);
             if(android<0){unsupported=true;return new IntPtr(1);}
             string keys="keycombination 117";
             if((GetAsyncKeyState(0x10)&0x8000)!=0)keys+=" 59";
             if((GetAsyncKeyState(0x11)&0x8000)!=0)keys+=" 113";
             if((GetAsyncKeyState(0xA4)&0x8000)!=0)keys+=" 57";
-            Enqueue(keys+" "+android);return new IntPtr(1);
+            Enqueue(keys+" "+android);
         }
+        if(result.Consumed)return new IntPtr(1);
         return CallNextHookEx(handle,code,message,data);
     }
     public void Start() {
         inputThread=new Thread(InputLoop);inputThread.IsBackground=true;inputThread.Start();
         if(!ready.WaitOne(5000))throw new InvalidOperationException("Keyboard hook startup timed out.");
-        if(startError!=null)throw new InvalidOperationException("Cannot install right-Alt remapping.",startError);
+        if(startError!=null)throw new InvalidOperationException("Cannot install Meta-key remapping.",startError);
         worker=new Thread(AdbLoop);worker.IsBackground=true;worker.Start();
     }
     void InputLoop() {
@@ -242,7 +284,7 @@ public sealed class StellaMetaRelay : IDisposable {
             ready.Set();
             while(!stopped.WaitOne(10)) {
                 Message msg;while(PeekMessage(out msg,IntPtr.Zero,0,0,1)){}
-                if(!Focused()){gestureActive=false;chordUsed=true;}
+                if(!Focused())gesture.LoseFocus();
             }
         }catch(Exception e){startError=e;ready.Set();}
         finally{if(handle!=IntPtr.Zero)UnhookWindowsHookEx(handle);}
@@ -250,7 +292,7 @@ public sealed class StellaMetaRelay : IDisposable {
     void AdbLoop() {
         while(!stopped.WaitOne(0)) {
             if(overflow){Console.Error.WriteLine("IME shortcut queue full; shortcut discarded.");overflow=false;}
-            if(unsupported){Console.Error.WriteLine("This right-Alt key combination is not supported.");unsupported=false;}
+            if(unsupported){Console.Error.WriteLine("This Meta-key combination is not supported.");unsupported=false;}
             string keys;if(!queue.TryTake(out keys,50))continue;
             if(!Focused())continue; // don't send delayed shortcuts after switching applications
             try {
@@ -283,7 +325,7 @@ public sealed class StellaMetaRelay : IDisposable {
         Write-Warning 'stellashell.png is missing; using the existing scrcpy icon.'
     }
     Write-Host 'Starting StellaShell (close scrcpy to end this virtual-display session)...'
-    if ($rightAltAsMeta) {
+    if ($metaRelay) {
         $session = $null
         $relay = $null
         try {
@@ -293,9 +335,11 @@ public sealed class StellaMetaRelay : IDisposable {
             $startInfo.Arguments = $scrcpyArgs -join ' '
             $startInfo.UseShellExecute = $false
             $session = [System.Diagnostics.Process]::Start($startInfo)
-            $relay = New-Object StellaMetaRelay($session.Id, $adb, $address, $package)
+            $relay = New-Object StellaMetaRelay($session.Id, $adb, $address, $package, $rightAltAsMeta, $windowsKeyAsMeta)
             $relay.Start()
-            Write-Host 'Right Alt alone -> Stella Start. Right Alt + Space -> Meta + Space. Left Alt remains scrcpy MOD.'
+            if ($windowsKeyAsMeta) { Write-Host 'Windows key alone -> Stella Start. Windows key chords -> Android Meta chords (only in this scrcpy window).' }
+            if ($rightAltAsMeta) { Write-Host 'Right Alt alone -> Stella Start. Right Alt + Space -> Meta + Space.' }
+            Write-Host 'Left Alt remains scrcpy MOD. Switch to another PC app for the normal Windows shortcuts.'
             while (-not $session.WaitForExit(100)) { }
             $sessionExit = $session.ExitCode
         } finally {

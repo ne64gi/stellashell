@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="apps_visible_phone_scope">本体のStartに表示するアプリを選びます。</string>
+    <string name="apps_visible_desktop_scope">外部画面のStartに表示するアプリを選びます。</string>
+</resources>

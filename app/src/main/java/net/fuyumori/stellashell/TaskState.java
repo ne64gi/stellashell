@@ -6,6 +6,8 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import java.util.List;
+import java.util.Set;
+import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -52,6 +54,7 @@ final class TaskState {
     private OutputLease outputLease;
     private TaskSnapshot snapshot = TaskSnapshot.empty(0, -1);
     private long outputEpoch;
+    private final Set<Runnable> routingObservers=new LinkedHashSet<>();
 
     private TaskState(Context context) { this.context = Objects.requireNonNull(context.getApplicationContext()); }
 
@@ -63,12 +66,21 @@ final class TaskState {
     OutputLease openOutput(Context displayContext, int displayId, Runnable changed,
             BooleanSupplier shellInput) {
         Objects.requireNonNull(displayContext, "displayContext");
+        return openOutput(displayContext, displayId, changed, shellInput,
+                TaskSession.bridgeBackend(displayContext.getApplicationContext()));
+    }
+
+    /** Backend seam for an isolated output fixture; production callers use the Bridge adapter. */
+    OutputLease openOutput(Context displayContext, int displayId, Runnable changed,
+            BooleanSupplier shellInput, TaskSession.Backend backend) {
+        Objects.requireNonNull(displayContext, "displayContext");
         Objects.requireNonNull(changed, "changed");
         Objects.requireNonNull(shellInput, "shellInput");
+        Objects.requireNonNull(backend, "backend");
         closeOutput();
         long epoch = ++outputEpoch;
         TaskSession session = new TaskSession(this, displayContext.getApplicationContext(), displayId,
-                epoch, changed, shellInput);
+                epoch, changed, shellInput, backend);
         OutputLease lease = new OutputLease(this, session, epoch);
         output = session;
         outputLease = lease;
@@ -152,6 +164,14 @@ final class TaskState {
     }
 
     boolean isBusy() { return workspace.isBusy(); }
+    AutoCloseable whenIdle(Runnable callback) { return workspace.whenIdle(callback); }
+    AutoCloseable observeRouting(Runnable observer) {
+        routingObservers.add(observer);
+        return () -> routingObservers.remove(observer);
+    }
+    private void routingChanged() {
+        for (Runnable observer : new java.util.ArrayList<>(routingObservers)) observer.run();
+    }
     long session() { return workspace.session(); }
     boolean currentSession(long token) { return workspace.currentSession(token); }
     boolean owns(TaskSnapshot.Task task) { return task != null && workspace.owns(task); }
@@ -183,7 +203,16 @@ final class TaskState {
     }
     void transfer(Context source, int destination, Runnable done) {
         if (!enabled(source)) { done.run(); return; }
-        workspace.transfer(source, target(source), destination, this::persistTarget, done);
+        workspace.transfer(source, () -> target(source), () -> enabled(source),
+                destination, this::persistTarget, done);
+    }
+    /** A delayed loss recovery cannot redirect a newer session or a newly selected live output. */
+    void recoverDisconnectedOutput(Context source, int removedTarget, long expectedSession,
+            BooleanSupplier permitted, Runnable done) {
+        workspace.transfer(source, () -> target(source),
+                () -> currentSession(expectedSession) && enabled(source) && target(source) == removedTarget
+                        && !Displays.ids(source).contains(removedTarget) && permitted.getAsBoolean(),
+                0, this::persistTarget, done);
     }
 
     /** Minimizes only exact live identities from this same pre-operation snapshot. */
@@ -200,6 +229,7 @@ final class TaskState {
     void reset(Context source) {
         workspace.reset();
         Launches.prefs(source).edit().remove("workspace_display").apply();
+        routingChanged();
     }
 
     /** Display-0 operations reconcile workspace ownership only after verified OS success. */
@@ -277,5 +307,6 @@ final class TaskState {
     private void persistTarget(int displayId) {
         if (displayId < 0) return;
         Launches.prefs(context).edit().putInt("workspace_display", displayId).apply();
+        routingChanged();
     }
 }
