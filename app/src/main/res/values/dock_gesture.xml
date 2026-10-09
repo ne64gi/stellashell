@@ -2,7 +2,7 @@
     <string name="dock_handle_position">Handle position</string>
     <string name="dock_gesture_title">Gesture</string>
     <string name="dock_gesture_tutorial">How to open the Dock</string>
-    <string name="dock_gesture_instruction">Slide one finger up, then turn left or right. Release to open a vertical Dock near your finger. Scroll vertically for more apps, or pull the Dock sideways again to open widgets.</string>
+    <string name="dock_gesture_instruction">Slide one finger up, then turn left or right. Release to open a vertical Dock near your finger. Scroll vertically for more apps, or pull the Dock toward the center of the screen to open widgets.</string>
     <string name="dock_gesture_practice">Try the motion in the area below</string>
     <string name="dock_gesture_retry">Move up, turn sideways, then release</string>
     <string name="dock_gesture_use">Use this gesture</string>

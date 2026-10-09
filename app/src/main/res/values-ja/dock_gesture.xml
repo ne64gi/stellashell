@@ -2,7 +2,7 @@
     <string name="dock_handle_position">ハンドル位置</string>
     <string name="dock_gesture_title">ジェスチャー</string>
     <string name="dock_gesture_tutorial">Dockの出し方を見る</string>
-    <string name="dock_gesture_instruction">指一本で上へ動かし、そのまま左か右へ曲げます。指を離すと、指の近くに縦並びのDockが開きます。上下でアプリをスクロール、Dockをさらに横へ引くとウィジェットが開きます。</string>
+    <string name="dock_gesture_instruction">指一本で上へ動かし、そのまま左か右へ曲げます。指を離すと、指の近くに縦並びのDockが開きます。上下でアプリをスクロール、Dockを画面中央へ引くとウィジェットが開きます。</string>
     <string name="dock_gesture_practice">下の枠内で試してみましょう</string>
     <string name="dock_gesture_retry">上へ動かしてから横へ曲げ、指を離します</string>
     <string name="dock_gesture_use">この方法を使う</string>

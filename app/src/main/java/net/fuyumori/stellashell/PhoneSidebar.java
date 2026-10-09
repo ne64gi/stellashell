@@ -94,7 +94,7 @@ final class PhoneSidebar implements AutoCloseable {
         if(closed||!gestureMode()||!allowed()||shown||menu.isOpen()||taskMenu.showing())return;
         WorkArea bounds=area.get();
         gestureAnchor=new android.graphics.PointF(bounds.physical.left+x*bounds.physical.width(),bounds.physical.top+y*bounds.physical.height());
-        gestureRight=towardRight;right=!towardRight;revealProgress=null;pullX=null;shown=true;
+        gestureRight=towardRight;revealProgress=null;pullX=null;shown=true;
         entries.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
         relayout();
         if(strip instanceof ScrollView){
@@ -238,7 +238,12 @@ final class PhoneSidebar implements AutoCloseable {
         int[] panelBounds=wide?EdgeDockReveal.panel(available.left,available.top,available.right,available.bottom,
                 edge,snapshot.phoneLandscapeDock.positionPercent,width,height)
                 :new int[]{right?available.right-width:available.left,available.bottom-height,right?available.right:available.left+width,available.bottom};
-        if(gestureAnchor!=null)panelBounds=FloatingDockPlacement.bounds(available.left,available.top,available.right,available.bottom,width,height,gestureAnchor.x,gestureAnchor.y,gestureRight);
+        if(gestureAnchor!=null){
+            panelBounds=FloatingDockPlacement.bounds(available.left,available.top,available.right,available.bottom,width,height,gestureAnchor.x,gestureAnchor.y,gestureRight);
+            // Pull toward the screen center from the actual clamped Dock, not the L-stroke direction.
+            // Keep that side while dragging, even after the moving panel crosses the center.
+            if(drag==null&&pullX==null)right=(panelBounds[0]+panelBounds[2])*.5f>=bounds.physical.exactCenterX();
+        }
         boolean visible=shown||revealProgress!=null&&revealProgress>0;
         int oldWidth=p.width,oldHeight=p.height,oldX=p.x,oldY=p.y,oldFlags=p.flags;
         p.width=visible?width:1;p.height=visible?height:1;p.x=pullX==null?panelBounds[0]:Math.round(pullX);p.y=panelBounds[1];

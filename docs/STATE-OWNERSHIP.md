@@ -75,5 +75,5 @@ Start表示設定は`StartMenuSettings`が実menu displayId（0=本体/その他
 - `ShellSettings.PhoneSide.GESTURE` が選択を所有。設定画面は明示順（両サイド/右/左/ジェスチャー）を使い、旧保存値を移行しない。
 - `PhoneSidebar` が一時アンカー・向きと `DockGestureClient` の購読寿命を所有。画面/Bridge/入力機器イベントでだけ購読を照合し、幾何が同じDisplay通知で作り直さない。
 - `DockGestureMonitor` は選別済み内蔵direct touchのブロッキングreaderとBinder leaseを所有。解除/死亡で子processを破棄。キーボード記録・入力grab/注入・周期取得・wake lockなし。アプリへ渡すのは可用性と成立した動作のみ。
-- core `TouchFrames` / `CornerDockGesture` / `FloatingDockPlacement` はフレームと認識・配置を検証。練習Viewとglobal画面の開始可能領域は区別し、曲がり角から横移動を測る。任意位置Dockは縦列＋上下scrollとし、WidgetはDockから横へ引き出し、追従開始位置は浮動Dock自身の端を基準にする。複数指/ドロップ/回転前座標/直線スクロールを採用しない。
+- core `TouchFrames` / `CornerDockGesture` / `FloatingDockPlacement` はフレームと認識・配置を検証。練習Viewとglobal画面の開始可能領域は区別し、曲がり角から横移動を測る。任意位置Dockは縦列＋上下scrollとし、Widgetは表示後のDock位置から画面中央へ引き出す。左右判定は画面内へ収めたDock中心を使い、pull中は反転させない。追従開始位置は浮動Dock自身の端を基準にする。複数指/ドロップ/回転前座標/直線スクロールを採用しない。
 - `HomeRecovery` はHOMEの短時間カウントのみ、`HomeRecoveryEntry` はAndroid Intentの分類のみ。`HomeActivity` がOS HOMEを受けて設定を開く。DockやBridgeの生存を前提にしない。
