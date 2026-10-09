@@ -18,6 +18,7 @@ final class IconTheme {
     static final String PACK="icons_pack", REVISION="icons_revision", PREFIX="icons_app:";
     static final String[] ACTIONS={"org.adw.launcher.THEMES","com.gau.go.launcherex.theme","com.novalauncher.THEME"};
     private static final Map<String,Pack> cache=new LinkedHashMap<>();
+    private static long packGeneration;
     static final class Pack {
         final String name;final Resources resources;
         final Map<String,String> mappings=new LinkedHashMap<>();final Set<String> icons=new LinkedHashSet<>();
@@ -62,14 +63,23 @@ final class IconTheme {
             }return;
         }catch(Exception ignored){}
     }
-    static synchronized Pack pack(Context c,String pkg){
+    static Pack pack(Context c,String pkg){
         if(pkg==null||pkg.isEmpty())return null;
-        if(cache.containsKey(pkg))return cache.get(pkg);
+        long generation;
+        synchronized(IconTheme.class){
+            if(cache.containsKey(pkg))return cache.get(pkg);
+            generation=packGeneration;
+        }
         Pack pack=null;
         try{pack=new Pack(pkg,c.getPackageManager().getResourcesForApplication(pkg));read(pack,"appfilter");read(pack,"drawable");}catch(PackageManager.NameNotFoundException|RuntimeException ignored){}
-        if(cache.size()>=4)cache.remove(cache.keySet().iterator().next());cache.put(pkg,pack);return pack;
+        synchronized(IconTheme.class){
+            if(generation!=packGeneration)return null;
+            if(cache.containsKey(pkg))return cache.get(pkg);
+            if(cache.size()>=4)cache.remove(cache.keySet().iterator().next());
+            cache.put(pkg,pack);return pack;
+        }
     }
-    static synchronized void invalidate(){cache.clear();}
+    static synchronized void invalidate(){packGeneration++;cache.clear();}
     static boolean changed(String key){return key!=null&&(key.equals(PACK)||key.equals(REVISION)||key.startsWith(PREFIX));}
     static String key(String component){return PREFIX+canonical(component);}
     static void selectPack(Context c,String pkg){Launches.prefs(c).edit().putString(PACK,pkg).apply();}
@@ -82,7 +92,7 @@ final class IconTheme {
     static Drawable resolve(Context c,String component,Drawable original){
         String requested=Profiles.requestedComponent(c,component);SharedPreferences prefs=Launches.prefs(c);
         String custom=prefs.getString(key(requested),"");
-        if("default".equals(custom))return AppIcons.display(original);
+        if("default".equals(custom))return defaultIcon(c,component,original);
         if(custom.startsWith("file:"))try{
             File file=localFile(c,custom.substring(5));if(file!=null&&file.isFile()){
                 Bitmap bitmap=BitmapFactory.decodeFile(file.getPath());if(bitmap!=null)return new BitmapDrawable(c.getResources(),bitmap);
@@ -93,7 +103,10 @@ final class IconTheme {
         }
         Pack pack=pack(c,prefs.getString(PACK,""));
         if(pack!=null){String icon=pack.mappings.get(canonical(requested));if(icon==null)icon=pack.mappings.get(canonical(component));Drawable drawable=icon==null?null:pack.drawable(icon);if(drawable!=null)return drawable;}
-        return AppIcons.display(original);
+        return defaultIcon(c,component,original);
+    }
+    private static Drawable defaultIcon(Context c,String component,Drawable original){
+        return AppIcons.display(original==null?net.fuyumori.stellashell.feature.launch.AppCatalog.icon(c,component):original);
     }
     /** Decode to a bounded raster and keep a private copy; no broad storage permission or URI lease. */
     static File importImage(Context c,Uri uri)throws IOException {
@@ -108,6 +121,11 @@ final class IconTheme {
     static void watchPackages(Context c){
         IntentFilter filter=new IntentFilter();filter.addAction(Intent.ACTION_PACKAGE_ADDED);filter.addAction(Intent.ACTION_PACKAGE_REMOVED);filter.addAction(Intent.ACTION_PACKAGE_CHANGED);filter.addAction(Intent.ACTION_PACKAGE_REPLACED);filter.addDataScheme("package");
         // Package broadcasts are protected system broadcasts; no externally callable command surface.
-        c.registerReceiver(new BroadcastReceiver(){@Override public void onReceive(Context context,Intent intent){invalidate();Launches.prefs(context).edit().putLong(REVISION,System.nanoTime()).apply();}},filter);
+        BroadcastReceiver changed=new BroadcastReceiver(){@Override public void onReceive(Context context,Intent intent){
+            net.fuyumori.stellashell.feature.launch.AppCatalog.invalidate();invalidate();Launches.prefs(context).edit().putLong(REVISION,System.nanoTime()).apply();
+        }};
+        c.registerReceiver(changed,filter);
+        IntentFilter external=new IntentFilter();external.addAction(Intent.ACTION_EXTERNAL_APPLICATIONS_AVAILABLE);external.addAction(Intent.ACTION_EXTERNAL_APPLICATIONS_UNAVAILABLE);
+        c.registerReceiver(changed,external);
     }
 }

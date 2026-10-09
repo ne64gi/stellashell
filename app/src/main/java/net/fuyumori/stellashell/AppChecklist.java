@@ -11,10 +11,14 @@ import java.util.*;
 /** Shared, staged selector for launcher visibility and single-group membership. */
 final class AppChecklist {
     static AlertDialog create(Context context,List<Launches.App> catalog,String group){
+        return create(context,WorkspaceProfile.phone(context)?0:1,catalog,group);
+    }
+    static AlertDialog create(Context context,int displayId,List<Launches.App> catalog,String group){
         List<Launches.App> apps=new ArrayList<>(catalog),filtered=new ArrayList<>();
         Map<String,Boolean> initial=new HashMap<>();Set<String> selected=new HashSet<>();
-        for(Launches.App app:apps){boolean checked=group==null?!AppOrganization.hidden(context,app.component):group.equals(AppOrganization.group(context,app.component));initial.put(app.component,checked);if(checked)selected.add(app.component);}
+        for(Launches.App app:apps){boolean checked=group==null?!AppOrganization.hidden(context,displayId,app.component):group.equals(AppOrganization.group(context,app.component));initial.put(app.component,checked);if(checked)selected.add(app.component);}
         LinearLayout panel=Ui.column(context);int pad=Ui.dp(context,16);panel.setPadding(pad,0,pad,0);
+        if(group==null)Ui.note(panel,context.getString(displayId==0?R.string.apps_visible_phone_scope:R.string.apps_visible_desktop_scope));
         Ui.note(panel,context.getString(group==null?R.string.apps_visible_note:R.string.apps_group_note));
         EditText search=new EditText(context);search.setSingleLine();search.setHint(R.string.ui_search_by_name);search.setContentDescription(context.getString(R.string.apps_search));panel.addView(search,new LinearLayout.LayoutParams(-1,Ui.dp(context,48)));
         TextView count=Ui.text(context,"",13,Ui.MUTED);count.setPadding(0,Ui.dp(context,6),0,Ui.dp(context,6));
@@ -39,7 +43,7 @@ final class AppChecklist {
                 icon.setImageDrawable(AppIcons.forApp(context,app.component,app.icon));label.setText(app.label);
                 String current=AppOrganization.group(context,app.component),subtitle=app.component;
                 if(!current.isEmpty())subtitle+=" · "+current;
-                if(AppOrganization.hidden(context,app.component))subtitle+=" · "+context.getString(R.string.apps_hidden_badge);
+                if(AppOrganization.hidden(context,displayId,app.component))subtitle+=" · "+context.getString(R.string.apps_hidden_badge);
                 detail.setText(subtitle);
                 check.setOnCheckedChangeListener((button,checked)->{if(checked)selected.add(app.component);else selected.remove(app.component);updateCount.run();});
                 return row;
@@ -58,7 +62,7 @@ final class AppChecklist {
         return new AlertDialog.Builder(context).setTitle(group==null?context.getString(R.string.apps_visible_title):context.getString(R.string.apps_group_title,group)).setView(panel)
             .setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_save,(dialog,which)->{
                 Map<String,Boolean> changes=new HashMap<>();for(Launches.App app:apps){boolean checked=selected.contains(app.component);if(checked!=initial.get(app.component))changes.put(app.component,checked);}
-                if(!AppOrganization.applySelection(context,group,changes))Ui.message(context,context.getString(R.string.apps_group_missing));
+                if(!AppOrganization.applySelection(context,displayId,group,changes))Ui.message(context,context.getString(R.string.apps_group_missing));
             }).create();
     }
     private static String normalize(String value){return Normalizer.normalize(value,Normalizer.Form.NFKC).toLowerCase(Locale.ROOT);}

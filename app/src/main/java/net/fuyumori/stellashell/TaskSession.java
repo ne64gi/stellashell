@@ -17,12 +17,44 @@ import java.util.function.BooleanSupplier;
 
 /** Internal event-driven selected-display read model. TaskState owns its lifetime. */
 final class TaskSession {
+    /** Per-output bridge port; isolated fixtures may hold replies without replacing process globals. */
+    interface Backend {
+        boolean ready();
+        void readSnapshot(int displayId, Bridge.Reply reply);
+        void taskOperation(int displayId, int taskId, String component, String action,
+                Rect bounds, boolean syncWorkArea, Bridge.Reply reply);
+    }
+
+    private static final class BridgeBackend implements Backend {
+        private final Context context;
+        BridgeBackend(Context context) { this.context = context.getApplicationContext(); }
+        @Override public boolean ready() { return Bridge.get(context).ready(); }
+        @Override public void readSnapshot(int displayId, Bridge.Reply reply) {
+            Bridge.get(context).read(service -> service.taskSnapshot(displayId), reply);
+        }
+        @Override public void taskOperation(int displayId, int taskId, String component,
+                String action, Rect bounds, boolean syncWorkArea, Bridge.Reply reply) {
+            Bridge.get(context).call(service -> {
+                if (syncWorkArea) WorkArea.get(context, displayId).sync(service, displayId);
+                Rect requested = bounds == null ? new Rect() : new Rect(bounds);
+                String answer = service.checkedTaskOperation(displayId, taskId, component,
+                        action, requested.left, requested.top, requested.right, requested.bottom);
+                if (answer == null || answer.startsWith("ERROR:"))
+                    throw new IllegalStateException(answer);
+                return service.taskSnapshot(displayId);
+            }, reply);
+        }
+    }
+
+    static Backend bridgeBackend(Context context) { return new BridgeBackend(context); }
+
     private final TaskState owner;
     private final Context context;
     private final int displayId;
     private final long outputEpoch;
     private final Runnable changed;
     private final BooleanSupplier shellInput;
+    private final Backend backend;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<TaskSnapshot.Task> tasks = new ArrayList<>();
     private final List<TaskSnapshot.Task> stack = new ArrayList<>();
@@ -45,12 +77,19 @@ final class TaskSession {
 
     TaskSession(TaskState owner, Context context, int displayId, long outputEpoch,
             Runnable changed, BooleanSupplier shellInput) {
+        this(owner, context, displayId, outputEpoch, changed, shellInput,
+                bridgeBackend(context));
+    }
+
+    TaskSession(TaskState owner, Context context, int displayId, long outputEpoch,
+            Runnable changed, BooleanSupplier shellInput, Backend backend) {
         this.owner = owner;
         this.context = context;
         this.displayId = displayId;
         this.outputEpoch = outputEpoch;
         this.changed = changed;
         this.shellInput = shellInput;
+        this.backend = backend;
         previousArea = WorkArea.get(context, displayId);
     }
 
@@ -65,7 +104,7 @@ final class TaskSession {
     List<TaskSnapshot.Task> tasks() { return new ArrayList<>(tasks); }
     List<TaskSnapshot.Task> stack() { return new ArrayList<>(stack); }
     boolean stackReliable() { return stackReliable; }
-    boolean canArrange() { return canArrange && Bridge.get(context).ready(); }
+    boolean canArrange() { return canArrange && backend.ready(); }
     boolean canPin() { return canPin && canArrange(); }
     boolean isClosed() { return closed; }
 
@@ -73,7 +112,7 @@ final class TaskSession {
         if (closed || !owner.isCurrent(this)) return;
         invalidated = true;
         if (busy || owner.isBusy() || Launches.pending() || !ShellTaskEvents.awake(context, displayId)) return;
-        if (!Bridge.get(context).ready()) {
+        if (!backend.ready()) {
             if (!tasks.isEmpty() || canArrange || canPin) {
                 tasks.clear();
                 stack.clear();
@@ -86,9 +125,25 @@ final class TaskSession {
         }
         invalidated = false;
         busy = true;
-        Bridge.get(context).read(service -> service.taskSnapshot(displayId), (result, error) -> {
+        backend.readSnapshot(displayId, (result, error) -> {
             busy = false;
-            if (closed || !owner.isCurrent(this) || owner.isBusy() || Launches.pending()) return;
+            if (closed || !owner.isCurrent(this)) {
+                finishResizeOperation();
+                return;
+            }
+            // This read may have been the one already in flight when a resize
+            // claimed its own Workspace command ticket. Give that drag priority
+            // over unrelated busy/launch gating; the bridge revalidates exact
+            // task identity before applying native bounds.
+            if (resizeOperation >= 0 && pendingBounds != null) {
+                invalidated = true;
+                flushDrag();
+                return;
+            }
+            if (owner.isBusy() || Launches.pending()) {
+                invalidated = true;
+                return;
+            }
             if (!ShellTaskEvents.awake(context, displayId)) { invalidated = true; return; }
             try {
                 if (error != null) throw new IllegalStateException(error);
@@ -96,7 +151,10 @@ final class TaskSession {
                 JSONObject caps = data.getJSONObject("capabilities");
                 List<TaskSnapshot.Task> observed = decode(data.getJSONArray("tasks"));
                 owner.observe(context, displayId, observed);
-                if (owner.isBusy()) return; // A just-started role change owns the transition.
+                if (owner.isBusy()) {
+                    invalidated = true;
+                    return; // A just-started role change owns the transition.
+                }
 
                 Set<TaskSnapshot.Identity> live = new HashSet<>();
                 for (TaskSnapshot.Task task : observed) live.add(task.identity());
@@ -231,14 +289,8 @@ final class TaskSession {
                     ? "restore" : "maximize";
         else command = action;
         long workspaceEpoch = owner.session();
-        Bridge.get(context).call(service -> {
-            WorkArea.get(context, displayId).sync(service, displayId);
-            String answer = service.checkedTaskOperation(displayId, live.id, live.component,
-                    command, 0, 0, 0, 0);
-            if (answer == null || answer.startsWith("ERROR:")) throw new IllegalStateException(answer);
-            // Publish only post-operation state, never the pre-command snapshot as success.
-            return service.taskSnapshot(displayId);
-        }, (result, error) -> {
+        backend.taskOperation(displayId, live.id, live.component, command, null, true,
+                (result, error) -> {
             try {
                 if (error == null) {
                     Profiles.rememberSnapshot(context, result, live.id, displayId);
@@ -311,12 +363,8 @@ final class TaskSession {
             return;
         }
         long workspaceEpoch = owner.session();
-        Bridge.get(context).call(service -> {
-            String answer = service.checkedTaskOperation(displayId, live.id, live.component,
-                    "focus", 0, 0, 0, 0);
-            if (answer == null || answer.startsWith("ERROR:")) throw new IllegalStateException(answer);
-            return service.taskSnapshot(displayId);
-        }, (result, error) -> {
+        backend.taskOperation(displayId, live.id, live.component, "focus", null, false,
+                (result, error) -> {
             TaskSnapshot.Task actual = null;
             if (!closed && owner.isCurrent(this) && error == null) {
                 actual = focusedTask(result, live.identity());
@@ -330,26 +378,27 @@ final class TaskSession {
     }
 
     private void flushDrag() {
-        if (closed || busy || pendingBounds == null || !owner.isCurrent(this)
+        if (closed || busy || pendingBounds == null
                 || (resizeOperation < 0 && owner.isBusy())
                 || (resizeOperation < 0 && Launches.pending())) return;
+        if (!owner.isCurrent(this)) {
+            pendingBounds = null;
+            finishResizeOperation();
+            return;
+        }
         Rect bounds = new Rect(pendingBounds);
         TaskSnapshot.Task requested = dragTask;
         pendingBounds = null;
         TaskSnapshot.Task live = requested == null ? null : current(requested.identity());
         if (live == null) {
             finishResizeOperation();
+            refresh();
             return;
         }
         final TaskSnapshot.Task task = live;
         busy = true;
-        Bridge.get(context).call(service -> {
-            WorkArea.get(context, displayId).sync(service, displayId);
-            String answer = service.checkedTaskOperation(displayId, task.id, task.component,
-                    "resize", bounds.left, bounds.top, bounds.right, bounds.bottom);
-            if (answer == null || answer.startsWith("ERROR:")) throw new IllegalStateException(answer);
-            return service.taskSnapshot(displayId);
-        }, (result, error) -> {
+        backend.taskOperation(displayId, task.id, task.component, "resize", bounds, true,
+                (result, error) -> {
             busy = false;
             if (closed || !owner.isCurrent(this)) {
                 finishResizeOperation();

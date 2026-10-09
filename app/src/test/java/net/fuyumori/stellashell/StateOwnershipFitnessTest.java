@@ -17,6 +17,8 @@ import static org.junit.Assert.assertTrue;
 public final class StateOwnershipFitnessTest {
     private static final String[] SETTINGS_KEYS = {
             "phone_sidebar", "phone_sidebar_over_apps", "phone_sidebar_side", "sidebar_height",
+            "phone_dock_landscape_edge", "phone_dock_landscape_position", "desktop_dock_by_handle",
+            "phone_dock_open_method", "desktop_dock_open_method",
             "phone_dock_scale", "desktop_dock", "dock_edge", "dock_x", "dock_y",
             "desktop_dock_scale", "phone_taskbar", "phone_taskbar_scale",
             "desktop_taskbar_scale", "shell_layout", "compact_workspace", "workspace_auto",

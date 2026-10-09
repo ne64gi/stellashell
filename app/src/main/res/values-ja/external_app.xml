@@ -1,0 +1,8 @@
+<resources>
+    <string name="external_app_show">外部に表示</string>
+    <string name="external_app_screen">外部画面 %1$d · %2$s</string>
+    <string name="external_app_missing">このアプリは現在利用できません。</string>
+    <string name="external_app_unavailable">このアプリは、この外部画面に表示できません。</string>
+    <string name="external_app_active">外部画面に表示中</string>
+    <string name="external_app_end_mode">専用モードを終了</string>
+</resources>

@@ -16,11 +16,14 @@ final class DesktopShortcuts {
     private final SharedPreferences positions;
     private final Map<String,View> icons=new LinkedHashMap<>();
     private View moving;
+    private AutoCloseable moveInteraction;
+    private int moveGeneration;
+    private boolean destroyed;
     private AppMenu groupMenu;
     private final java.util.concurrent.ExecutorService groupLoader=java.util.concurrent.Executors.newSingleThreadExecutor();
     boolean back(){if(groupMenu!=null&&groupMenu.isOpen()){groupMenu.back();return true;}return false;}
     void closePanel(){if(groupMenu!=null)groupMenu.close();}
-    void destroy(){closePanel();groupLoader.shutdownNow();}
+    void destroy(){destroyed=true;cancelMove();closePanel();groupLoader.shutdownNow();}
     private void openGroup(String group){
         if(groupMenu==null)groupMenu=new AppMenu(activity,activity.getSystemService(WindowManager.class),display);
         groupMenu.openGroup(groupLoader,group);
@@ -28,9 +31,9 @@ final class DesktopShortcuts {
     private void groupOptions(View anchor,String reference,Runnable move){
         PopupMenu popup=new PopupMenu(activity,anchor);
         popup.getMenu().add(R.string.ui_remove_from_desktop).setOnMenuItemClickListener(item->{Launches.toggleDesktop(activity,reference);return true;});
-        popup.getMenu().add(StartPins.get(activity).contains(reference)?R.string.start_unpin:R.string.start_pin).setOnMenuItemClickListener(item->{StartPins.toggle(activity,reference);return true;});
+        popup.getMenu().add(StartPins.get(activity,display).contains(reference)?R.string.start_unpin:R.string.start_pin).setOnMenuItemClickListener(item->{StartPins.toggle(activity,display,reference);return true;});
         popup.getMenu().add(R.string.ui_move_2).setOnMenuItemClickListener(item->{move.run();return true;});
-        popup.show();
+        DesktopBackdrop.showPopup(activity,popup);
     }
     DesktopShortcuts(Activity activity,FrameLayout canvas,int display){
         this.activity=activity;this.canvas=canvas;this.display=display;positions=activity.getSharedPreferences(WorkspaceProfile.phone(activity)?"phone_shortcut_positions":"shortcut_positions",0);
@@ -40,7 +43,26 @@ final class DesktopShortcuts {
     private int dp(int n){return Ui.dp(activity,n);}
     private int units(int n){return Math.round(n/activity.getResources().getDisplayMetrics().density);}
     private boolean snap(){return Launches.prefs(activity).getBoolean(WorkspaceProfile.key(activity,"shortcut_snap"),false);}
-    void cancelMove(){if(moving!=null){moving.setSelected(false);moving.setAlpha(1f);moving=null;layoutAll();}}
+    private void beginKeyboardMove(View cell){
+        cancelMove();
+        final int generation=moveGeneration;
+        Runnable ready=()->{
+            if(destroyed||generation!=moveGeneration)return;
+            moving=cell;cell.setSelected(true);cell.requestFocus();Ui.message(activity,activity.getString(R.string.ui_drag_this_icon_to_place_it_tap_or_press_back_to_cancel));
+        };
+        DesktopBackdrop backdrop=activity instanceof DesktopActivity?((DesktopActivity)activity).backdrop:null;
+        AutoCloseable hold=backdrop==null?null:backdrop.interact(ready);
+        moveInteraction=hold;
+        if(backdrop==null)ready.run();
+    }
+    private void closeMoveInteraction(){
+        AutoCloseable hold=moveInteraction;moveInteraction=null;
+        if(hold!=null)try{hold.close();}catch(Exception ignored){}
+    }
+    void cancelMove(){
+        moveGeneration++;closeMoveInteraction();
+        if(moving!=null){moving.setSelected(false);moving.setAlpha(1f);moving=null;layoutAll();}
+    }
     void refresh(){
         cancelMove();canvas.removeAllViews();icons.clear();
         List<String> items=Launches.desktop(activity);
@@ -62,7 +84,7 @@ final class DesktopShortcuts {
             TextView name=Ui.text(activity,label,13,0xffe7edf5);name.setGravity(Gravity.CENTER);name.setMaxLines(2);name.setEllipsize(android.text.TextUtils.TruncateAt.END);name.setShadowLayer(dp(2),0,dp(1),0xaa000000);cell.addView(name,new LinearLayout.LayoutParams(-1,-2));
             cell.setContentDescription(label);cell.setFocusable(true);cell.setTooltipText(label);
             cell.setOnClickListener(v->{if(moving==cell){cancelMove();return;}if(group==null)Launches.app(activity,component,display);else openGroup(group);});
-            View.OnLongClickListener menu=v->{cancelMove();Runnable move=()->{moving=cell;cell.setSelected(true);cell.requestFocus();Ui.message(activity,activity.getString(R.string.ui_drag_this_icon_to_place_it_tap_or_press_back_to_cancel));};
+            View.OnLongClickListener menu=v->{cancelMove();Runnable move=()->beginKeyboardMove(cell);
                 if(group==null)AppContextMenu.show(activity,cell,component,display,()->{},null,null,move);else groupOptions(cell,component,move);return true;};
             cell.setOnLongClickListener(menu);cell.setOnContextClickListener(v->menu.onLongClick(v));
             cell.setOnKeyListener((v,key,event)->{if(moving!=cell||event.getAction()!=KeyEvent.ACTION_DOWN)return false;
@@ -88,7 +110,7 @@ final class DesktopShortcuts {
         int[] p=DesktopPlacement.fit(x,y,w,h,aw,ah,snap());FrameLayout.LayoutParams params=new FrameLayout.LayoutParams(dp(w),dp(h));params.leftMargin=dp(p[0]);params.topMargin=dp(p[1]);v.setLayoutParams(params);
     }
     private void save(String component,View v){try{FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)v.getLayoutParams();positions.edit().putString(component,new JSONObject().put("x",units(p.leftMargin)).put("y",units(p.topMargin)).toString()).apply();}catch(JSONException ignored){}}
-    private void commit(String component,View v){save(component,v);v.setSelected(false);v.setAlpha(1f);moving=null;}
+    private void commit(String component,View v){save(component,v);v.setSelected(false);v.setAlpha(1f);moving=null;moveGeneration++;closeMoveInteraction();}
     @android.annotation.SuppressLint("ClickableViewAccessibility") // Non-drag taps keep the normal click/long-click path; keyboard movement is supported.
     private void drag(View cell,String component){
         cell.setOnTouchListener(new View.OnTouchListener(){float x,y;int left,top;boolean candidate,dragging;

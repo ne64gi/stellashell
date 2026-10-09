@@ -40,7 +40,7 @@ final class ShellLaunchCoordinator {
     }
     void home(Context c,int display){
         if(WorkspaceProfile.standard(c,display)){
-            ShellPanels.dismiss(0);c.startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            ShellPanels.dismiss(0);c.startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).putExtra(HomeRecoveryEntry.INTERNAL_HOME,true)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),ActivityOptions.makeBasic().setLaunchDisplayId(0).toBundle());return;
         }
         TaskState state=TaskState.of(c);

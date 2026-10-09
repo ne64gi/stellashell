@@ -19,6 +19,11 @@ final class ShellPanels {
     static void release(int display,Object owner){Entry entry=visible.get(display);if(entry!=null&&entry.owner==owner){visible.remove(display);changed();}}
     static void dismiss(int display){Entry entry=visible.remove(display);if(entry!=null){entry.close.run();changed();}}
     static boolean isOpen(int display){return visible.containsKey(display);}
+    static boolean isStartOpen(int display){Entry entry=visible.get(display);return entry!=null&&entry.owner instanceof AppMenu;}
+    static boolean closeStart(int display){
+        Entry entry=visible.get(display);if(entry==null||!(entry.owner instanceof AppMenu))return false;
+        dismiss(display);return true;
+    }
     static Rect bounds(int display){Entry entry=visible.get(display);return entry==null||entry.bounds==null?null:new Rect(entry.bounds);}
     static void bounds(int display,Object owner,Rect value){
         Entry entry=visible.get(display);if(entry==null||entry.owner!=owner||value.equals(entry.bounds))return;

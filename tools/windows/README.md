@@ -65,20 +65,22 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-stellashell.ps1 
 - ランチャーは `--no-vd-destroy-content` を指定します。仮想画面の切断時に
   アプリのTaskを破棄せず本体へ戻します。Activityの状態復元はアプリ依存です。
 
-## 右AltをAndroidのWin／検索キーとして使う
+## Windowsキー／右AltでStartを開く
 
-既定で `scrcpy.rightAltAsMeta: true`。既存のJSONでも省略時は有効です。
-このスクリプトが起動したscrcpyが手前にある間だけ、右Altのキー操作を取り込みます。
+既定で `scrcpy.windowsKeyAsMeta: true`、`scrcpy.rightAltAsMeta: true`。既存のJSONでも省略時は有効です。
+このスクリプトが起動したscrcpyが手前にある間だけ、左右のWindowsキーと右Altの操作を取り込みます。
 
 - **右Alt＋Space → Android Meta（Win／検索）＋Space**。IME側がこの組み合わせに対応していれば入力言語を切り替えられます。
+- **左右のWindowsキー単独は、離した時にStella Startを開閉**します。
+- Windowsキー＋Space・文字・矢印などはAndroidのMetaとの組み合わせへ送ります。組み合わせ操作の後にStartを開くことはありません。
 - 右Alt＋文字・数字・矢印・ファンクションキー等もMetaとの組み合わせとして送ります。
 - **右Alt単独は、離した時にStella Startを開閉**します。対応APKとこのPS1の両方を更新してください。
-- 左Altはscrcpyのショートカット用に残します（`--shortcut-mod=lalt`）。WindowsのWinキーは変更しません。
-- 別のPCアプリが手前にある間は右Altを変更しません。scrcpy終了でフックも終了します。
+- 左Altはscrcpyのショートカット用に残します（`--shortcut-mod=lalt`）。[scrcpy公式仕様](https://github.com/Genymobile/scrcpy/blob/v3.3.1/doc/shortcuts.md)で既定MODに含まれる左Superを外し、AndroidのMeta操作と分けます。
+- 別のPCアプリが手前にある間に始めたWindowsキー／右Altは変更しません。押している途中で別アプリへ移った場合もStartを開きません。scrcpy終了でフックも終了します。
 
 WindowsへWinキーを合成する方式ではなく、ADBの `input keycombination` でAndroidへ送る補助機能です。
 対応しないAndroidでは起動時に案内を出します。無効化するにはJSONの `scrcpy` 内に
-`"rightAltAsMeta": false` を設定してください。
+`"rightAltAsMeta": false` を設定してください。WindowsキーをPC側で使う場合は `"windowsKeyAsMeta": false` にします。両方OFFならキーフックを起動しません。2つの設定は独立しています。
 
 これは完全なHIDキー置換ではありません。Metaを押し続けながらのマウス操作やキーリピートには対応せず、
 キーの組み合わせを1回ずつ送ります。USキーボード配列を想定し、AltGrを使う配列は対象外です。
@@ -88,10 +90,12 @@ ADBによる遅延があり、Androidでフォーカスのある画面へ送る�
 
 1. scrcpy内の入力欄で右Alt＋Spaceを2回押し、IMEが往復すること。
 2. 左Altの貼り付け操作が従来どおり使えること。
-3. 別のWindowsアプリでは右Altが通常動作し、scrcpyを閉じた後も影響が残らないこと。
+3. 左右のWindowsキー単押しでStartが1回開閉し、Windowsキー＋Space／文字／Shiftでは単押しの開閉が混ざらないこと。
+4. Windowsキーや右Altを押したまま別アプリへ移ると、Startを開かないこと。
+5. 別のWindowsアプリではWindowsキーと右Altが通常動作し、scrcpyを閉じた後も影響が残らないこと。
 
-この追加部分はPowerShell 7で構文と埋め込みC#のコンパイルを確認済みです。
-WindowsでのキーフックとAndroid IMEの組み合わせは実機未検証です。
+単押し・リピート・組み合わせ・修飾キー・フォーカス移動・設定ごとの入力判定はオフラインテスト `pwsh -NoProfile -File tools/windows/tests/meta-relay.ps1` で確認できます。テストはWindows APIのフック、ADB、scrcpyを起動しません。
+Windows PowerShell 5.1、Windowsでの実キーフック・OS予約キー・Android IMEの組み合わせは実機未検証です。
 
 ## ウィンドウアイコン
 
@@ -108,4 +112,4 @@ PowerShell 7（Linux上、模擬adb/scrcpy）で既存接続、初回ペア設�
 
 開発者向けのオフラインテスト：`python3 tools/tests/session-launchers.py --pwsh /path/to/pwsh`（リポジトリルートから）。実端末には接続しません。
 
-右Alt単押しはADBからStellaの起動中セッションへ開閉要求を送ります。一般アプリには許可しないDUMP権限付きの明示receiverを使い、シェル停止中に勝手に起動しません。Android全体のMetaキーを横取りする実装ではありません。組み合わせキーの送信経路は従来どおりです。
+Windowsキー／右Alt単押しはADBからStellaの起動中セッションへ開閉要求を送ります。一般アプリには許可しないDUMP権限付きの明示receiverを使い、シェル停止中に勝手に起動しません。組み合わせキーの送信経路は従来どおりです。

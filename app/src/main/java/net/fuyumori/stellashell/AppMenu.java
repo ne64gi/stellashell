@@ -41,6 +41,8 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     private String openGroup;
     private View folderAnchor;
     private boolean hiddenMode,loaded,renderQueued,folderOnly;
+    private ExecutorService catalogLoader;
+    private long catalogRequest;
     private int menuWidth,menuHeight;
     private PopupMenu activePopup;private long outsideDown=-1;
     void toggle(ExecutorService loader,long downTime){if(downTime>0&&downTime==outsideDown)return;open(loader);}
@@ -84,6 +86,8 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         folderAnchor=null;
         openGroup=null;
         all.clear();
+        catalogLoader=null;
+        catalogRequest++;
         loaded=false;
         folderOnly=false;
         renderQueued=false;
@@ -93,10 +97,14 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     }
     void open(ExecutorService loader){
         if(isOpen()){close();return;}
-        if(displayId!=0)Displays.require(context,displayId);StartPins.initialize(context);
+        if(displayId!=0)Displays.require(context,displayId);StartPins.initialize(context,displayId);
+        AppOrganization.initialize(context);
         AppOrganization.prefs(context).registerOnSharedPreferenceChangeListener(this);
         Launches.prefs(context).registerOnSharedPreferenceChangeListener(this);
         hiddenMode=false;loaded=false;all.clear();
+        catalogLoader=loader;
+        List<Launches.App> cached=Launches.cachedCatalog(context);
+        if(cached!=null){all.addAll(cached);loaded=true;}
         WorkArea area=area();
         menuWidth=Math.max(1,Math.min(dp(640),area.application.width()-dp(24)));
         menuHeight=Math.max(1,Math.min(dp(720),area.application.height()-dp(24)));
@@ -158,13 +166,23 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         params.setTitle("StellaShell app menu");
         ShellPanels.activate(displayId,this,this::close);
         try{windows.addView(root,params);ShellPanels.track(displayId,this,root);root.requestFocus();render();}catch(RuntimeException error){close();throw error;}
-        FrameLayout generation=root;
-        loader.execute(()->{
+        if(!loaded)loadCatalog();
+    }
+    private void loadCatalog(){
+        if(root==null||catalogLoader==null)return;
+        long request=++catalogRequest;
+        java.lang.ref.WeakReference<AppMenu> owner=new java.lang.ref.WeakReference<>(this);
+        Context source=context.getApplicationContext();
+        catalogLoader.execute(()->{
             try{
-                List<Launches.App> apps=Launches.catalog(context);
-                new Handler(Looper.getMainLooper()).post(()->{if(root==generation){all.clear();all.addAll(apps);loaded=true;render();}});
+                List<Launches.App> apps=Launches.catalog(source);
+                new Handler(Looper.getMainLooper()).post(()->{
+                    AppMenu menu=owner.get();
+                    if(menu!=null&&menu.root!=null&&menu.catalogRequest==request){menu.all.clear();menu.all.addAll(apps);menu.loaded=true;menu.render();}
+                });
             }catch(RuntimeException error){new Handler(Looper.getMainLooper()).post(()->{
-                if(root==generation){content.removeAllViews();note(content,R.string.ui_could_not_load_apps);}
+                AppMenu menu=owner.get();
+                if(menu!=null&&menu.root!=null&&menu.catalogRequest==request&&!menu.loaded){menu.content.removeAllViews();menu.note(menu.content,R.string.ui_could_not_load_apps);}
             });}
         });
     }
@@ -174,7 +192,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     private void heading(LinearLayout parent,String text){TextView view=Ui.text(context,text,16,Ui.TEXT);view.setTypeface(null,Typeface.BOLD);view.setPadding(dp(6),dp(18),0,dp(12));parent.addView(view);}
     private static String normalized(String text){return Normalizer.normalize(text,Normalizer.Form.NFKC).toLowerCase(Locale.ROOT);}
     private boolean matches(String label,String component,String query){String value=normalized(label+" "+component);for(String term:normalized(query).trim().split("\\s+"))if(!value.contains(term))return false;return true;}
-    private List<Launches.App> members(String group){List<Launches.App> apps=new ArrayList<>();for(Launches.App app:all)if(!AppOrganization.hidden(context,app.component)&&group.equals(AppOrganization.group(context,app.component)))apps.add(app);return apps;}
+    private List<Launches.App> members(String group){List<Launches.App> apps=new ArrayList<>();for(Launches.App app:all)if(!AppOrganization.hidden(context,displayId,app.component)&&group.equals(AppOrganization.group(context,app.component)))apps.add(app);return apps;}
     private void render(){
         if(root==null)return;
         updateWebSearch();
@@ -185,7 +203,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         if(!hiddenMode&&query.isEmpty()){
             heading(content,context.getString(R.string.start_pinned_heading));
             List<View> pins=new ArrayList<>();
-            for(String component:StartPins.get(context)){
+            for(String component:StartPins.get(context,displayId)){
                 String group=GroupEntries.name(context,component);
                 if(group!=null){pins.add(groupTile(group));continue;}
                 for(Launches.App app:all)if(component.equals(app.component)&&!AppOrganization.hidden(context,component)){pins.add(appTile(app));break;}
@@ -196,7 +214,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         List<Launches.App> apps=new ArrayList<>();List<String> groups=new ArrayList<>();
         if(!hiddenMode)for(String group:AppOrganization.groups(context))if(query.isEmpty()||matches(group,"",query))groups.add(group);
         for(Launches.App app:all){
-            if(AppOrganization.hidden(context,app.component)!=hiddenMode)continue;
+            if(AppOrganization.hidden(context,displayId,app.component)!=hiddenMode)continue;
             if(!matches(app.label,app.component,query))continue;
             String group=AppOrganization.group(context,app.component);
             if(!hiddenMode&&query.isEmpty()&&!group.isEmpty()&&groups.contains(group))continue;
@@ -238,7 +256,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     }
     private void label(LinearLayout tile,String name){TextView label=Ui.text(context,name,12,Ui.TEXT);label.setGravity(Gravity.TOP|Gravity.CENTER_HORIZONTAL);label.setMaxLines(2);label.setEllipsize(TextUtils.TruncateAt.END);label.setPadding(0,dp(6),0,0);label.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);tile.addView(label,new LinearLayout.LayoutParams(-1,-2));}
     private View appTile(Launches.App app){
-        LinearLayout tile=tile(app.label);ImageView icon=new ImageView(context);icon.setImageDrawable(AppIcons.forApp(context,app.component,app.icon));icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);tile.addView(icon,new LinearLayout.LayoutParams(dp(42),dp(42)));label(tile,app.label);
+        LinearLayout tile=tile(app.label);ImageView icon=new MenuAppIcon(context,app.component,app.icon);icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);tile.addView(icon,new LinearLayout.LayoutParams(dp(42),dp(42)));label(tile,app.label);
         Runnable options=()->AppContextMenu.show(context,tile,app.component,displayId,this::close,null,null);
         tile.setOnClickListener(v->{if(hiddenMode)options.run();else{close();Launches.app(context,app.component,displayId);}});
         tile.setOnLongClickListener(v->{options.run();return true;});tile.setOnContextClickListener(v->{options.run();return true;});return tile;
@@ -246,7 +264,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     private View groupTile(String group){
         LinearLayout tile=tile(group);FrameLayout preview=new FrameLayout(context);preview.setBackgroundResource(R.drawable.ic_start_folder);
         List<Launches.App> apps=members(group);
-        for(int i=0;i<Math.min(4,apps.size());i++){ImageView icon=new ImageView(context);icon.setImageDrawable(AppIcons.forApp(context,apps.get(i).component,apps.get(i).icon));FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(dp(13),dp(13));p.leftMargin=dp(7+(i%2)*15);p.topMargin=dp(12+(i/2)*14);preview.addView(icon,p);}
+        for(int i=0;i<Math.min(4,apps.size());i++){ImageView icon=new MenuAppIcon(context,apps.get(i).component,apps.get(i).icon);FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(dp(13),dp(13));p.leftMargin=dp(7+(i%2)*15);p.topMargin=dp(12+(i/2)*14);preview.addView(icon,p);}
         preview.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);tile.addView(preview,new LinearLayout.LayoutParams(dp(44),dp(44)));label(tile,group);
         tile.setContentDescription(context.getString(R.string.start_group_accessibility,group,apps.size()));
         tile.setOnClickListener(v->{folderAnchor=tile;openGroup=group;buildFolder();});
@@ -281,6 +299,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     }
     @Override public void onSharedPreferenceChanged(SharedPreferences prefs,String key){
         if(root==null || prefs==Launches.prefs(context)&&!WorkspaceProfile.changed(key,"start_pinned")&&!IconTheme.changed(key))return;
+        if(prefs==Launches.prefs(context)&&IconTheme.REVISION.equals(key))loadCatalog();
         queueRender();
     }
     private void queueRender(){
@@ -290,14 +309,14 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     }
     private void selectApps(String group){
         if(!loaded){Ui.message(context,context.getString(R.string.ui_loading));return;}
-        android.app.AlertDialog dialog=AppChecklist.create(context,all,group);showDialog(dialog);
+        android.app.AlertDialog dialog=AppChecklist.create(context,displayId,all,group);showDialog(dialog);
         dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN|WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
     }
     private void groupTools(View anchor,String group){
         PopupMenu popup=new PopupMenu(context,anchor);activePopup=popup;
         String reference=GroupEntries.reference(context,group);
         popup.getMenu().add(Launches.desktop(context).contains(reference)?R.string.ui_remove_from_desktop:R.string.ui_add_to_desktop).setOnMenuItemClickListener(item->{Launches.toggleDesktop(context,reference);return true;});
-        popup.getMenu().add(StartPins.get(context).contains(reference)?R.string.start_unpin:R.string.start_pin).setOnMenuItemClickListener(item->{StartPins.toggle(context,reference);return true;});
+        popup.getMenu().add(StartPins.get(context,displayId).contains(reference)?R.string.start_unpin:R.string.start_pin).setOnMenuItemClickListener(item->{StartPins.toggle(context,displayId,reference);return true;});
         popup.getMenu().add(R.string.apps_group_manage).setOnMenuItemClickListener(item->{selectApps(group);return true;});
         popup.getMenu().add(R.string.launcher_rename_group).setOnMenuItemClickListener(item->{groupDialog(group);return true;});
         popup.getMenu().add(R.string.launcher_delete_group).setOnMenuItemClickListener(item->{
@@ -334,7 +353,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         settings.add(R.string.menu_stella_settings).setOnMenuItemClickListener(item->{close();Launches.settings(context,displayId);return true;});
         apps.add(R.string.launcher_hide_homes).setOnMenuItemClickListener(item->{
             Set<String> packages=new HashSet<>();for(android.content.pm.ResolveInfo info:context.getPackageManager().queryIntentActivities(new android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_HOME),0))if(info.activityInfo!=null)packages.add(info.activityInfo.packageName);
-            for(Launches.App app:all)if(packages.contains(android.content.ComponentName.unflattenFromString(app.component).getPackageName()))AppOrganization.hide(context,app.component,true);
+            for(Launches.App app:all)if(packages.contains(android.content.ComponentName.unflattenFromString(app.component).getPackageName()))AppOrganization.hide(context,displayId,app.component,true);
             hiddenMode=true;closeFolder();render();return true;
         });
         popup.show();

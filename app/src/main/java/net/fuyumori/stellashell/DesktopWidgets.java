@@ -91,7 +91,7 @@ final class DesktopWidgets {
         e.frame.setForeground(editing?outline:null);
     }}
     void choose(){
-        if(pending>=0){new AlertDialog.Builder(activity).setMessage(activity.getString(R.string.ui_a_widget_is_still_being_added_cancel_it_and_choose_another)).setNegativeButton(activity.getString(R.string.ui_back),null).setPositiveButton(activity.getString(R.string.ui_choose_again),(d,w)->{cancel();choose();}).show();return;}
+        if(pending>=0){DesktopBackdrop.showDialog(activity,new AlertDialog.Builder(activity).setMessage(activity.getString(R.string.ui_a_widget_is_still_being_added_cancel_it_and_choose_another)).setNegativeButton(activity.getString(R.string.ui_back),null).setPositiveButton(activity.getString(R.string.ui_choose_again),(d,w)->{cancel();choose();}).create());return;}
         List<AppWidgetProviderInfo> providers=new ArrayList<>(manager.getInstalledProviders());
         providers.removeIf(p->(p.widgetCategory&AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN)==0);
         providers.sort(Comparator.comparing(p->p.loadLabel(activity.getPackageManager()),String.CASE_INSENSITIVE_ORDER));
@@ -131,7 +131,7 @@ final class DesktopWidgets {
         });
         AlertDialog dialog=new AlertDialog.Builder(activity).setTitle(activity.getString(R.string.ui_add_widget)).setView(panel).setNegativeButton(activity.getString(R.string.ui_cancel),null).create();
         list.setOnItemClickListener((parent,view,position,id)->{AppWidgetProviderInfo selected=visible.get(position);dialog.dismiss();allocate(selected);});
-        filter.run();dialog.setOnShowListener(d->dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN|WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE));dialog.show();
+        filter.run();dialog.setOnShowListener(d->dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN|WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE));DesktopBackdrop.showDialog(activity,dialog);
 
     }
     private static String searchKey(String value){return java.text.Normalizer.normalize(value,java.text.Normalizer.Form.NFKC).toLowerCase(Locale.ROOT);}
@@ -142,7 +142,7 @@ final class DesktopWidgets {
             if(manager.bindAppWidgetIdIfAllowed(pending,info.getProfile(),info.provider,options))configure();
             else{
                 Intent intent=new Intent(AppWidgetManager.ACTION_APPWIDGET_BIND).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,pending).putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER,info.provider).putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER_PROFILE,info.getProfile()).putExtra(AppWidgetManager.EXTRA_APPWIDGET_OPTIONS,options);
-                activity.startActivityForResult(intent,BIND);
+                DesktopBackdrop.startActivityForResult(activity,intent,BIND);
             }
         }catch(RuntimeException e){cancel();Ui.message(activity,activity.getString(R.string.ui_could_not_add_widget)+e.getMessage());}
     }
@@ -173,7 +173,7 @@ final class DesktopWidgets {
                 // Android 14 requires the sender to opt in to passing its launch privilege.
                 if(android.os.Build.VERSION.SDK_INT>=34)
                     options.setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
-                host.startAppWidgetConfigureActivityForResult(activity,pending,0,CONFIGURE,options.toBundle());
+                DesktopBackdrop.configureWidget(activity,host,pending,CONFIGURE,options.toBundle());
             }
             catch(RuntimeException e){cancel();Ui.message(activity,activity.getString(R.string.ui_could_not_open_configuration)+e.getMessage());}
         }else finishAdd();
@@ -196,7 +196,7 @@ final class DesktopWidgets {
     private void addCustom(Entry e){entries.add(e);selected=e;editing=true;editorCollapsed=false;save();rebuild();editingChanged.run();}
     void addText(){textDialog(custom("text"),true);}
     void addImage(){
-        try{activity.startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE),IMAGE);}
+        try{DesktopBackdrop.startActivityForResult(activity,new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE),IMAGE);}
         catch(RuntimeException e){Ui.message(activity,activity.getString(R.string.widget_image_failed));}
     }
     private void textDialog(Entry e,boolean adding){
@@ -212,7 +212,7 @@ final class DesktopWidgets {
             String hex=color.getText().toString().trim();if(!hex.matches("#[a-fA-F0-9]{6}")){color.setError(activity.getString(R.string.appearance_invalid_color));return;}
             if(text.getText().toString().trim().isEmpty()){text.setError(activity.getString(R.string.widget_text_empty));return;}
             e.text=text.getText().toString();e.textSize=n;e.textColor=android.graphics.Color.parseColor(hex);e.align=align.getSelectedItemPosition();if(adding)addCustom(e);else{save();rebuild();}dialog.dismiss();
-        }));contentDialog=dialog;dialog.show();
+        }));contentDialog=dialog;DesktopBackdrop.showDialog(activity,dialog);
     }
     private void save(){
         JSONArray array=new JSONArray();for(Entry e:entries)try{array.put(new JSONObject().put("id",e.id).put("x",e.x).put("y",e.y).put("w",e.w).put("h",e.h).put("mode",e.mode).put("baseW",e.baseW).put("baseH",e.baseH).put("kind",e.kind).put("text",e.text).put("image",e.image).put("background",e.background).put("opacity",e.opacity).put("textColor",e.textColor).put("textSize",e.textSize).put("align",e.align));}catch(JSONException ignored){}
@@ -300,7 +300,7 @@ final class DesktopWidgets {
             }
             panel.addView(Ui.button(activity,activity.getString(R.string.widget_item_background),()->contentDialog=WidgetItemBackground.show(activity,entry.background,entry.opacity,(color,opacity)->{entry.background=color;entry.opacity=opacity;save();entry.frame.setBackground(Ui.rounded(activity,WidgetItemBackground.color(color,opacity),12));})));
             if(entry.kind.equals("text"))panel.addView(Ui.button(activity,activity.getString(R.string.widget_edit_text),()->textDialog(entry,false)));
-            panel.addView(Ui.button(activity,activity.getString(R.string.ui_remove_widget),()->new AlertDialog.Builder(activity).setMessage(R.string.ui_remove_this_widget).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_remove,(d,w)->{entries.remove(entry);selected=entries.isEmpty()?null:entries.get(entries.size()-1);save();if(entry.kind.equals("widget"))host.deleteAppWidgetId(entry.id);else if(entry.kind.equals("image"))WidgetImages.remove(activity,entry.image);rebuild();}).show()));
+            panel.addView(Ui.button(activity,activity.getString(R.string.ui_remove_widget),()->DesktopBackdrop.showDialog(activity,new AlertDialog.Builder(activity).setMessage(R.string.ui_remove_this_widget).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_remove,(d,w)->{entries.remove(entry);selected=entries.isEmpty()?null:entries.get(entries.size()-1);save();if(entry.kind.equals("widget"))host.deleteAppWidgetId(entry.id);else if(entry.kind.equals("image"))WidgetImages.remove(activity,entry.image);rebuild();}).create())));
         }
         panel.addView(Ui.button(activity,activity.getString(R.string.ui_add_widget),this::choose));
         panel.addView(Ui.button(activity,activity.getString(R.string.widget_add_text),this::addText));
@@ -324,7 +324,7 @@ final class DesktopWidgets {
     private void number(Entry e,int axis,int name){
         EditText input=new EditText(activity);input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);input.setSingleLine(true);input.setText(String.valueOf(geometry(e,axis)));input.selectAll();
         AlertDialog dialog=new AlertDialog.Builder(activity).setTitle(activity.getString(name)+" (dp)").setView(input).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_apply,null).create();
-        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{int n=Integer.parseInt(input.getText().toString());if(n<0||n>10000)throw new NumberFormatException();adjust(e,axis,n);dialog.dismiss();}catch(NumberFormatException ex){input.setError(activity.getString(R.string.widget_edit_number));}}));dialog.show();
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{int n=Integer.parseInt(input.getText().toString());if(n<0||n>10000)throw new NumberFormatException();adjust(e,axis,n);dialog.dismiss();}catch(NumberFormatException ex){input.setError(activity.getString(R.string.widget_edit_number));}}));DesktopBackdrop.showDialog(activity,dialog);
     }
     private int padding(AppWidgetProviderInfo info,boolean horizontal){
         android.graphics.Rect p=AppWidgetHostView.getDefaultPaddingForWidget(activity,info.provider,null);
@@ -358,7 +358,7 @@ final class DesktopWidgets {
                 if(w<80||h<60||w>2048||h>2048)throw new NumberFormatException();
                 e.baseW=w;e.baseH=h;e.mode=WidgetGeometry.SCALE;save();dialog.dismiss();rebuild();
             }catch(NumberFormatException ex){Ui.message(activity,activity.getString(R.string.ui_enter_width_80_2048_and_height_60_2048_dp));}
-        }));dialog.show();
+        }));DesktopBackdrop.showDialog(activity,dialog);
     }
     private void relayout(){for(Entry e:entries)layout(e);if(editor!=null&&!editorCollapsed)editor.setLayoutParams(editorBounds());}
     private void layout(Entry e){

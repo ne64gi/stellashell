@@ -35,11 +35,15 @@ platform bridgeは既存Java/AIDL package `net.fuyumori.stellashell` を維持�
 - appの`AppMenu`はViewと検索入力、`SearchSettingsActivity`は設定画面、`WebSearchLauncher`はAndroid URL解決・現在displayへの起動だけを担当する。featureからそれらの型を呼ばず、navigator/callbackを注入する。
 - 起動profileは `LaunchProfileOwner` / `LaunchProfileSnapshot`。`setMode` / `setSize` / `setPosition` / `setRememberBounds` / `setCustomSize` / 観測commandだけを使う。古いsnapshot全体の保存窓口は提供しない。
 - 保存port `LaunchProfileStore` を実装するAndroid adapterだけが`launch_profiles`を開く。同じ保存領域を包むadapterは共通lock上でread/merge/writeする。既存JSON互換は`LaunchProfileCodec`が担当する。
-- `AppCatalog`はcatalogの取得、`PublicLauncher`は同じpackage内の公開launcher解決と通常Android起動。catalogの不変entryをapp側のView型へ変換し、内部Activity・権限保護・stale entryのfallbackと明示aliasを維持する。
+- `AppCatalog`はアプリ変更イベントで無効化するメタデータcache（同時loadを世代ごとに共有・古いloadを破棄）と最大64件の標準icon state cacheを所有する。Activity/Viewを保持しない。`MenuAppIcon`は描画されたStartタイルだけ非同期にiconを読む。`AppCatalog`はcatalogの取得、`PublicLauncher`は同じpackage内の公開launcher解決と通常Android起動。catalogの不変entryをapp側のView型へ変換し、内部Activity・権限保護・stale entryのfallbackと明示aliasを維持する。
+- `ExternalAppLaunch`は長押しメニューの接続先選択と短いエラー案内のみを担当する。`PublicLauncher.launchExternalFullscreen`は通常app UIDでpublic外部・secondary-activity対応・起動可否を再検証し、全画面を要求する。Bridge・保存profile・workspace選択に依存せず、本体へのfallbackを持たない。全画面optionの採否はOSの制約に従い、外部入力routingやタスク終了権限を追加しない。
+- 専用モードはcoreの`ExclusiveDisplaySession`で一時leaseの同一性を管理し、appの`ExternalAppMode`が変更を通知する。本体`ExternalAppActivity`は非focus待機画面を先に作り、外部アプリを最後に起動する。`ShellController`は表示/タスク購読、`PhoneNavigationOwner`は本体Dock/Taskbarを一時停止し、終了時は最新設定へ戻す。入力転送・強制focus・task kill・永続設定・FGSを専用モードへ追加しない。
 - `LaunchItems`は注入された既存SharedPreferencesの4系統pins・共通recent・profile別desktop配置だけを所有する。読み取りは不変detached snapshot、操作は最新値へのcommand。同じSharedPreferences上のlockで複数adapterの更新を直列化する。group参照の削除もこの窓口を使う。legacy初期profile copyだけはappの`WorkspaceProfile`に残る。
 - coreの`AppLaunchDecision`は不変requestとworkspace factsからroute/geometryを決める。通常本体起動はworkspace factsを要求しない。`SerialLaunchQueue`はFIFO・busy retry・job固有の一度だけ有効なcompletionを所有し、古い完了が次のjobを解放しない。
 - appの`ShellLaunchCoordinator`はmain-loop schedulerとTaskStateへの配線、`ShellLaunchExecutor`はAndroid/Bridge実行・既存session barrier・結果反映。`Launches`は互換facadeであり、queue/catalog取得/launch items保存の正本を持たない。HOME・PiPの挙動はこの分離で変更しない。
 - Shell設定・実行画面・task状態は従来の独立ownerを維持する。[所有境界](STATE-OWNERSHIP.md)を参照。
+- coreの`AutoOutputReconciler`はAUTO判断のticket・session照合・移送中イベントの寿命だけを所有する。`ShellController`が最新のdisplay候補と設定を渡し、実commandのbusy/idleと移送元は`TaskState`の窓口で扱う。coreにAndroid listener・Handler・保存設定を持ち込まない。
+- SOG06 / Android 14の外部バー互換処理はplatformの`ExternalDisplayPolicy`が所有する。appの`Bridge`はセッションの有効状態と選択先を伝えるだけで、global設定の一時値や復元・マウス更新の可否を複製しない。設定のsnapshot/applyは`DesktopBridgeService`でこのleaseと調停する。独立guardianは接続・切断と制御接続の終了をイベントとして処理し、待機中の定期ポーリングを行わない。既に作られたAndroid側のバーを強制的に作り直す処理ではない。
 
 ## 新機能を追加するとき
 
@@ -67,3 +71,5 @@ platform bridgeは既存Java/AIDL package `net.fuyumori.stellashell` を維持�
 - appの`Bridge`は接続transportとShell policyの両方を持つ。server側のmodule分離を根拠に、clientのpolicyまで特権側へ移さない。
 
 既知のHOME/PiP/mouse・長期性能の未検証事項は、この構造変更で解決済みとはしない。
+
+任意位置Dockの形状認識・Type-B touch frame・配置・三連HOMEカウントはcore、選別された内蔵タッチパネルのread-only監視はplatform/bridge、可用性と画面寿命・チュートリアル・表示はappに置く。Bridge UserServiceは38、既存AIDL番号を保ちgesture購読29/解除30のみ追加。raw入力をapp側へ流さない。

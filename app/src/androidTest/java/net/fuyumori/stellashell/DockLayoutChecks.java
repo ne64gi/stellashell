@@ -1,6 +1,7 @@
 package net.fuyumori.stellashell;
 
 import net.fuyumori.stellashell.core.layout.DockPlacement;
+import net.fuyumori.stellashell.core.layout.EdgeDockReveal.Method;
 
 import android.app.Instrumentation;
 import android.content.ComponentName;
@@ -28,7 +29,6 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextClock;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -57,7 +57,7 @@ final class DockLayoutChecks {
     }
     private Object get(String name){try{return field(SelectedOutputSurface.class,name).get(fixture);}catch(ReflectiveOperationException e){throw new AssertionError(e);}}
     private Object dockField(String name){try{return field(DesktopDock.class,name).get(get("desktopDock"));}catch(ReflectiveOperationException e){throw new AssertionError(e);}}
-    private void invoke(String name){try{Method m=SelectedOutputSurface.class.getDeclaredMethod(name);m.setAccessible(true);m.invoke(fixture);}catch(ReflectiveOperationException e){throw new AssertionError(name,e);}}
+    private void invoke(String name){try{java.lang.reflect.Method m=SelectedOutputSurface.class.getDeclaredMethod(name);m.setAccessible(true);m.invoke(fixture);}catch(ReflectiveOperationException e){throw new AssertionError(name,e);}}
     private void main(Runnable action){
         Throwable[] failure={null};test.runOnMainSync(()->{try{action.run();}catch(Throwable e){failure[0]=e;}});
         if(failure[0]!=null)throw new AssertionError(failure[0]);
@@ -130,6 +130,7 @@ final class DockLayoutChecks {
                 mount(edge,x,y,false,true);validate(edge,x,y,false,true,false);
             }
             independentSwitches();independentPins();
+            revealChecks();
             resize(320,240);
             for(String edge:new String[]{"left","right","top","bottom"}){
                 int x="left".equals(edge)?0:"right".equals(edge)?100:50;
@@ -186,6 +187,49 @@ final class DockLayoutChecks {
         await(()->{android.graphics.Point size=new android.graphics.Point();display.getDisplay().getRealSize(size);return size.x==width&&size.y==height;},"Fixture resize did not settle");
     }
     private static String pins(String component,int count){return String.join("\n",java.util.Collections.nCopies(count,component));}
+    private void revealChecks()throws Exception{
+        main(()->{
+            check(!fixtureSettings.snapshot().externalDock.revealByHandle,"External Dock reveal unexpectedly became default");
+            check(dockField("handle")==null&&((DesktopDock)get("desktopDock")).bounds()!=null,"Always-shown Desktop Dock acquired a handle or lost navigation bounds");
+            check(Launches.prefs(sandbox).edit().putBoolean("desktop_dock_by_handle",true).putInt("desktop_dock_scale",100)
+                .putInt("desktop_taskbar_scale",100).putString("dock_pinned",pins(dockPin,24)).commit(),"Desktop reveal fixture preference write failed");
+        });
+        try{
+            resize(480,360);
+            for(String edge:new String[]{"left","right","top","bottom"})for(int position:new int[]{0,37,100}){
+                int x="left".equals(edge)?0:"right".equals(edge)?100:position;
+                int y="top".equals(edge)?0:"bottom".equals(edge)?100:position;
+                mount(edge,x,y,true,false);
+                DesktopDock launcher=(DesktopDock)get("desktopDock");View taskbar=(View)get("dock");
+                Rect available=new Rect(WorkArea.get(sandbox,displayId).dockAvailable);
+                main(()->{
+                    WorkArea area=WorkArea.get(sandbox,displayId);WindowManager.LayoutParams p=(WindowManager.LayoutParams)taskbar.getLayoutParams();
+                    check(taskbar.getVisibility()==View.VISIBLE&&p.height>1&&area.usable.bottom-area.dockAvailable.bottom==scaled(taskbar.getContext(),60,"desktop_taskbar_scale"),"Opt-in reveal removed mandatory Taskbar reservation");
+                    check(area.application.equals(available),"Opt-in Dock reveal reserved an extra application strip");
+                    View handle=(View)dockField("handle");WindowManager.LayoutParams h=(WindowManager.LayoutParams)handle.getLayoutParams();
+                    boolean vertical=DockPlacement.vertical(edge);
+                    check(vertical?h.height>h.width:h.width>h.height,"Desktop handle orientation did not follow selected edge");
+                    int expected=vertical?available.top+Math.round((available.height()-h.height)*position/100f):available.left+Math.round((available.width()-h.width)*position/100f);
+                    check((vertical?h.y:h.x)==expected,"Desktop handle position/end point was not applied");
+                });
+                AttachedDockRevealChecks.desktop(test,launcher,available,taskbar,edge);
+            }
+            for(Method method:new Method[]{Method.SINGLE_TAP,Method.DOUBLE_TAP})for(String edge:new String[]{"left","right","top","bottom"}){
+                main(()->{fixtureSettings.setExternalDockOpenMethod(method);
+                    check(fixtureSettings.snapshot().externalDock.openMethod==method&&fixtureSettings.snapshot().phoneDock.openMethod==Method.SWIPE,"External method selection crossed Phone Dock domain");});
+                int x="left".equals(edge)?0:"right".equals(edge)?100:37,y="top".equals(edge)?0:"bottom".equals(edge)?100:37;
+                mount(edge,x,y,true,false);
+                View taskbar=(View)get("dock");Rect available=new Rect(WorkArea.get(sandbox,displayId).dockAvailable);
+                main(()->check(WorkArea.get(sandbox,displayId).usable.bottom-available.bottom==scaled(taskbar.getContext(),60,"desktop_taskbar_scale")
+                    &&taskbar.getVisibility()==View.VISIBLE,"Tap method removed mandatory Taskbar reservation"));
+                AttachedDockRevealChecks.desktopTap(test,(DesktopDock)get("desktopDock"),available,taskbar,edge,method);
+            }
+        }finally{
+            main(()->{fixtureSettings.setExternalDockOpenMethod(Method.SWIPE);check(Launches.prefs(sandbox).edit().putBoolean("desktop_dock_by_handle",false).putString("dock_pinned",pins(dockPin,8)).commit(),"Desktop reveal fixture preference restore failed");});
+        }
+        resize(1200,900);mount("bottom",50,100,true,true);validate("bottom",50,100,true,true,false);
+        main(()->check(dockField("handle")==null&&((DesktopDock)get("desktopDock")).bounds()!=null,"Returning to always-shown Dock retained reveal handle/hidden bounds"));
+    }
     private void independentSwitches()throws Exception{
         mount("bottom",50,100,true,true);
         Object launcher=get("desktopDock");
@@ -288,7 +332,7 @@ final class DockLayoutChecks {
         main(()->{
             View taskbar=(View)get("dock");WorkArea area=WorkArea.get(sandbox,displayId);
             check(taskbar.getDisplay().getDisplayId()==displayId,"Taskbar escaped its owned display");
-            check(get("tasks")==null,"Dock fixture created a task session");
+            check(get("taskLease")==null&&fixtureTasks.snapshot().tasks.isEmpty(),"Dock fixture created a task output lease or read OS tasks");
             check(area.compact==compact,"Fixture presentation differs from its explicit/automatic selection");
             Rect available=new Rect(area.usable);available.bottom=Math.max(available.top+1,available.bottom-scaled(taskbar.getContext(),60,"desktop_taskbar_scale"));
             check(area.dockAvailable.equals(available),"Taskbar reservation missing or removed by Dock: "+area.dockAvailable+" expected "+available);
@@ -319,7 +363,9 @@ final class DockLayoutChecks {
             DesktopDock launcher=(DesktopDock)get("desktopDock");View dock=(View)dockField("viewport");
             check(dock.getDisplay().getDisplayId()==displayId,"Dock escaped its owned display");
             WindowManager.LayoutParams p=(WindowManager.LayoutParams)dock.getLayoutParams();
-            check(vertical?dock instanceof ScrollView:dock instanceof HorizontalScrollView,"Whole dock axis is not scrollable for "+edge);
+            View scroll=(View)dockField("strip");
+            check(dock instanceof android.widget.FrameLayout&&((android.widget.FrameLayout)dock).getClipChildren(),"Dock lost its clipping viewport");
+            check(vertical?scroll instanceof ScrollView:scroll instanceof HorizontalScrollView,"Whole dock axis is not scrollable for "+edge);
             LinearLayout row=(LinearLayout)dockField("entries");
             check(row!=null&&icons(dock,dockLabel)==Launches.dockPins(dock.getContext()).size()&&icons(dock,taskbarLabel)==0,"Dock displayed legacy pins or capped/lost its independent pins");
             check(!hasClock(dock)&&icons(dock,actual.getString(R.string.menu_stella_settings))==0&&icons(dock,actual.getString(R.string.screenshot_take))==0,"Icon-centric Dock includes legacy Taskbar status/actions");
@@ -342,11 +388,11 @@ final class DockLayoutChecks {
             check(descriptions(dock,actual.getString(R.string.ui_show_desktop))==(compact?1:0),"Dock Home does not follow presentation while Taskbar stays visible");
             if(overflow){
                 check(vertical?row.getHeight()>dock.getHeight():row.getWidth()>dock.getWidth(),"Short span did not overflow the content axis");
-                check(vertical?dock.canScrollVertically(1):dock.canScrollHorizontally(1),"Short span cannot scroll to remaining actions");
-                if(vertical)((ScrollView)dock).scrollTo(0,row.getHeight());else ((HorizontalScrollView)dock).scrollTo(row.getWidth(),0);
-                check(vertical?dock.getScrollY()>0:dock.getScrollX()>0,"Dock did not actually scroll");
+                check(vertical?scroll.canScrollVertically(1):scroll.canScrollHorizontally(1),"Short span cannot scroll to remaining actions");
+                if(vertical)((ScrollView)scroll).scrollTo(0,row.getHeight());else ((HorizontalScrollView)scroll).scrollTo(row.getWidth(),0);
+                check(vertical?scroll.getScrollY()>0:scroll.getScrollX()>0,"Dock did not actually scroll");
                 Rect visible=new Rect();check(last.getGlobalVisibleRect(visible)&&!visible.isEmpty(),"Last action cannot be reached after scrolling");
-                if(vertical)((ScrollView)dock).scrollTo(0,0);else ((HorizontalScrollView)dock).scrollTo(0,0);
+                if(vertical)((ScrollView)scroll).scrollTo(0,0);else ((HorizontalScrollView)scroll).scrollTo(0,0);
                 check(first.getGlobalVisibleRect(visible)&&!visible.isEmpty(),"First Dock pin cannot be reached after scrolling back");
             }
         });

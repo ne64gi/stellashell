@@ -41,4 +41,19 @@
     <string name="setup_desktop_stop">デスクトップを停止</string>
     <string name="setup_displays_note">接続している画面の管理</string>
     <string name="setup_screen_numbered">%1$s · %2$d</string>
+    <string name="sidebar_settings_portrait">縦向き</string>
+    <string name="sidebar_settings_landscape">横向き</string>
+    <string name="sidebar_settings_landscape_note">選んだ端にハンドルを1つ表示します。スライダーで端に沿った位置を調整できます。</string>
+    <string name="sidebar_settings_by_handle">ハンドルからDockを表示</string>
+    <string name="sidebar_settings_handle_note">ハンドルから呼び出すまでDockを隠します。選んだ端とスライダーでハンドルの位置を調整できます。</string>
+    <string name="sidebar_settings_pull_note">ハンドルを内側へ引いて離すとDockが開きます。途中で戻して離すと閉じます。スワイプではタッチ範囲を広くして、ハンドルをつかみやすくします。</string>
+    <string name="dock_handle_open">内側へ引いてDockを開く</string>
+    <string name="sidebar_settings_open_method">開く方法</string>
+    <string name="sidebar_settings_single_tap">シングルタップ</string>
+    <string name="sidebar_settings_double_tap">ダブルタップ</string>
+    <string name="sidebar_settings_swipe">スワイプ</string>
+    <string name="sidebar_settings_single_tap_note">ハンドルを1回タップするとDockが開きます。</string>
+    <string name="sidebar_settings_double_tap_note">ハンドルを素早く2回タップするとDockが開きます。1回のタップでは開きません。</string>
+    <string name="dock_handle_single_tap">タップでDockを開く</string>
+    <string name="dock_handle_double_tap">ダブルタップでDockを開く</string>
 </resources>

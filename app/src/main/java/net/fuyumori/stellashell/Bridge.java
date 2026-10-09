@@ -2,6 +2,7 @@ package net.fuyumori.stellashell;
 
 import android.content.*;
 import android.content.pm.PackageManager;
+import android.app.PendingIntent;
 import android.os.*;
 import java.util.concurrent.*;
 import rikka.shizuku.Shizuku;
@@ -20,6 +21,26 @@ public final class Bridge {
     private final CopyOnWriteArrayList<Runnable> listeners = new CopyOnWriteArrayList<>();
     private final Shizuku.UserServiceArgs args;
     private volatile IDesktopBridge service;
+    private IDesktopBridge startActionService;
+    private boolean startActionReady;
+    boolean startShortcutReady(){return ready()&&service==startActionService&&startActionReady;}
+    private final BroadcastReceiver homeRoleChanged=new BroadcastReceiver(){
+        @Override public void onReceive(Context ignored,Intent intent){startActionService=null;startActionReady=false;startShortcut();}
+    };
+    void startShortcut(){
+        IDesktopBridge current=service;
+        if(current==null||current==startActionService||!StartMenuRequests.defaultHome(context))return;
+        startActionService=current;startActionReady=false;
+        PendingIntent action=PendingIntent.getActivity(context,7341,new Intent(context,StartMenuActivity.class)
+                .setAction(StartMenuRequests.LAUNCHER_TOGGLE).putExtra(StartMenuRequests.SYSTEM_REQUEST,true)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
+        read(server->server.registerStartAction(action),(result,failure)->{
+            if(startActionService!=current)return;
+            startActionReady=failure==null&&"OK".equals(result);
+            if(!startActionReady)startActionService=null;
+            changed();
+        });
+    }
     private final IBinder mouseOwner=new Binder();
     private volatile int mouseDisplay=-1;
     private volatile boolean screenOff;
@@ -56,14 +77,16 @@ public final class Bridge {
     private final ServiceConnection connection = new ServiceConnection() {
         @Override public void onServiceConnected(ComponentName name, IBinder binder) {
             service = IDesktopBridge.Stub.asInterface(binder); binding = false; error = "";
-            call(s -> "OK", (result, failure) -> {}); changed();
+            call(s -> "OK", (result, failure) -> {});startShortcut(); changed();
         }
         @Override public void onServiceDisconnected(ComponentName name) { service = null; screenOff=false; binding = false; changed(); }
     };
     private Bridge(Context context) {
         this.context=context;
+        if(Build.VERSION.SDK_INT>=33)context.registerReceiver(homeRoleChanged,new IntentFilter("android.intent.action.ACTION_PREFERRED_ACTIVITY_CHANGED"),Context.RECEIVER_NOT_EXPORTED);
+        else context.registerReceiver(homeRoleChanged,new IntentFilter("android.intent.action.ACTION_PREFERRED_ACTIVITY_CHANGED"));
         args = new Shizuku.UserServiceArgs(new ComponentName(context, DesktopBridgeService.class))
-                .daemon(false).processNameSuffix("desktop_bridge").debuggable(false).version(33);
+                .daemon(false).processNameSuffix("desktop_bridge").debuggable(false).version(38);
         Shizuku.addBinderReceivedListenerSticky(this::connect);
         Shizuku.addBinderDeadListener(() -> { service = null; screenOff=false; binding = false; changed(); });
         Shizuku.addRequestPermissionResultListener((code, result) -> { if (result == PackageManager.PERMISSION_GRANTED) connect(); changed(); });
@@ -126,8 +149,11 @@ public final class Bridge {
                 ShellSettings.Snapshot settings=ShellSettings.of(context).snapshot();
                 current.setPrimaryMode(settings.primaryMode&&ShellRuntime.enabled(context));
                 if (maintenance) {
+                try{current.syncExternalDisplayPolicy(ShellRuntime.enabled(context),mouseOwner);}
+                catch(Exception ignored){/* Input cleanup remains independent of policy restoration. */}
                 // Input restoration must not be gated by an unrelated pin cleanup failure.
                 String routing;
+                // The service retains this desired target and gates restoration/routing itself.
                 try{routing=current.syncMouseRouting(shellHasExternalWorkspace(settings)?mouseDisplay:-1,mouseOwner);}
                 catch(Exception e){routing="unavailable: "+e.getClass().getSimpleName();}
                 if(!java.util.Objects.equals(mouseStatus,routing)){

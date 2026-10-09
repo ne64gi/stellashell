@@ -11,7 +11,7 @@
     <string name="sidebar_settings_show">Show sidebar</string>
     <string name="sidebar_settings_call_side">Open from</string>
     <string name="sidebar_settings_edge">Edge</string>
-    <string name="sidebar_settings_edge_note">Choosing an edge moves the sidebar there. Use either slider to adjust its position, including inward from the edge.</string>
+    <string name="sidebar_settings_edge_note">Choosing an edge moves the Dock there. Use either slider to adjust its position, including inward from the edge.</string>
     <string name="sidebar_settings_horizontal">Position (horizontal)</string>
     <string name="sidebar_settings_vertical">Position (vertical)</string>
     <string name="sidebar_settings_both">Both sides</string>
@@ -41,4 +41,19 @@
     <string name="setup_desktop_stop">Stop desktop</string>
     <string name="setup_displays_note">Manage connected screens</string>
     <string name="setup_screen_numbered">%1$s · %2$d</string>
+    <string name="sidebar_settings_portrait">Portrait</string>
+    <string name="sidebar_settings_landscape">Landscape</string>
+    <string name="sidebar_settings_landscape_note">One handle on the selected edge. Move the slider to position it along that edge.</string>
+    <string name="sidebar_settings_by_handle">Show Dock from a handle</string>
+    <string name="sidebar_settings_handle_note">The Dock stays hidden until you open it from the handle. The selected edge and slider control the handle position.</string>
+    <string name="sidebar_settings_pull_note">Pull the handle inward and release to open the Dock. Move back before releasing to close it. Swipe mode has a wider touch area to make the handle easier to catch.</string>
+    <string name="dock_handle_open">Pull inward to open Dock</string>
+    <string name="sidebar_settings_open_method">Open with</string>
+    <string name="sidebar_settings_single_tap">Single tap</string>
+    <string name="sidebar_settings_double_tap">Double tap</string>
+    <string name="sidebar_settings_swipe">Swipe</string>
+    <string name="sidebar_settings_single_tap_note">Tap the handle once to open the Dock.</string>
+    <string name="sidebar_settings_double_tap_note">Tap the handle twice in quick succession to open the Dock. A single tap does not open it.</string>
+    <string name="dock_handle_single_tap">Tap to open Dock</string>
+    <string name="dock_handle_double_tap">Double-tap to open Dock</string>
 </resources>

@@ -1,6 +1,7 @@
 package net.fuyumori.stellashell;
 
 import android.content.Context;
+import android.content.res.Configuration;
 import android.graphics.PixelFormat;
 import android.hardware.display.DisplayManager;
 import android.os.Handler;
@@ -20,7 +21,14 @@ final class WorkAreaObserver implements AutoCloseable {
     };
     WorkAreaObserver(Context context,int display,Runnable changed){
         this.context=context;this.display=display;this.changed=changed;windows=context.getSystemService(WindowManager.class);displays=context.getSystemService(DisplayManager.class);
-        probe=new View(context);probe.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        probe=new View(context){
+            @Override protected void onConfigurationChanged(Configuration configuration){
+                super.onConfigurationChanged(configuration);
+                // Display notifications can precede this window context's rotation update.
+                // Read again once the attached window has received its new configuration.
+                refresh();
+            }
+        };probe.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         probe.setOnApplyWindowInsetsListener((v,insets)->{
             refresh();
             return insets;

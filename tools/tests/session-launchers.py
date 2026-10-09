@@ -46,6 +46,7 @@ with tempfile.TemporaryDirectory(prefix='stella launcher tests ') as folder:
     shutil.copy(root/'tools/windows/start-stellashell.ps1', temp)
     config = json.loads((root/'tools/windows/stellashell.example.json').read_text())
     config['scrcpy']['rightAltAsMeta'] = False
+    config['scrcpy']['windowsKeyAsMeta'] = False
     (temp/'stellashell.example.json').write_text(json.dumps(config))
     env = dict(os.environ, ADB=str(temp/'adb'), SCRCPY=str(temp/'scrcpy'), MOCK_LOG=str(log))
 
@@ -73,6 +74,7 @@ with tempfile.TemporaryDirectory(prefix='stella launcher tests ') as folder:
         if success:
             assert launches[0][:2] == ['-s', '192.168.1.10:37123'], launches
             assert '--no-vd-destroy-content' in launches[0]
+            assert launches[0].count('--shortcut-mod=lalt') == 1
         assert not any('tcpip' in args or 'kill-server' in args for _,args in calls)
         assert any(args[0]=='pair' for _,args in calls) == paired
         assert '123456' not in log.read_text()

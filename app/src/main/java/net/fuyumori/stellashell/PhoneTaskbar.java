@@ -46,7 +46,7 @@ final class PhoneTaskbar implements AutoCloseable {
     void refreshArea(){if(!closed){if(observer!=null)observer.refresh();relayout();}}
     private void build(){
         row=new LinearLayout(context);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(6),dp(4),dp(6),dp(4));
-        ImageButton start=new ImageButton(context);start.setImageResource(R.mipmap.ic_launcher);start.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        ImageButton start=new ImageButton(context);start.setImageDrawable(AppIcons.stella(context));start.setScaleType(ImageView.ScaleType.FIT_CENTER);
         start.setBackground(Ui.toolbarBackground(context,12));start.setPadding(dp(7),dp(4),dp(7),dp(4));start.setContentDescription(context.getString(R.string.ui_app_menu));start.setTooltipText(context.getString(R.string.start_menu_label));
         start.setOnTouchListener((v,e)->{if(e.getActionMasked()==MotionEvent.ACTION_DOWN)startDownTime=e.getDownTime();return false;});start.setOnClickListener(v->toggleStart());item(start,56);
         backButton=action("‹",R.string.external_back,this::back,44);
@@ -55,7 +55,6 @@ final class PhoneTaskbar implements AutoCloseable {
         activeTasks=new LinearLayout(context);activeTasks.setGravity(Gravity.CENTER_VERTICAL);row.addView(activeTasks,new LinearLayout.LayoutParams(-2,dp(44)));renderRunning();
         action("▣",R.string.screenshot_take,()->{menu.close();DesktopScreenshot.take(context,0);},44);
         battery=Ui.text(context,"",13,Ui.TEXT);battery.setTextSize(13*factor());battery.setGravity(Gravity.CENTER);battery.setBackground(Ui.toolbarBackground(context,12));battery.setOnClickListener(v->{menu.close();QuickSettingsActivity.open(context,0);});item(battery,76);updateBattery();
-        action("⚙",R.string.menu_stella_settings,()->Launches.settings(context,0),44);
         TextClock clock=new TextClock(context);clock.setBackground(Ui.toolbarBackground(context,12));clock.setTypeface(Appearance.face);clock.setFormat24Hour("HH:mm");clock.setFormat12Hour("HH:mm");clock.setTextColor(Ui.TEXT);clock.setTextSize(16*factor());clock.setGravity(Gravity.CENTER);clock.setContentDescription(context.getString(R.string.hub_title));clock.setTooltipText(context.getString(R.string.hub_title));clock.setOnClickListener(v->{menu.close();HubActivity.open(context,0);});item(clock,58);
         panel=new HorizontalScrollView(context);panel.setFillViewport(true);panel.setBackground(Appearance.surface(context,18));panel.setClipToOutline(true);panel.addView(row,new FrameLayout.LayoutParams(-2,-1));
         WindowManager.LayoutParams p=new WindowManager.LayoutParams(1,1,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -100,7 +99,7 @@ final class PhoneTaskbar implements AutoCloseable {
             if("unpin".equals(action)){if(pin!=null&&Launches.taskbarPins(context).contains(pin))Launches.toggleTaskbarPin(context,pin);return;}
             android.graphics.Rect bounds="float".equals(action)?PhoneTaskMenu.floatingBounds(area.get().content):new android.graphics.Rect();
             running.operation(task,action,bounds,running::refresh,error->Launches.problem(context,error));
-        });
+        },pin==null?task.component:pin,()->{});
     }
     private void updateBattery(){
         if(battery==null)return;String label=batteryPercent<0?context.getString(R.string.battery_unknown):context.getString(R.string.battery_percent,batteryPercent);

@@ -15,6 +15,7 @@
   "scrcpy": {
     "keyboard": "uhid",
     "rightAltAsMeta": true,
+    "windowsKeyAsMeta": true,
     "imePolicy": "local",
     "systemDecorations": false,
     "fullscreen": true
