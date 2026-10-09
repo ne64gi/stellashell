@@ -201,23 +201,32 @@ final class AttachedDockRevealChecks {
                 dock=new PhoneSidebar(sandbox,()->{},new Feed(),()->geometry[0]);
                 View panel=(View)get(dock,"panel");LinearLayout entries=(LinearLayout)get(dock,"entries");
                 check(entries.getOrientation()==LinearLayout.VERTICAL,"Gesture Dock must be vertical");
-                for(boolean right:new boolean[]{true,false}){
-                    dock.showGesture(right?.9f:.1f,.55f,right);
+                for(float anchor:new float[]{.1f,.5f,.9f})for(boolean right:new boolean[]{true,false}){
+                    dock.showGesture(anchor,.55f,right);
                     check(panel.getVisibility()==View.VISIBLE&&measured.dockAvailable.contains(rect(panel)),"Gesture Dock escaped work area");
                     check(entries.getLayoutDirection()==View.LAYOUT_DIRECTION_LTR,"Vertical item order changed with gesture direction");
                     Rect initial=rect(panel);dock.showGesture(.5f,.2f,!right);check(initial.equals(rect(panel)),"Open Dock moved under a second gesture");
+                    boolean fromRight=initial.exactCenterX()>=measured.physical.exactCenterX();
+                    check((Boolean)get(dock,"right")==fromRight,"Widget pull side follows stroke instead of clamped Dock position");
                     View scroll=(View)get(dock,"strip");long start=SystemClock.uptimeMillis();
                     sandbox.captureWidgetPull=true;sandbox.capturedPull=null;
                     touch(scroll,"top",MotionEvent.ACTION_DOWN,0,start);
                     touch(scroll,"top",MotionEvent.ACTION_MOVE,Ui.dp(scroll.getContext(),60),start);
                     touch(scroll,"top",MotionEvent.ACTION_CANCEL,Ui.dp(scroll.getContext(),60),start);
                     check(sandbox.capturedPull==null,"Vertical scroll opened Widgets");
-                    String inward=right?"left":"right";
+                    String outward=fromRight?"left":"right";
+                    touch(scroll,outward,MotionEvent.ACTION_DOWN,0,start+50);
+                    touch(scroll,outward,MotionEvent.ACTION_MOVE,Ui.dp(scroll.getContext(),60),start+50);
+                    touch(scroll,outward,MotionEvent.ACTION_CANCEL,Ui.dp(scroll.getContext(),60),start+50);
+                    check(sandbox.capturedPull==null,"Outward pull opened Widgets");
+                    String inward=fromRight?"right":"left";
                     touch(scroll,inward,MotionEvent.ACTION_DOWN,0,start+100);
                     touch(scroll,inward,MotionEvent.ACTION_MOVE,Ui.dp(scroll.getContext(),60),start+100);
                     HubActivity.SidebarDrag pull=(HubActivity.SidebarDrag)get(dock,"drag");
                     check(sandbox.capturedPull!=null&&pull!=null,"Floating Dock did not pull Widgets");
-                    check(pull.origin!=null&&Math.abs(pull.origin-(right?initial.left:initial.right))<1,"Widget pull jumped from floating Dock to screen edge");
+                    check(pull.right==fromRight&&pull.origin!=null&&Math.abs(pull.origin-(fromRight?initial.right:initial.left))<1,"Widget pull jumped from floating Dock or used the wrong side");
+                    pull.leading.accept(fromRight?measured.physical.left+1f:measured.physical.right-1f);
+                    check((Boolean)get(dock,"right")==fromRight,"Widget pull reversed while crossing the screen center");
                     touch(scroll,inward,MotionEvent.ACTION_UP,Ui.dp(scroll.getContext(),60),start+100);
                     check(pull.commit,"Floating Widget pull did not commit");pull.complete();sandbox.captureWidgetPull=false;
                     dock.hide();check(panel.getVisibility()==View.GONE,"Gesture Dock did not close");
