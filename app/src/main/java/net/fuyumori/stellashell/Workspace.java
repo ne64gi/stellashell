@@ -139,40 +139,49 @@ final class Workspace {
         throw new IllegalStateException("Transferred task is no longer available: "+id);
     }
     void transfer(Context c,java.util.function.IntSupplier currentSource,java.util.function.BooleanSupplier permitted,
-            int destination,java.util.function.IntConsumer commitTarget,Runnable done){
-        operations.enqueueTransfer(currentSource,permitted,source->transferNow(c,source,destination,commitTarget,done),done);
+            java.util.function.BooleanSupplier lifetime,int destination,java.util.function.IntConsumer commitTarget,Runnable done){
+        operations.enqueueTransfer(currentSource,()->permitted.getAsBoolean()&&lifetime.getAsBoolean(),source->transferNow(c,source,lifetime,destination,commitTarget,done),done);
     }
-    private void transferNow(Context c,int source,int destination,java.util.function.IntConsumer commitTarget,Runnable done){
+    private void transferNow(Context c,int source,java.util.function.BooleanSupplier lifetime,int destination,java.util.function.IntConsumer commitTarget,Runnable done){
+        if(!lifetime.getAsBoolean()){done.run();return;}
         if(source<0){done.run();return;}
         if(source==destination&&recoveryDisplays.isEmpty()){done.run();return;}
         if(!Displays.allIds(c).contains(destination)){done.run();return;}
-        if(owned.isEmpty()){commitTarget.accept(destination);done.run();return;}
+        if(owned.isEmpty()){if(lifetime.getAsBoolean())commitTarget.accept(destination);done.run();return;}
         long ticket=operations.begin();Map<Integer,String> identities=new LinkedHashMap<>(owned);
         Map<Integer,Rect> savedBounds=new HashMap<>(phoneBounds);
         Set<Integer> sources=new LinkedHashSet<>();sources.add(source);sources.addAll(recoveryDisplays);sources.remove(destination);
         int mainTask=primary;
+        Runnable retainRecovery=()->{
+            recoveryDisplays.add(destination);recoveryDisplays.addAll(sources);recoveryDisplays.add(0);
+            phoneBounds.clear();phoneBounds.putAll(savedBounds);
+        };
         Bridge.get(c).call(s->{
-            operations.requireCurrent(ticket);
+            operations.requireCurrent(ticket,lifetime);
             List<Integer> attempted=new ArrayList<>();Map<Integer,JSONObject> original=new HashMap<>();Map<Integer,Integer> origins=new HashMap<>();
             try{
                 for(int from:sources)if(Displays.allIds(c).contains(from)){
+                    operations.requireCurrent(ticket,lifetime);
                     JSONArray rows=new JSONObject(s.taskSnapshot(from)).getJSONArray("tasks");
                     for(int i=0;i<rows.length();i++){
-                        operations.requireCurrent(ticket);
+                        operations.requireCurrent(ticket,lifetime);
                         JSONObject row=rows.getJSONObject(i);int id=row.getInt("id");String component=identities.get(id);
                         if(component==null||!component.equals(row.getString("component")))continue;
-                        original.put(id,row);origins.put(id,from);if(from==0)savedBounds.put(id,new Rect(row.getInt("left"),row.getInt("top"),row.getInt("right"),row.getInt("bottom")));attempted.add(id);check(s.moveWorkspaceTask(from,destination,id,component));
+                        original.put(id,row);origins.put(id,from);if(from==0)savedBounds.put(id,new Rect(row.getInt("left"),row.getInt("top"),row.getInt("right"),row.getInt("bottom")));attempted.add(id);
+                        operations.requireCurrent(ticket,lifetime);check(s.moveWorkspaceTask(from,destination,id,component));
                     }
                 }
                 // On unplug Android may already have moved tasks to display 0. Never recreate missing ones.
+                operations.requireCurrent(ticket,lifetime);
                 WorkArea area=WorkArea.get(c,destination);area.sync(s,destination);
+                operations.requireCurrent(ticket,lifetime);
                 JSONArray rows=new JSONObject(s.taskSnapshot(destination)).getJSONArray("tasks");
                 for(int i=0;i<rows.length();i++){
-                    operations.requireCurrent(ticket);
+                    operations.requireCurrent(ticket,lifetime);
                     JSONObject row=rows.getJSONObject(i);int id=row.getInt("id");
                     if(!row.getString("component").equals(identities.get(id)))continue;
                     Rect b=area.clamp(destination==0&&savedBounds.containsKey(id)?savedBounds.get(id):new Rect(row.getInt("left"),row.getInt("top"),row.getInt("right"),row.getInt("bottom")));
-                    check(s.checkedTaskOperation(destination,id,identities.get(id),"bounds",b.left,b.top,b.right,b.bottom));
+                    operations.requireCurrent(ticket,lifetime);check(s.checkedTaskOperation(destination,id,identities.get(id),"bounds",b.left,b.top,b.right,b.bottom));
                 }
                 JSONArray show=new JSONArray();
                 if(mainTask>=0&&identities.containsKey(mainTask))show.put(new JSONObject().put("id",mainTask).put("component",identities.get(mainTask)));
@@ -181,41 +190,54 @@ final class Workspace {
                     JSONObject previous=original.get(id);
                     if(id!=mainTask&&row.getString("component").equals(identities.get(id))&&(previous==null?row.optBoolean("visible"):previous.optBoolean("visible")))show.put(new JSONObject().put("id",id).put("component",identities.get(id)));
                 }
-                return show.toString();
+                operations.requireCurrent(ticket,lifetime);return show.toString();
             }catch(Exception failure){
+                // Revocation cannot dispatch more task moves as rollback. Keep
+                // exact identities and recovery displays in the completion below.
+                if(!operations.current(ticket,lifetime))throw failure;
                 throw WorkspaceOperations.rollback(attempted,id->{
+                    operations.requireCurrent(ticket,lifetime);
                     int originalDisplay=origins.get(id),origin=Displays.allIds(c).contains(originalDisplay)?originalDisplay:0;
                     int actual=locate(c,s,id,identities.get(id),destination);
+                    operations.requireCurrent(ticket,lifetime);
                     if(actual!=origin)check(s.moveWorkspaceTask(actual,origin,id,identities.get(id)));
+                    operations.requireCurrent(ticket,lifetime);
                     WorkArea area=WorkArea.get(c,origin);area.sync(s,origin);JSONObject r=original.get(id);
                     Rect restore=origin!=originalDisplay&&savedBounds.containsKey(id)?savedBounds.get(id):new Rect(r.getInt("left"),r.getInt("top"),r.getInt("right"),r.getInt("bottom"));
-                    restore=area.clamp(restore);check(s.checkedTaskOperation(origin,id,identities.get(id),"bounds",restore.left,restore.top,restore.right,restore.bottom));
+                    restore=area.clamp(restore);operations.requireCurrent(ticket,lifetime);check(s.checkedTaskOperation(origin,id,identities.get(id),"bounds",restore.left,restore.top,restore.right,restore.bottom));
                 },failure);
             }
         },(result,error)->{
             if(!operations.current(ticket))return;
+            if(!operations.current(ticket,lifetime)){
+                retainRecovery.run();operations.release(ticket);try{done.run();}finally{operations.drain();}return;
+            }
             if(error!=null){
                 // A vanished source can make rollback impossible. The next
                 // handoff must also search this destination for our identities.
-                recoveryDisplays.add(destination);recoveryDisplays.addAll(sources);recoveryDisplays.add(0);
-                phoneBounds.clear();phoneBounds.putAll(savedBounds);
-                if(!Displays.allIds(c).contains(source))commitTarget.accept(0);
+                retainRecovery.run();
+                if(lifetime.getAsBoolean()&&!Displays.allIds(c).contains(source))commitTarget.accept(0);
                 operations.release(ticket);try{Launches.problem(c,error);done.run();}finally{operations.drain();}return;
             }
             recoveryDisplays.clear();
             phoneBounds.clear();phoneBounds.putAll(savedBounds);
+            if(!lifetime.getAsBoolean()){
+                retainRecovery.run();operations.release(ticket);try{done.run();}finally{operations.drain();}return;
+            }
             commitTarget.accept(destination);
             Bridge.get(c).call(s->{
-                operations.requireCurrent(ticket);
+                operations.requireCurrent(ticket,lifetime);
                 JSONArray show=new JSONArray(result);
                 for(int i=0;i<show.length();i++){
                     JSONObject task=show.getJSONObject(i);
+                    operations.requireCurrent(ticket,lifetime);
                     check(s.checkedTaskOperation(destination,task.getInt("id"),task.getString("component"),"focus",0,0,0,0));
                 }
-                return "OK";
+                operations.requireCurrent(ticket,lifetime);return "OK";
             },(focusResult,focusError)->{
                 if(!operations.release(ticket))return;
                 try{
+                    if(!lifetime.getAsBoolean()){retainRecovery.run();done.run();return;}
                     if(focusError!=null)Launches.problem(c,focusError);
                     else if(destination==0&&primary>=0&&!WorkspaceProfile.standard(c,0)){
                         String identity=owned.get(primary);

@@ -126,7 +126,7 @@ final class DesktopBackdropLease {
     }
     private void releaseChecked(IBinder owner) throws Exception {
         Client client=clients.remove(owner); if (client==null) return;
-        client.owner.unlinkToDeath(client.death,0);
+        try{client.owner.unlinkToDeath(client.death,0);}catch(RuntimeException ignored){}
         try { update(client.state); } catch (Exception error) { retry(client.state); throw error; }
     }
     private void retry(State state) {
@@ -147,5 +147,13 @@ final class DesktopBackdropLease {
         }
         if (states.isEmpty() && retryThread!=null) { retryThread.quitSafely(); retryThread=null; retryHandler=null; }
     }
-    synchronized void close() { for (IBinder owner:new ArrayList<>(clients.keySet())) release(owner); }
+    synchronized void close() { releaseSession(); }
+    synchronized boolean releaseSession() {
+        for (IBinder owner:new ArrayList<>(clients.keySet())) release(owner);
+        // Also retry orphaned exact-token debt from an earlier close/death.
+        for (State state:new ArrayList<>(states.values())) {
+            try { update(state); } catch (Exception error) { retry(state); }
+        }
+        return clients.isEmpty()&&states.isEmpty();
+    }
 }

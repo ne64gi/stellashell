@@ -59,6 +59,11 @@ final class WorkArea {
         return read(dc,dc.getSystemService(WindowManager.class).getCurrentWindowMetrics().getWindowInsets());
     }
     static synchronized void put(int id,WorkArea area){areas.put(id,area);}
+    /** Publish geometry once per actual change, including the first observation. */
+    static synchronized boolean update(int id,WorkArea area){
+        if(area.same(areas.get(id)))return false;
+        areas.put(id,area);return true;
+    }
     static synchronized void remove(int id){areas.remove(id);}
     Rect clamp(Rect b){return clamp(b,content);}
     static Rect clamp(Rect b,Rect area){

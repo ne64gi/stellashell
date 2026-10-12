@@ -69,6 +69,8 @@ final class ShellSettings implements AutoCloseable {
         PHONE_DOCK_SCALE,
         PHONE_DOCK_LANDSCAPE_EDGE,
         PHONE_DOCK_LANDSCAPE_POSITION,
+        PHONE_DOCK_LANDSCAPE_GESTURE,
+        PHONE_DOCK_LANDSCAPE_OPEN_METHOD,
         EXTERNAL_DOCK_ENABLED,
         EXTERNAL_DOCK_OPEN_METHOD,
         EXTERNAL_DOCK_EDGE,
@@ -85,14 +87,18 @@ final class ShellSettings implements AutoCloseable {
         PREFERRED_DISPLAY
     }
 
-    /** One reveal handle, placed along the selected edge independently of portrait preferences. */
+    /** Landscape reveal mode and handle preferences, independent of portrait preferences. */
     static final class DockTrigger {
         final DockEdge edge;
         final int positionPercent;
+        final boolean gesture;
+        final Method openMethod;
 
-        private DockTrigger(DockEdge edge, int positionPercent) {
+        private DockTrigger(DockEdge edge, int positionPercent, boolean gesture, Method openMethod) {
             this.edge = edge;
             this.positionPercent = positionPercent;
+            this.gesture = gesture;
+            this.openMethod = openMethod;
         }
     }
 
@@ -230,7 +236,9 @@ final class ShellSettings implements AutoCloseable {
                         50, 100, NavigationScale.percent(preferences.getInt("phone_dock_scale", NavigationScale.DEFAULT)), true,
                         Method.parse(preferences.getString("phone_dock_open_method", "swipe"))),
                 new DockTrigger(DockEdge.from(preferences.getString("phone_dock_landscape_edge", "bottom")),
-                        percentRange(preferences.getInt("phone_dock_landscape_position", 50), 0, 100)),
+                        percentRange(preferences.getInt("phone_dock_landscape_position", 50), 0, 100),
+                        preferences.getBoolean("phone_dock_landscape_gesture", false),
+                        Method.parse(preferences.getString("phone_dock_landscape_open_method", "swipe"))),
                 new Dock(preferences.getBoolean("desktop_dock", false), false, PhoneSide.BOTH,
                         DockEdge.from(preferences.getString("dock_edge", "bottom")), 80,
                         percentRange(preferences.getInt("dock_x", 50), 0, 100),
@@ -292,6 +300,15 @@ final class ShellSettings implements AutoCloseable {
     void setPhoneLandscapeDockEdge(DockEdge edge) {
         if (edge == null) throw new IllegalArgumentException("Phone landscape Dock edge is required");
         write(e -> e.putString("phone_dock_landscape_edge", edge.value));
+    }
+
+    void setPhoneLandscapeDockGesture(boolean gesture) {
+        write(e -> e.putBoolean("phone_dock_landscape_gesture", gesture));
+    }
+
+    void setPhoneLandscapeDockOpenMethod(Method method) {
+        if (method == null) throw new IllegalArgumentException("Phone landscape Dock opening method is required");
+        write(e -> e.putString("phone_dock_landscape_open_method", method.storedValue()));
     }
 
     void setPhoneLandscapeDockPosition(int percent) {
@@ -423,6 +440,8 @@ final class ShellSettings implements AutoCloseable {
             case "phone_dock_scale": return Change.PHONE_DOCK_SCALE;
             case "phone_dock_landscape_edge": return Change.PHONE_DOCK_LANDSCAPE_EDGE;
             case "phone_dock_landscape_position": return Change.PHONE_DOCK_LANDSCAPE_POSITION;
+            case "phone_dock_landscape_gesture": return Change.PHONE_DOCK_LANDSCAPE_GESTURE;
+            case "phone_dock_landscape_open_method": return Change.PHONE_DOCK_LANDSCAPE_OPEN_METHOD;
             case "desktop_dock": return Change.EXTERNAL_DOCK_ENABLED;
             case "dock_edge": return Change.EXTERNAL_DOCK_EDGE;
             case "dock_x":

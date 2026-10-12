@@ -67,8 +67,10 @@ final class TaskChangeMonitor implements AutoCloseable {
             clients.put(binder, client);
             try {
                 if (!registered) {
-                    register.invoke(manager, frameworkListener);
+                    // Registration may apply before a failed reply. Retain the
+                    // exact listener identity until unregister succeeds.
                     registered = true;
+                    register.invoke(manager, frameworkListener);
                 }
             } catch (ReflectiveOperationException failure) {
                 remove(listener);
@@ -81,7 +83,7 @@ final class TaskChangeMonitor implements AutoCloseable {
     synchronized void remove(ITaskChangeListener listener) {
         if (listener == null) return;
         Client client = clients.remove(listener.asBinder());
-        if (client != null) client.listener.asBinder().unlinkToDeath(client, 0);
+        if (client != null) try{client.listener.asBinder().unlinkToDeath(client, 0);}catch(RuntimeException ignored){}
         if (clients.isEmpty() && registered) {
             try { unregister.invoke(manager, frameworkListener); registered = false; }
             catch (ReflectiveOperationException ignored) {
@@ -107,6 +109,7 @@ final class TaskChangeMonitor implements AutoCloseable {
             catch (ReflectiveOperationException ignored) {}
         }
     }
+    synchronized boolean releaseSession(){close();return clients.isEmpty()&&!registered;}
 
     private final class Client implements IBinder.DeathRecipient {
         final ITaskChangeListener listener;

@@ -118,16 +118,25 @@ final class ShellRuntime {
     }
     static void start(Context c,int target){start(c,target,true);}
     static void start(Context c,int target,boolean showHome){
+        if(!PowerMode.of(c).active()){startBase(c,showHome);return;}
         if(!Settings.canDrawOverlays(c)){Ui.message(c,c.getString(R.string.ui_allow_the_taskbar_overlay_first));return;}
         ShellSettings.of(c).setPreferredDisplay(target);enableHome(c,true);enabled(c,true);
         try{c.startForegroundService(new Intent(c,DockService.class).putExtra("show_home",showHome));}
         catch(RuntimeException e){enabled(c,false);enableHome(c,false);Launches.problem(c,e.getMessage());}
     }
+    /** Starts normal navigation without changing any saved power/workspace output selection. */
+    static void startBase(Context c,boolean showHome){
+        if(!Settings.canDrawOverlays(c)){Ui.message(c,c.getString(R.string.ui_allow_the_taskbar_overlay_first));return;}
+        enableHome(c,false);enabled(c,true);
+        try{c.startForegroundService(new Intent(c,DockService.class).putExtra("show_home",showHome));}
+        catch(RuntimeException e){enabled(c,false);enableHome(c,false);Launches.problem(c,e.getMessage());}
+    }
     static void handoff(Context c,int display){
-        if(!TaskState.of(c).enabled(c)||!enabled(c))return;
+        if(!PowerMode.of(c).active()||!TaskState.of(c).enabled(c)||!enabled(c))return;
         c.startService(new Intent(c,DockService.class).setAction(HANDOFF).putExtra("destination",display));
     }
     static void resetConnection(Context c){
+        if(!PowerMode.of(c).active())return;
         if(!enabled(c)){ShellSettings.of(c).clearPreferredDisplay();return;}
         try{c.startService(new Intent(c,DockService.class).setAction(RESET));}
         catch(RuntimeException e){Launches.problem(c,e.getMessage());}
@@ -135,8 +144,10 @@ final class ShellRuntime {
     static void stop(Context c){stop(c,true);}
     static void stop(Context c,boolean showHome){
         boolean returnHome=showHome&&Displays.primaryActive(c);enabled(c,false);
-        Bridge.get(c).mouseDisplay(-1);
-        Bridge.get(c).call(s->{s.setPrimaryMode(false);return "OK";},(result,error)->{});
+        if(PowerMode.of(c).active()){
+            Bridge.get(c).mouseDisplay(-1);
+            Bridge.get(c).call(s->{s.setPrimaryMode(false);return "OK";},(result,error)->{});
+        }
         if(returnHome)try{c.startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),ActivityOptions.makeBasic().setLaunchDisplayId(0).toBundle());}
         catch(RuntimeException e){Launches.problem(c,e.getMessage());}
         c.stopService(new Intent(c,DockService.class));enableHome(c,false);TaskState.of(c).reset(c);

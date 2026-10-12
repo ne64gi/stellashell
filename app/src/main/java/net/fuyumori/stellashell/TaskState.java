@@ -202,17 +202,21 @@ final class TaskState {
         role(source, task, displayId, promote, () -> {});
     }
     void transfer(Context source, int destination, Runnable done) {
-        if (!enabled(source)) { done.run(); return; }
-        workspace.transfer(source, () -> target(source), () -> enabled(source),
+        PowerMode power=PowerMode.of(source);long generation=power.generation();
+        BooleanSupplier lifetime=()->power.active()&&power.permits(generation);
+        if (!enabled(source)||!lifetime.getAsBoolean()) { done.run(); return; }
+        workspace.transfer(source, () -> target(source), () -> enabled(source)&&lifetime.getAsBoolean(),lifetime,
                 destination, this::persistTarget, done);
     }
     /** A delayed loss recovery cannot redirect a newer session or a newly selected live output. */
     void recoverDisconnectedOutput(Context source, int removedTarget, long expectedSession,
             BooleanSupplier permitted, Runnable done) {
+        PowerMode power=PowerMode.of(source);long generation=power.generation();
+        BooleanSupplier lifetime=()->power.active()&&power.permits(generation);
         workspace.transfer(source, () -> target(source),
-                () -> currentSession(expectedSession) && enabled(source) && target(source) == removedTarget
+                () -> lifetime.getAsBoolean() && currentSession(expectedSession) && enabled(source) && target(source) == removedTarget
                         && !Displays.ids(source).contains(removedTarget) && permitted.getAsBoolean(),
-                0, this::persistTarget, done);
+                lifetime,0, this::persistTarget, done);
     }
 
     /** Minimizes only exact live identities from this same pre-operation snapshot. */

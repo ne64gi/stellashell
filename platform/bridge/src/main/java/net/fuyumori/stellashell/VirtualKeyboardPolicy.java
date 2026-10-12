@@ -51,11 +51,15 @@ final class VirtualKeyboardPolicy {
         if(target>=0)try{
             Display display=context.getSystemService(DisplayManager.class).getDisplay(target);
             // Never touch a reused ID or overwrite a subsequent policy from another owner.
-            if(display!=null && display.isValid() && identity.equals(unique.invoke(display)) && (Integer)get.invoke(service,target)==HIDE)
+            if(display!=null && display.isValid() && identity.equals(unique.invoke(display)) && (Integer)get.invoke(service,target)==HIDE){
                 set.invoke(service,target,before);
+                // A successful Binder reply does not prove the OEM applied it.
+                if((Integer)get.invoke(service,target)!=before)return;
+            }
             target=-1;identity=null;
         }catch(Exception e){return;}
         if(owner!=null&&death!=null)try{owner.unlinkToDeath(death,0);}catch(RuntimeException ignored){}
         owner=null;death=null;
     }
+    synchronized boolean releaseSession(){release();return target<0;}
 }

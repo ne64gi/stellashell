@@ -13,6 +13,9 @@
 | 起動route・起動順序 | coreの`AppLaunchDecision` / `SerialLaunchQueue` | 不変request/facts、scheduler・busy・actionを渡す。完了はそのjobのtokenのみで通知する |
 | Android / Bridge起動とTaskStateへの配線 | `ShellLaunchExecutor` / `ShellLaunchCoordinator` | UIは`Launches`の互換窓口を使う。TaskState/profile保存の正本を複製しない |
 | Dock / Taskbar / 表示形式 / Workspaceの構成・次回出力選好 | `ShellSettings` | 不変の設定snapshotを読む。型付きsetterで変更し、型付きChange通知を購読・解除する |
+| 拡張機能のON/OFF・終了処理の保存状態 | `PowerMode` / core `PowerSession` | 可用性を購読し、明示ON/OFF・再試行を送る。Shizuku接続だけでOFFをONに変更しない |
+| Shizuku接続・許可・Binder世代 | platform `ShizukuConnection` | appの`Bridge`だけがadapterとして利用。SDKからapp保存設定・UIを操作しない |
+| 特権セッションの終了 | `DesktopBridgeService.releasePowerSession` / core `PowerSessionRelease` | 全ownerの解放を試みる。失敗した復元記録を捨てず、正常終了前にserverをkillしない |
 | 実行中・実際の選択出力・phone navigationの準備状態 | `ShellRuntime`の世代付きregistry | snapshotを読む。開始・停止・Start要求などのcommandを送る。ServiceやViewを取得しない |
 | HOMEの可視状態 | `ShellRuntime.HomeVisibilityLease` | Activityごとのleaseを表示・非表示・closeする。複数Activityの可視状態を一つのbooleanで上書きしない |
 | 選択出力の寿命と切替 | `ShellController` | Androidイベントを渡す。設定やタスクの内部状態を直接変更しない |
@@ -25,6 +28,10 @@
 | アプリ別の次回起動設定と観測済みbounds | `core.launch.LaunchProfileOwner` | 不変snapshotを読み、項目別commandで更新する。Android保存は`LaunchProfilePreferencesStore`、JSON互換は`LaunchProfileCodec`が担当 |
 
 `DockService`はforeground通知とAndroid lifecycleの入口。設定、View、タスク一覧、staticなService実体を持たない。
+
+`QuickSettingsEvents`はクイック設定の表示中だけ、ネットワーク・音量・接続・出力の変更通知を購読する。更新対象をまとめて必要な項目だけ再取得し、pause/破棄で購読と保留更新を解除する。旧世代の通知で再開後の画面を更新しない。周期的な取得や失敗時の自動再試行タイマーは持たない。外部で変更された音量は公開Settings通知に依存するため、端末によって反映が遅れる場合がある。画面内の音量キー・スライダーと再表示では直接再取得する。
+
+`WorkArea.update`は表示先ごとの領域を、初回または実際に変わったときだけ差し替える。`WorkAreaObserver`は回転・insets通知を引き続き読むが、領域を診断用のSharedPreferencesへ常時保存しない。無変更の領域通知は再配置へ伝えない。画面通知自体の削減・監視窓の共有は別の変更として扱う。
 
 ## 保存値と実行状態
 
@@ -42,7 +49,7 @@ Web検索は独立した`web_search`保存領域で、本体／外部共通・�
 
 検索と検索設定の画面検証は`Displays.requireUiTarget`を使う。本体の通常操作はDesktopの稼働・選択モードに依存しない。切断・不明・privateな出力は拒否し、本体へ自動転送しない。タスク操作用`Displays.require`のworkspace制約は別に維持する。
 
-起動queueは既存のprocess-wide main-loop順序を維持する。waiting/activeを含むpending判定、先頭jobのbusy待ち、RuntimeException後の解放を一つのownerが持つ。同期完了は反復drainで処理し、重複・遅延したcompletionは次jobを解放しない。通常本体起動はworkspaceの選択・Bridge・profile plannerを必要としない。保存profileからのdesktop/freeform計画、task role、session barrier、HOME/PiPの操作契約は従来のまま。
+特権起動queueは既存のprocess-wide main-loop順序を維持する。通常本体起動はそのqueueのbusy待ちを経由しない。waiting/activeを含むpending判定、先頭jobのbusy待ち、RuntimeException後の解放を一つのownerが持つ。同期完了は反復drainで処理し、重複・遅延したcompletionは次jobを解放しない。通常本体起動はworkspaceの選択・Bridge・profile plannerを必要としない。保存profileからのdesktop/freeform計画、task role、session barrier、HOME/PiPの操作契約は従来のまま。
 
 ## 寿命と不変条件
 
@@ -58,6 +65,12 @@ Web検索は独立した`web_search`保存領域で、本体／外部共通・�
 - OS側のpin intentとmouse/IME routing leaseはBridge backendの所有物。UIのWorkspace stateへ移さない。
 - SOG06 / Android 14の外部バー生成設定は`ExternalDisplayPolicy`の一時lease。セッションの要求はapp、global値・復元と実画面の世代確認はplatformが所有する。下部バーの抑止に成功したかと、マウスの表示先を更新できたかは別の結果として扱い、バー抑止の失敗を理由にマウスの復旧を省略しない。画面の選択先をこの互換処理から変更せず、選択済みの実外部画面だけを更新する。
 
+## 拡張機能の寿命
+
+ON要求と実接続は別で、実接続がない間も通常HOME・Start・端Dockは使える。OFFでは任意位置ジェスチャーとタスク操作を禁止し、通常navigationのownerを閉じない。保存済みの表示先・Workspace・ピン・freeformの選好は保持する。明示的なShell停止や端末設定復元とは異なるcommandである。
+
+終了待ちを保存してから特権leaseを解放する。後始末や保存に失敗した場合は完了にせず、設定内の再試行入口へ残す。終了処理は通常の`Bridge.execute`と分け、mouse・IME等のmaintenanceを再獲得しない。すでに実行中のBinder処理は直列workerで完了を待ってから解放し、旧世代の結果は新しいUIや保存済み出力を変更できない。
+
 ## 検証入口
 
 JVMの`ShellRuntimeRegistryTest`、`PhoneNavigationOwnerTest`、`TaskSnapshotTest`とownership fitness testが、世代・可視lease・生成/close・不変snapshot・consumerの境界を確認する。設定互換と実Android View/Bridgeの試験はAndroidTest側で分ける。
@@ -72,8 +85,18 @@ Start表示設定は`StartMenuSettings`が実menu displayId（0=本体/その他
 
 ## 任意位置Dock・復旧用HOME
 
-- `ShellSettings.PhoneSide.GESTURE` が選択を所有。設定画面は明示順（両サイド/右/左/ジェスチャー）を使い、旧保存値を移行しない。
+- `ShellSettings.PhoneSide.GESTURE` が縦向きの選択、`phoneLandscapeDock.gesture/openMethod` が横向きの選択を所有。横向きは初期ハンドル＋スワイプで、縦向きの選択から独立する。`PhoneSidebar` は現在の向きで選択された方式だけを購読する。
 - `PhoneSidebar` が一時アンカー・向きと `DockGestureClient` の購読寿命を所有。画面/Bridge/入力機器イベントでだけ購読を照合し、幾何が同じDisplay通知で作り直さない。
 - `DockGestureMonitor` は選別済み内蔵direct touchのブロッキングreaderとBinder leaseを所有。解除/死亡で子processを破棄。キーボード記録・入力grab/注入・周期取得・wake lockなし。アプリへ渡すのは可用性と成立した動作のみ。
-- core `TouchFrames` / `CornerDockGesture` / `FloatingDockPlacement` はフレームと認識・配置を検証。練習Viewとglobal画面の開始可能領域は区別し、曲がり角から横移動を測る。任意位置Dockは縦列＋上下scrollとし、Widgetは表示後のDock位置から画面中央へ引き出す。左右判定は画面内へ収めたDock中心を使い、pull中は反転させない。追従開始位置は浮動Dock自身の端を基準にする。複数指/ドロップ/回転前座標/直線スクロールを採用しない。
-- `HomeRecovery` はHOMEの短時間カウントのみ、`HomeRecoveryEntry` はAndroid Intentの分類のみ。`HomeActivity` がOS HOMEを受けて設定を開く。DockやBridgeの生存を前提にしない。
+- core `TouchFrames` / `CornerDockGesture` / `FloatingDockPlacement` はフレームと認識・配置を検証。練習Viewとglobal画面の開始可能領域は区別し、曲がり角から横移動を測る。任意位置Dockは縦列＋上下scrollとし、WidgetはL字の最終横方向へ引き戻す（右へ曲げたら左pull）。追従開始位置は浮動Dock自身の端を基準にする。通常ハンドルは同じ内向き軸の2回目pullでWidgetを開き、`HubPullAxis` が4辺の軸・方向・先端を共有する。回転・配置変更は古いpullをcancelし、新規gestureを開く前に旧配置を照合する。複数指/ドロップ/回転前座標/直線スクロールを採用しない。
+
+`WidgetLayoutProfiles` はウィジェットの数値geometryを本体縦/横/外部に分離するcore owner。`DesktopWidgets` は既存host/storeと共通catalog/content/IDを保持し、旧配置から各profileを初期化する。配置変更だけではprovider IDや画像を複製せず、追加/削除は共通catalogへ反映。回転時は編集中dragをcancelして旧配置を保存し、新配置へ切り替える。
+- `HomeRecovery` はHOME2回の時間判定・重複除外のみ、`HomeRecoveryEntry` はAndroid Intentの分類のみ。`HomeActivity` がOS HOMEを受けて本体Startを表示する（既に表示中なら維持）。DockやBridgeの生存を前提にしない。
+
+### Hubの操作領域と通知スワイプ
+
+`HubControlRail` は本体Hubだけの全幅・透過コンテナ。呼出側の下寄りに48dp操作の小領域を重ね、上側のタッチはwidget/notificationへ通す。予約矩形は一時的なcanvas pixel座標として`DesktopWidgets`へ通知し、保存geometryを移動しない。既存重なりは編集時だけ案内し、新しいdrag/数値調整で重なりを増やさない。通知一覧だけは同じ操作幅56dp＋8dpを`HubActivity`が呼出側paddingとして確保し、スクロールするcardをrailへ侵入させない。外部Desktop footerは変更しない。
+
+`NotificationSwipeCard` は1枚のタッチ軸と一時translationだけを所有する。縦scrollを親へ解放、横操作時は子のclickをcancelし、距離不足/multitouch/取消/非clearable更新/破棄で復元。消去は既存`NotificationList` callbackから`ShellNotifications.dismiss`のfresh key/clearable/lock/access検証へ渡し、UIだけで削除成功を確定しない。通知本文の保存、常駐timer、pollingは追加しない。
+
+`WidgetSidePlacement` はHubの正規X（左開き基準）と画面Xを相互変換するAndroid非依存policy。`DesktopWidgets.hubSide` が本体Hubの表示方向だけを所有し、side切替では進行中gestureをcancelして再配置する。AppWidget/contentのscaleX、host ID、保存catalogやprofile形式は変えない。右開きのdrag/resize/数値編集は画面座標で計算してから正規Xへ戻す。Home/外部Desktopは既定の無変換。

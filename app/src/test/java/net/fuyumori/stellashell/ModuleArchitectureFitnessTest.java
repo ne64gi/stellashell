@@ -55,6 +55,12 @@ public final class ModuleArchitectureFitnessTest {
                     String relative=root.relativize(path).toString().replace('\\','/');
                     String source;
                     try{source=read(path);}catch(Exception error){throw new IllegalStateException(error);}
+                    String transport="platform/bridge/src/main/java/net/fuyumori/stellashell/platform/power/ShizukuConnection.java";
+                    if(!relative.equals(transport)&&source.contains("rikka.shizuku"))
+                        violations.add(relative+" bypasses optional Power transport");
+                    if(!relative.equals("app/src/main/java/net/fuyumori/stellashell/PowerMode.java")
+                            &&Pattern.compile("(?:contains|getBoolean|putBoolean)\\s*\\(\\s*\"power_(?:mode|cleanup_pending)\"").matcher(source).find())
+                        violations.add(relative+" bypasses PowerMode stored intent owner");
                     if(module.equals("platform/bridge")&&(source.contains("getSharedPreferences(")||
                             Pattern.compile("\\bR\\s*\\.").matcher(source).find()))
                         violations.add(relative+" couples privileged operations to app preferences/resources");
@@ -74,6 +80,17 @@ public final class ModuleArchitectureFitnessTest {
             }
         }
         assertTrue(String.join("\n",violations),violations.isEmpty());
+        assertFalse("Application depends directly on optional Shizuku SDK",read(root.resolve("app/build.gradle")).contains("dev.rikka.shizuku"));
+        assertFalse("Application manifest registers optional SDK implementation",read(root.resolve("app/src/main/AndroidManifest.xml")).contains("rikka.shizuku"));
+        assertTrue("Optional transport must own SDK dependencies",read(root.resolve("platform/bridge/build.gradle")).contains("dev.rikka.shizuku:api"));
+        String manifest=read(root.resolve("platform/bridge/src/main/AndroidManifest.xml"));
+        assertTrue("Optional transport must own provider registration",manifest.contains("android:name=\"rikka.shizuku.ShizukuProvider\""));
+        assertTrue("Provider authority must remain application-specific",manifest.contains("android:authorities=\"${applicationId}.shizuku\""));
+        for(String ordinary:Arrays.asList("SetupActivity.java","PrerequisitesActivity.java","HomeActivity.java")){
+            String source=read(root.resolve("app/src/main/java/net/fuyumori/stellashell/"+ordinary));
+            assertFalse("Ordinary shell reaches privileged facade: "+ordinary,Pattern.compile("\\bBridge\\b").matcher(source).find());
+            assertFalse("Ordinary shell reaches SDK: "+ordinary,source.contains("rikka.shizuku"));
+        }
         String facade=read(root.resolve("app/src/main/java/net/fuyumori/stellashell/Launches.java"));
         for(String global:Arrays.asList("appQueue","appLaunching","appHandler","appDone","queryIntentActivities"))
             assertFalse("Launch facade regained an owner/PackageManager implementation: "+global,facade.contains(global));
@@ -96,7 +113,9 @@ public final class ModuleArchitectureFitnessTest {
                     boolean allowed=dependency.startsWith("java.")||dependency.startsWith("javax.")
                             ||dependency.startsWith("net.fuyumori.stellashell.core.")
                             ||!jdkOnly&&(dependency.startsWith("android.")||dependency.startsWith(namespace+".")
-                            ||namespace.equals("net.fuyumori.stellashell")&&dependency.startsWith("org.json."));
+                            ||namespace.equals("net.fuyumori.stellashell")&&dependency.startsWith("org.json.")
+                            ||path.toString().replace('\\','/').endsWith("/platform/power/ShizukuConnection.java")
+                                &&dependency.equals("rikka.shizuku.Shizuku"));
                     if(!allowed)violations.add(path+" depends on "+dependency);
                 }
             }

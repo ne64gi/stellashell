@@ -69,6 +69,15 @@ final class TaskBackend {
             public List<FrameworkTaskAccess.Entry> all()throws Exception{return taskAccess.query(-1);}
             public void set(FrameworkTaskAccess.Entry task,boolean enabled)throws Exception{setPinned(task,enabled);}
             public boolean supports(FrameworkTaskAccess.Entry task){return TaskPinSupport.supportsDisplay(pinRoute,task.displayId);}
+            public boolean absentConfirmed(int taskId)throws Exception {
+                Class<?> rootType=Class.forName("android.app.ActivityTaskManager$RootTaskInfo");
+                Field children=rootType.getField("childTaskIds");
+                for(Object root:(List<?>)api.getMethod("getAllRootTaskInfos").invoke(manager)) {
+                    if(((android.app.TaskInfo)root).taskId==taskId)return false;
+                    for(int child:(int[])children.get(root))if(child==taskId)return false;
+                }
+                return true;
+            }
         });
     }
     private Display display(int id) {

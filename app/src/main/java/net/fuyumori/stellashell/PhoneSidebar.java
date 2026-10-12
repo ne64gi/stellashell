@@ -5,6 +5,7 @@ import net.fuyumori.stellashell.core.tasks.TaskModes;
 import net.fuyumori.stellashell.core.layout.DockPlacement;
 import net.fuyumori.stellashell.core.layout.EdgeDockReveal;
 import net.fuyumori.stellashell.core.layout.FloatingDockPlacement;
+import net.fuyumori.stellashell.core.layout.HubPullAxis;
 
 import android.content.*;
 import android.graphics.PixelFormat;
@@ -31,6 +32,8 @@ final class PhoneSidebar implements AutoCloseable {
     private android.graphics.PointF gestureAnchor;
     private boolean gestureRight;
     private LinearLayout activeTasks,activeSection;
+    private final NotificationApps notificationApps;
+    private final Map<String,BadgedAppButton> pinnedIcons=new LinkedHashMap<>();
     private View panel,strip;
     private LinearLayout entries;
     private boolean horizontal,rebuilding,clearingHandles;
@@ -39,7 +42,10 @@ final class PhoneSidebar implements AutoCloseable {
     private String revealConfig;
     private Float revealProgress;
     private String revealEdge="right";
-    private Float pullX;
+    private Float pullX,pullY;
+    private float pullStartX,pullStartY;
+    private boolean pullingWidgets;
+    private HubPullAxis widgetAxis;
     private HubActivity.SidebarDrag drag;
     private boolean shown,right=true,closed,home,taskbarReady;
     PhoneSidebar(Context service,Runnable areaChanged){this(service,areaChanged,null,null);}
@@ -48,6 +54,7 @@ final class PhoneSidebar implements AutoCloseable {
                 .createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,null),Appearance.theme());
         settings=ShellSettings.of(context);
         windows=context.getSystemService(WindowManager.class);
+        notificationApps=new NotificationApps(context,this::notificationsChanged);
         menu=new AppMenu(context,windows,0);
         taskMenu=new PhoneTaskMenu(context);
         running=backend==null?new PhoneRunningTasks(context,this::renderRunning):new PhoneRunningTasks(backend,this::renderRunning);
@@ -73,8 +80,11 @@ final class PhoneSidebar implements AutoCloseable {
         revealEdge=landscape()?snapshot.phoneLandscapeDock.edge.storedValue():right?"right":"left";
         revealProgress=null;shown=true;relayout();
     }
-    void hide(){taskMenu.close();shown=false;revealProgress=null;pullX=null;gestureAnchor=null;relayout();}
-    private boolean gestureMode(){return settings.snapshot().phoneDock.phoneSide==ShellSettings.PhoneSide.GESTURE;}
+    void hide(){taskMenu.close();shown=false;revealProgress=null;pullX=null;pullY=null;gestureAnchor=null;relayout();}
+    private boolean gestureMode(){
+        ShellSettings.Snapshot snapshot=settings.snapshot();
+        return landscape()?snapshot.phoneLandscapeDock.gesture:snapshot.phoneDock.phoneSide==ShellSettings.PhoneSide.GESTURE;
+    }
     private void reconcileGestures(){
         if(!monitorGestures)return;
         if(!gestureMode()){
@@ -91,10 +101,15 @@ final class PhoneSidebar implements AutoCloseable {
         if(gestures!=null)gestures.enabled(allowed());
     }
     void showGesture(float x,float y,boolean towardRight){
-        if(closed||!gestureMode()||!allowed()||shown||menu.isOpen()||taskMenu.showing())return;
+        if(closed||!gestureMode()||!allowed()||menu.isOpen()||taskMenu.showing())return;
+        // WorkArea can already contain the new rotation/insets while its coalesced
+        // relayout is still pending. Retire the old anchor before opening a new one;
+        // otherwise the relayout below immediately clears this fresh gesture.
+        relayout();
+        if(shown)return;
         WorkArea bounds=area.get();
         gestureAnchor=new android.graphics.PointF(bounds.physical.left+x*bounds.physical.width(),bounds.physical.top+y*bounds.physical.height());
-        gestureRight=towardRight;revealProgress=null;pullX=null;shown=true;
+        gestureRight=towardRight;revealProgress=null;pullX=null;pullY=null;shown=true;
         entries.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
         relayout();
         if(strip instanceof ScrollView){
@@ -103,17 +118,56 @@ final class PhoneSidebar implements AutoCloseable {
             scroll.post(()->{if(!closed&&strip==scroll&&shown&&gestureAnchor==anchor)scroll.fullScroll(View.FOCUS_UP);});
         }
     }
-    private HubActivity.SidebarDrag pull(boolean fromRight,float distance){
+    private HubActivity.SidebarDrag pull(HubPullAxis axis,float distance){
         WindowManager.LayoutParams p=(WindowManager.LayoutParams)panel.getLayoutParams();
-        Float origin=gestureAnchor==null?null:(float)(fromRight?p.x+p.width:p.x);
-        return HubActivity.beginPull(context,fromRight,distance,origin,leading->{
-            if(closed)return;pullX=fromRight?leading-dp(76):leading;relayout();
+        int size=axis.vertical()?p.height:p.width;
+        Float origin=gestureAnchor==null?null:(float)(axis.vertical()?p.y+(axis.negative()?p.height:0):p.x+(axis.negative()?p.width:0));
+        return HubActivity.beginPull(context,axis.edge,distance,origin,leading->{
+            if(closed)return;
+            float position=leading-(axis.negative()?size:0);
+            if(axis.vertical())pullY=position;else pullX=position;
+            relayout();
         },()->{drag=null;hide();});
+    }
+    /** The second pull follows the handle's inward axis, independent of item scrolling. */
+    private boolean pullWidgets(MotionEvent event,java.util.function.Consumer<MotionEvent> cancelChild){
+        int action=event.getActionMasked();
+        if(action==MotionEvent.ACTION_DOWN){
+            pullStartX=event.getRawX();pullStartY=event.getRawY();pullingWidgets=false;
+            String edge=gestureAnchor!=null?(gestureRight?"right":"left"):
+                    landscape()?settings.snapshot().phoneLandscapeDock.edge.storedValue():right?"right":"left";
+            widgetAxis=new HubPullAxis(edge);
+        }
+        if(widgetAxis==null)return pullingWidgets;
+        if(event.getPointerCount()>1){
+            widgetAxis=null;
+            if(pullingWidgets&&drag!=null)drag.release(true);
+            return pullingWidgets;
+        }
+        float dx=event.getRawX()-pullStartX,dy=event.getRawY()-pullStartY;
+        float distance=widgetAxis.inward(dx,dy);
+        if(!pullingWidgets&&action==MotionEvent.ACTION_MOVE&&distance>dp(24)&&distance>Math.abs(widgetAxis.cross(dx,dy))*1.2f){
+            MotionEvent cancel=MotionEvent.obtain(event);cancel.setAction(MotionEvent.ACTION_CANCEL);
+            try{cancelChild.accept(cancel);}finally{cancel.recycle();}
+            pullingWidgets=true;HubActivity.SidebarDrag next=pull(widgetAxis,distance);
+            if(!next.finished)drag=next;
+        }
+        if(!pullingWidgets)return false;
+        if(drag!=null){
+            drag.update(Math.max(0,distance));
+            if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL)drag.release(action==MotionEvent.ACTION_CANCEL);
+        }
+        return true;
+    }
+    private void cancelWidgetPull(){
+        widgetAxis=null;
+        HubActivity.SidebarDrag previous=drag;drag=null;
+        if(previous!=null)previous.cancel();
     }
     void widgets(){hide();HubActivity.open(context,0,right);}
     void rebuild(){
-        if(closed||rebuilding)return;rebuilding=true;
-        try{shown=false;revealProgress=null;pullX=null;gestureAnchor=null;if(drag!=null){drag.release(true);drag=null;}removeViews();build();}
+        if(closed||rebuilding)return;notificationApps.close();rebuilding=true;
+        try{shown=false;revealProgress=null;pullX=null;pullY=null;gestureAnchor=null;cancelWidgetPull();removeViews();build();}
         finally{rebuilding=false;}relayout();
     }
     private boolean landscape(){WorkArea a=area.get();return EdgeDockReveal.landscape(a.physical.width(),a.physical.height());}
@@ -140,11 +194,12 @@ final class PhoneSidebar implements AutoCloseable {
             start.setOnClickListener(v->toggleStart());column.addView(start,itemParams(48));
             partition(column);
         }
+        pinnedIcons.clear();
         for(String component:Launches.pins(context))try{
             android.content.ComponentName name=android.content.ComponentName.unflattenFromString(component);
             if(name==null)continue;
             android.content.pm.ApplicationInfo app=context.getPackageManager().getApplicationInfo(name.getPackageName(),0);
-            ImageButton icon=new ImageButton(context);icon.setImageDrawable(AppIcons.forApp(context,component,app.loadIcon(context.getPackageManager())));
+            BadgedAppButton icon=new BadgedAppButton(context);pinnedIcons.put(component,icon);icon.setTag(app.loadLabel(context.getPackageManager()));icon.notificationCount(notificationApps.count(component));icon.setImageDrawable(AppIcons.forApp(context,component,app.loadIcon(context.getPackageManager())));
             icon.setScaleType(ImageView.ScaleType.FIT_CENTER);icon.setBackground(Ui.toolbarBackground(context,10));icon.setPadding(dp(horizontal?8:14),dp(horizontal?14:8),dp(horizontal?8:14),dp(horizontal?14:8));
             icon.setContentDescription(app.loadLabel(context.getPackageManager()));icon.setTooltipText(app.loadLabel(context.getPackageManager()));
             icon.setOnClickListener(v->{hide();Launches.app(context,component,0);});
@@ -157,7 +212,7 @@ final class PhoneSidebar implements AutoCloseable {
         activeTasks=strip();activeSection.addView(activeTasks,horizontal?new LinearLayout.LayoutParams(-2,-1):new LinearLayout.LayoutParams(-1,-2));renderRunning();
         partition(column);
         if(horizontal){
-            // Horizontal scrolling cannot also mean "pull the widget panel".
+            // A tap shortcut complements the perpendicular second pull.
             ImageButton widgets=new ImageButton(context);widgets.setImageResource(android.R.drawable.ic_menu_agenda);
             widgets.setScaleType(ImageView.ScaleType.FIT_CENTER);widgets.setBackground(Ui.toolbarBackground(context,10));widgets.setPadding(dp(horizontal?10:16),dp(horizontal?16:10),dp(horizontal?10:16),dp(horizontal?16:10));
             widgets.setContentDescription(context.getString(R.string.hub_widgets));widgets.setTooltipText(context.getString(R.string.hub_widgets));
@@ -169,25 +224,14 @@ final class PhoneSidebar implements AutoCloseable {
             HorizontalScrollView horizontalScroll=new HorizontalScrollView(context){
                 @Override public boolean dispatchTouchEvent(MotionEvent event){
                     if(event.getActionMasked()==MotionEvent.ACTION_OUTSIDE){if(!taskMenu.showing())hide();return true;}
+                    if(pullWidgets(event,cancel->super.dispatchTouchEvent(cancel)))return true;
                     return super.dispatchTouchEvent(event);
                 }
             };horizontalScroll.addView(column,new FrameLayout.LayoutParams(-2,-1));scroll=horizontalScroll;
-        }else{ScrollView verticalScroll=new ScrollView(context){float x,y;boolean opening;
+        }else{ScrollView verticalScroll=new ScrollView(context){
             @Override public boolean dispatchTouchEvent(MotionEvent e){
                 if(e.getActionMasked()==MotionEvent.ACTION_OUTSIDE){if(!taskMenu.showing())hide();return true;}
-                if(e.getActionMasked()==MotionEvent.ACTION_DOWN){x=e.getRawX();y=e.getRawY();opening=false;}
-                float dx=e.getRawX()-x,dy=e.getRawY()-y;
-                if(!opening&&e.getActionMasked()==MotionEvent.ACTION_MOVE&&(right?-dx:dx)>dp(24)&&Math.abs(dx)>Math.abs(dy)*1.2f){
-                    opening=true;MotionEvent cancel=MotionEvent.obtain(e);cancel.setAction(MotionEvent.ACTION_CANCEL);super.dispatchTouchEvent(cancel);cancel.recycle();
-                    drag=pull(right,Math.max(0,right?-dx:dx));
-                }
-                if(opening){
-                    if(drag!=null){
-                        drag.update(Math.max(0,right?-dx:dx));
-                        if(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL)drag.release(e.getActionMasked()==MotionEvent.ACTION_CANCEL);
-                    }
-                    return true;
-                }
+                if(pullWidgets(e,cancel->super.dispatchTouchEvent(cancel)))return true;
                 return super.dispatchTouchEvent(e);
             }
         };
@@ -221,13 +265,19 @@ final class PhoneSidebar implements AutoCloseable {
         if(!allowed()){shown=false;revealProgress=null;resetHandles();}
         ShellSettings.Snapshot snapshot=settings.snapshot();ShellSettings.PhoneSide side=snapshot.phoneDock.phoneSide;
         boolean wide=landscape();
-        String config=side.storedValue()+":"+(wide?snapshot.phoneLandscapeDock.edge.storedValue():"")+":"+snapshot.phoneDock.openMethod.storedValue();
+        EdgeDockReveal.Method method=wide?snapshot.phoneLandscapeDock.openMethod:snapshot.phoneDock.openMethod;
+        String config=(wide?snapshot.phoneLandscapeDock.edge.storedValue()+":"+snapshot.phoneLandscapeDock.gesture:side.storedValue())+":"+method.storedValue();
         int position=wide?snapshot.phoneLandscapeDock.positionPercent:snapshot.phoneDock.triggerPercent;
         int rotation=context.getDisplay().getRotation();
         boolean changed=revealArea!=null&&(!revealArea.equals(available)||revealWidth!=bounds.physical.width()
                 ||revealHeight!=bounds.physical.height()||!config.equals(revealConfig)||position!=revealPosition||rotation!=revealRotation);
         revealArea=new android.graphics.Rect(available);revealWidth=bounds.physical.width();revealHeight=bounds.physical.height();revealConfig=config;revealPosition=position;revealRotation=rotation;
-        if(changed){shown=false;revealProgress=null;pullX=null;gestureAnchor=null;resetHandles();}
+        if(changed){shown=false;revealProgress=null;pullX=null;pullY=null;gestureAnchor=null;resetHandles();cancelWidgetPull();}
+        if(shown)notificationApps.start();else{
+            notificationApps.close();
+            for(BadgedAppButton icon:pinnedIcons.values()){icon.notificationCount(0);icon.setContentDescription((CharSequence)icon.getTag());}
+            if(activeTasks!=null)for(int i=0;i<activeTasks.getChildCount();i++)if(activeTasks.getChildAt(i) instanceof BadgedAppButton){BadgedAppButton icon=(BadgedAppButton)activeTasks.getChildAt(i);icon.notificationCount(0);icon.setContentDescription((CharSequence)icon.getTag());}
+        }
         if(!wide){if(side==ShellSettings.PhoneSide.LEFT)right=false;else if(side==ShellSettings.PhoneSide.RIGHT)right=true;}
         String edge=wide?snapshot.phoneLandscapeDock.edge.storedValue():revealProgress!=null?revealEdge:right?"right":"left";
         WindowManager.LayoutParams p=(WindowManager.LayoutParams)panel.getLayoutParams();
@@ -240,13 +290,12 @@ final class PhoneSidebar implements AutoCloseable {
                 :new int[]{right?available.right-width:available.left,available.bottom-height,right?available.right:available.left+width,available.bottom};
         if(gestureAnchor!=null){
             panelBounds=FloatingDockPlacement.bounds(available.left,available.top,available.right,available.bottom,width,height,gestureAnchor.x,gestureAnchor.y,gestureRight);
-            // Pull toward the screen center from the actual clamped Dock, not the L-stroke direction.
-            // Keep that side while dragging, even after the moving panel crosses the center.
-            if(drag==null&&pullX==null)right=(panelBounds[0]+panelBounds[2])*.5f>=bounds.physical.exactCenterX();
+            // Pull back along the L's final leg. Do not flip it at the screen center.
+            if(drag==null&&pullX==null)right=gestureRight;
         }
         boolean visible=shown||revealProgress!=null&&revealProgress>0;
         int oldWidth=p.width,oldHeight=p.height,oldX=p.x,oldY=p.y,oldFlags=p.flags;
-        p.width=visible?width:1;p.height=visible?height:1;p.x=pullX==null?panelBounds[0]:Math.round(pullX);p.y=panelBounds[1];
+        p.width=visible?width:1;p.height=visible?height:1;p.x=pullX==null?panelBounds[0]:Math.round(pullX);p.y=pullY==null?panelBounds[1]:Math.round(pullY);
         if(revealProgress!=null)p.flags|=WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;else p.flags&=~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
         panel.setVisibility(visible?View.VISIBLE:View.GONE);
         float offset=revealProgress==null?0:1-revealProgress;
@@ -261,12 +310,12 @@ final class PhoneSidebar implements AutoCloseable {
             safe.left=Math.min(safe.right-1,Math.max(safe.left,bounds.gestureLeft));
             safe.right=Math.max(safe.left+1,Math.min(safe.right,bounds.physical.right-bounds.gestureRight));
             int[] rect=EdgeDockReveal.handle(safe.left,safe.top,safe.right,safe.bottom,handleEdge,
-                    wide?snapshot.phoneLandscapeDock.positionPercent:snapshot.phoneDock.triggerPercent,dp(EdgeDockReveal.handleThickness(snapshot.phoneDock.openMethod)),dp(64),dp(8));
+                    wide?snapshot.phoneLandscapeDock.positionPercent:snapshot.phoneDock.triggerPercent,dp(EdgeDockReveal.handleThickness(method)),dp(64),dp(8));
             boolean hidden=wide?i!=0:i==0?side==ShellSettings.PhoneSide.RIGHT:side==ShellSettings.PhoneSide.LEFT;
             boolean active=allowed()&&!hidden&&!(gestureMode()&&gestures!=null&&gestures.available());
             h.x=rect[0];h.y=rect[1];h.width=active?rect[2]-rect[0]:1;h.height=active?rect[3]-rect[1]:1;
             if(active)h.flags&=~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;else h.flags|=WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
-            handle.configure(handleEdge,DockPlacement.vertical(handleEdge)?width:height,snapshot.phoneDock.openMethod);
+            handle.configure(handleEdge,DockPlacement.vertical(handleEdge)?width:height,method);
             handle.setVisibility(active?View.VISIBLE:View.GONE);
             if(previousWidth!=h.width||previousHeight!=h.height||previousX!=h.x||previousY!=h.y||previousFlags!=h.flags)windows.updateViewLayout(handle,h);
         }
@@ -278,12 +327,23 @@ final class PhoneSidebar implements AutoCloseable {
         LinearLayout.LayoutParams line=new LinearLayout.LayoutParams(dp(horizontal?1:44),dp(horizontal?44:1));
         if(horizontal){line.leftMargin=dp(8);line.rightMargin=dp(6);}else{line.topMargin=dp(8);line.bottomMargin=dp(6);}column.addView(divider,line);
     }
+    private void notificationsChanged(){
+        if(closed||panel==null)return;
+        List<String> order=notificationApps.prioritize(new ArrayList<>(pinnedIcons.keySet()),name->name);
+        if(!order.isEmpty()){
+            ViewGroup parent=(ViewGroup)pinnedIcons.get(order.get(0)).getParent();
+            int first=parent.getChildCount();for(BadgedAppButton icon:pinnedIcons.values())first=Math.min(first,parent.indexOfChild(icon));
+            for(BadgedAppButton icon:pinnedIcons.values())parent.removeView(icon);
+            for(String component:order){BadgedAppButton icon=pinnedIcons.get(component);icon.notificationCount(notificationApps.count(component));icon.setContentDescription(notificationApps.label((CharSequence)icon.getTag(),component));parent.addView(icon,first++);}
+        }
+        renderRunning();
+    }
     private void renderRunning(){
         taskMenu.close();if(activeTasks==null)return;
         List<TaskSnapshot.Task> allTasks=running.tasks();
         List<TaskSnapshot.Task> tasks=running.state()==PhoneRunningTasks.State.READY?unpinnedTasks(allTasks,Launches.pins(context)):Collections.emptyList();
         activeSection.setVisibility(tasks.isEmpty()?View.GONE:View.VISIBLE);
-        renderTasks(context,activeTasks,tasks,task->running.focus(task,this::hide,error->Launches.problem(context,error)),this::taskMenu);
+        renderTasks(context,activeTasks,notificationApps.prioritize(tasks,TaskSnapshot.Task::packageName),task->running.focus(task,this::hide,error->Launches.problem(context,error)),this::taskMenu,notificationApps);
         for(int i=0;i<activeTasks.getChildCount();i++){
             View icon=activeTasks.getChildAt(i);icon.setPadding(dp(horizontal?8:14),dp(horizontal?14:8),dp(horizontal?8:14),dp(horizontal?14:8));icon.setLayoutParams(itemParams(52));
         }
@@ -309,6 +369,9 @@ final class PhoneSidebar implements AutoCloseable {
         renderTasks(context,rows,tasks,focus,null);
     }
     static void renderTasks(Context context,LinearLayout rows,List<TaskSnapshot.Task> tasks,java.util.function.Consumer<TaskSnapshot.Task> focus,java.util.function.BiConsumer<View,TaskSnapshot.Task> menu){
+        renderTasks(context,rows,tasks,focus,menu,null);
+    }
+    private static void renderTasks(Context context,LinearLayout rows,List<TaskSnapshot.Task> tasks,java.util.function.Consumer<TaskSnapshot.Task> focus,java.util.function.BiConsumer<View,TaskSnapshot.Task> menu,NotificationApps notifications){
         rows.removeAllViews();Map<String,Integer> totals=new HashMap<>(),seen=new HashMap<>();
         for(TaskSnapshot.Task task:tasks)totals.put(task.component,totals.getOrDefault(task.component,0)+1);
         for(TaskSnapshot.Task task:tasks){
@@ -318,10 +381,10 @@ final class PhoneSidebar implements AutoCloseable {
             catch(android.content.pm.PackageManager.NameNotFoundException|RuntimeException ignored){}
             int window=seen.getOrDefault(task.component,0)+1;seen.put(task.component,window);
             if(totals.get(task.component)>1)label=context.getString(R.string.phone_sidebar_task_window,label,window);
-            ImageButton icon=new ImageButton(context);icon.setImageDrawable(image);icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            BadgedAppButton icon=new BadgedAppButton(context);if(notifications!=null)icon.notificationCount(notifications.count(task.component));icon.setImageDrawable(image);icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
             icon.setBackgroundTintList(null);icon.setBackground(Ui.toolbarBackground(context,10));icon.setPadding(Ui.dp(context,14),Ui.dp(context,8),Ui.dp(context,14),Ui.dp(context,8));
             String description=context.getString(task.focused?R.string.phone_sidebar_focused_task:R.string.phone_sidebar_running_task,label);
-            icon.setContentDescription(description);icon.setTooltipText(description);icon.setSelected(task.focused);icon.setStateDescription(context.getString(task.focused?R.string.phone_sidebar_focused:R.string.phone_sidebar_running));
+            icon.setTag(description);icon.setContentDescription(notifications==null?description:notifications.label(description,task.component));icon.setTooltipText(description);icon.setSelected(task.focused);icon.setStateDescription(context.getString(task.focused?R.string.phone_sidebar_focused:R.string.phone_sidebar_running));
             icon.setOnClickListener(v->focus.accept(task));
             if(menu!=null){
                 icon.setOnLongClickListener(v->{menu.accept(icon,task);return true;});
@@ -335,5 +398,5 @@ final class PhoneSidebar implements AutoCloseable {
     private int dp(int value){return NavigationScale.pixels(context.getResources().getDisplayMetrics().density,value,scale());}
     private void resetHandles(){clearingHandles=true;try{for(View handle:handles)((DockHandleView)handle).reset();}finally{clearingHandles=false;}}
     private void removeViews(){resetHandles();taskMenu.close();running.stop();activeTasks=null;activeSection=null;menu.close();if(panel!=null){windows.removeViewImmediate(panel);panel=null;}strip=null;entries=null;for(View v:handles)windows.removeViewImmediate(v);handles.clear();}
-    @Override public void close(){if(closed)return;closed=true;if(gestures!=null)gestures.close();if(drag!=null)drag.release(true);running.close();removeViews();if(observer!=null)observer.close();loader.shutdownNow();}
+    @Override public void close(){if(closed)return;closed=true;notificationApps.close();pinnedIcons.clear();if(gestures!=null)gestures.close();cancelWidgetPull();running.close();removeViews();if(observer!=null)observer.close();loader.shutdownNow();}
 }

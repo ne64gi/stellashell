@@ -17,9 +17,10 @@ final class DesktopDock implements AutoCloseable {
     private final TaskState tasks;
     private FrameLayout viewport;private View strip;private LinearLayout entries;private DockHandleView handle;
     private boolean vertical,revealByHandle,shown,previewing,refreshPending,positioning;
+    private final NotificationApps notificationApps;
     private String edge="bottom";private int[] panelBounds,availableBounds;private int layoutRotation=-1,anchorPosition=-1;private float progress;
     DesktopDock(Context c,WindowManager windows,int display,TaskState tasks,java.util.function.LongConsumer start){
-        context=c;this.windows=windows;this.display=display;this.tasks=tasks;settings=ShellSettings.of(c);try{rebuild();}catch(RuntimeException error){close();throw error;}
+        context=c;this.windows=windows;this.display=display;this.tasks=tasks;settings=ShellSettings.of(c);notificationApps=new NotificationApps(c,this::refresh);try{rebuild();}catch(RuntimeException error){close();throw error;}
     }
     int[] bounds(){
         if(viewport==null||revealByHandle&&!shown)return null;WindowManager.LayoutParams p=(WindowManager.LayoutParams)viewport.getLayoutParams();
@@ -62,13 +63,13 @@ final class DesktopDock implements AutoCloseable {
         entries=new LinearLayout(context);entries.setOrientation(vertical?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);entries.setGravity(Gravity.CENTER);
         int pad=dp(4);entries.setPadding(pad,pad,pad,pad);
         List<TaskSnapshot.Task> running=tasks==null?Collections.emptyList():tasks.snapshot().tasks;Set<String> pinnedPackages=new HashSet<>();
-        for(String component:Launches.dockPins(context)){
+        for(String component:notificationApps.prioritize(Launches.dockPins(context),name->name)){
             ComponentName name=ComponentName.unflattenFromString(component);if(name==null)continue;
             pinnedPackages.add(name.getPackageName());TaskSnapshot.Task match=null;
             for(TaskSnapshot.Task task:running)if(name.getPackageName().equals(task.packageName())){match=task;if(task.focused)break;}
             app(component,match);
         }
-        for(TaskSnapshot.Task task:running)if(!pinnedPackages.contains(task.packageName()))app(task.component,task);
+        for(TaskSnapshot.Task task:notificationApps.prioritize(running,TaskSnapshot.Task::packageName))if(!pinnedPackages.contains(task.packageName()))app(task.component,task);
         if(WorkArea.get(context,display).compact){
             Button home=Ui.toolbarButton(context,"▱",()->{hide();Launches.home(context,display);});home.setPadding(0,0,0,0);home.setTextSize(14*factor());home.setMinHeight(dp(48));home.setContentDescription(context.getString(R.string.ui_show_desktop));home.setTooltipText(context.getString(R.string.ui_show_desktop));item(home);
         }
@@ -80,9 +81,9 @@ final class DesktopDock implements AutoCloseable {
             android.content.pm.ApplicationInfo info=context.getPackageManager().getApplicationInfo(name.getPackageName(),0);
             CharSequence label=info.loadLabel(context.getPackageManager());LinearLayout item=Ui.column(context);item.setGravity(Gravity.CENTER);item.setPadding(dp(4),dp(3),dp(4),0);
             item.setBackground(Ui.toolbarBackground(context,9));item.setSelected(task!=null&&task.focused);
-            ImageView icon=new ImageView(context);icon.setImageDrawable(AppIcons.forApp(context,component,info.loadIcon(context.getPackageManager())));item.addView(icon,new LinearLayout.LayoutParams(dp(29),dp(29)));
+            MenuAppIcon icon=new MenuAppIcon(context,component,info.loadIcon(context.getPackageManager()));icon.notificationCount(notificationApps.count(component));item.addView(icon,new LinearLayout.LayoutParams(dp(29),dp(29)));
             TextView mark=Ui.text(context,task==null?"":task.alwaysOnTop?"↑":task.visible?"━":"·",10,Ui.ACCENT);mark.setTextSize(10*factor());mark.setGravity(Gravity.CENTER);mark.setIncludeFontPadding(false);item.addView(mark,new LinearLayout.LayoutParams(-1,dp(11)));
-            item.setContentDescription(label+(task==null?context.getString(R.string.ui_pinned):context.getString(R.string.ui_running)));item.setTooltipText(label);
+            item.setContentDescription(notificationApps.label(label+(task==null?context.getString(R.string.ui_pinned):context.getString(R.string.ui_running)),component));item.setTooltipText(label);
             item.setOnClickListener(v->{hide();ShellPanels.dismiss(display);if(task==null)Launches.app(context,component,display);else if(tasks.compact(context,display))Launches.focus(context,task,display,tasks);else {
                 String requested=Profiles.requestedComponent(context,component);AppLaunchProfile.Mode mode=Profiles.get(context,requested).launchMode;
                 if(task.mode==1&&(mode==AppLaunchProfile.Mode.WINDOWED||mode==AppLaunchProfile.Mode.MAXIMIZED))Launches.app(context,requested,display);else tasks.action(task,"focus");
@@ -146,11 +147,13 @@ final class DesktopDock implements AutoCloseable {
         strip.setTranslationX(vertical?("left".equals(edge)?-1:1)*(panelBounds[2]-panelBounds[0])*remaining:0);
         strip.setTranslationY(!vertical?("top".equals(edge)?-1:1)*(panelBounds[3]-panelBounds[1])*remaining:0);
         viewport.setVisibility(visible?View.VISIBLE:View.GONE);if(changed)windows.updateViewLayout(viewport,p);
+        if(visible)notificationApps.start();else notificationApps.close();
     }
     private int scale(){return settings.snapshot().externalDock.scalePercent;}
     private float factor(){return NavigationScale.factor(scale());}
     private int dp(int value){return NavigationScale.pixels(context.getResources().getDisplayMetrics().density,value,scale());}
     public void close(){
+        notificationApps.close();
         refreshPending=false;shown=false;previewing=false;progress=0;panelBounds=null;availableBounds=null;layoutRotation=-1;anchorPosition=-1;
         if(handle!=null){handle.reset();try{windows.removeViewImmediate(handle);}catch(RuntimeException ignored){}handle=null;}
         if(viewport!=null)try{windows.removeViewImmediate(viewport);}catch(RuntimeException ignored){}viewport=null;strip=null;entries=null;

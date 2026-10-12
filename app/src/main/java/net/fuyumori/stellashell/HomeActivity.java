@@ -26,7 +26,7 @@ public final class HomeActivity extends DesktopActivity {
     @Override protected boolean homeSurface(){return true;}
     static boolean extensions(Context c){
         return !WorkspaceProfile.standard(c,0)&&HomeMode.extensions(ShellRuntime.enabled(c),
-                Displays.primary(c)&&TaskState.of(c).target(c)==0,Bridge.get(c).ready(),Settings.canDrawOverlays(c));
+                Displays.primary(c)&&TaskState.of(c).target(c)==0,PowerMode.of(c).active(),Settings.canDrawOverlays(c));
     }
     @Override public void onCreate(Bundle state){
         super.onCreate(state);if(root==null)return;
@@ -48,7 +48,7 @@ public final class HomeActivity extends DesktopActivity {
         fallback.addView(homeApps,new FrameLayout.LayoutParams(Ui.dp(this,48),Ui.dp(this,48),Gravity.TOP|Gravity.LEFT));
         fallback.setOnApplyWindowInsetsListener((v,insets)->{positionHomeEdges(insets);return insets;});
         fallback.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->positionHomeEdges(getWindow().getDecorView().getRootWindowInsets()));
-        Bridge.get(this).observe(bridgeChanged);ShellRuntime.observeNavigation(navigationChanged);homeSettingsSubscription=ShellSettings.of(this).observe((changes,snapshot)->refreshHome());updateFallback();
+        PowerMode.of(this).observe(bridgeChanged);ShellRuntime.observeNavigation(navigationChanged);homeSettingsSubscription=ShellSettings.of(this).observe((changes,snapshot)->refreshHome());updateFallback();
         if(!startRequest(getIntent())&&state==null)recoveryHome(getIntent());
     }
     void openApps(){if(apps==null)apps=new AppMenu(this,getWindowManager(),0);if(!apps.isOpen())apps.open(menuLoader);}
@@ -94,6 +94,7 @@ public final class HomeActivity extends DesktopActivity {
             updateFallback();
             if(!resumed)return;
             if(WorkspaceProfile.standard(this,0)&&ShellSettings.of(this).snapshot().phoneDock.enabled&&Settings.canDrawOverlays(this)&&!ShellRuntime.running()) {
+                if(!PowerMode.of(this).active()){ShellRuntime.startBase(this,false);return;}
                 int preferred=HomeOutputRecovery.target(TaskState.of(this).savedTarget(this),ShellSettings.of(this).snapshot().preferredDisplayId,Displays.ids(this));
                 boolean external=preferred>0;
                 if(!external){ShellSettings.of(this).setPrimaryMode(true);TaskState.of(this).initializeTarget(this,0);}
@@ -110,10 +111,14 @@ public final class HomeActivity extends DesktopActivity {
     }
     private boolean recoveryHome(Intent intent){
         if(!HomeRecoveryEntry.isPress(intent)){recoveryPresses.reset();return false;}
-        if(!recoveryPresses.press(android.os.SystemClock.uptimeMillis()))return false;
-        returnPending=false;if(apps!=null)apps.close();ShellPanels.dismiss(0);
-        startActivity(new Intent(this,SetupActivity.class).putExtra(HomeRecoveryEntry.SETTINGS_PAGE,true),
-                android.app.ActivityOptions.makeBasic().setLaunchDisplayId(0).toBundle());
+        HomeRecovery.Action action=recoveryPresses.press(android.os.SystemClock.uptimeMillis());
+        if(action==HomeRecovery.Action.HOME)return false;
+        if(action==HomeRecovery.Action.DUPLICATE)return true;
+        returnPending=false;
+        // HOME recovery is always local and does not need Dock, overlay permission
+        // or the privileged bridge. Showing an existing Start must not toggle it.
+        if(!ShellPanels.isStartOpen(0))openApps();
+        recoveryPresses.startShown(android.os.SystemClock.uptimeMillis());
         return true;
     }
     private boolean startRequest(Intent intent){
@@ -134,10 +139,10 @@ public final class HomeActivity extends DesktopActivity {
     }
     @Override protected void onStart(){super.onStart();if(homeVisibility==null)homeVisibility=ShellRuntime.attachHomeSurface();homeVisibility.visible(true);}
     @Override protected void onStop(){if(apps!=null)apps.close();if(homeVisibility!=null)homeVisibility.visible(false);super.onStop();}
-    @Override protected void onResume(){super.onResume();resumed=true;Bridge.get(this).connect();Bridge.get(this).startShortcut();refreshHome();}
+    @Override protected void onResume(){super.onResume();resumed=true;PowerMode.of(this).resumeHome();refreshHome();}
     @Override protected void onPause(){resumed=false;super.onPause();}
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)refreshHome();}
     @Override public void onSharedPreferenceChanged(SharedPreferences prefs,String key){super.onSharedPreferenceChanged(prefs,key);if("phone_window_management".equals(key))refreshHome();}
     @Override public void onBackPressed(){if(apps!=null&&apps.isOpen())apps.close();else super.onBackPressed();}
-    @Override public void onDestroy(){ShellRuntime.unobserveNavigation(navigationChanged);if(homeVisibility!=null)homeVisibility.close();if(homeSettingsSubscription!=null)try{homeSettingsSubscription.close();}catch(Exception e){Launches.problem(this,e.getMessage());}Bridge.get(this).remove(bridgeChanged);if(apps!=null)apps.close();menuLoader.shutdownNow();super.onDestroy();}
+    @Override public void onDestroy(){ShellRuntime.unobserveNavigation(navigationChanged);if(homeVisibility!=null)homeVisibility.close();if(homeSettingsSubscription!=null)try{homeSettingsSubscription.close();}catch(Exception e){Launches.problem(this,e.getMessage());}PowerMode.of(this).remove(bridgeChanged);if(apps!=null)apps.close();menuLoader.shutdownNow();super.onDestroy();}
 }

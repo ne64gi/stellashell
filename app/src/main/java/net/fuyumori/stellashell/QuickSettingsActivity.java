@@ -14,7 +14,7 @@ import java.lang.ref.WeakReference;
 /** Small desktop tray surface. Audio is device-wide; no silent network toggles. */
 public final class QuickSettingsActivity extends Activity {
     private static WeakReference<QuickSettingsActivity> visible=new WeakReference<>(null);
-    private final Handler handler=new Handler(Looper.getMainLooper());
+    private QuickSettingsEvents events;
     private TextView network,volumeLabel;
     private SeekBar volume;
     private CheckBox screen;
@@ -22,7 +22,6 @@ public final class QuickSettingsActivity extends Activity {
     private AudioManager audio;
     private boolean dragging;
     private int displayId;
-    private final Runnable refresh=new Runnable(){public void run(){update();handler.postDelayed(this,1500);}};
     static void open(Context c,int id){
         QuickSettingsActivity current=visible.get();
         if(current!=null&&!current.isFinishing()&&current.displayId==id){current.finish();return;}
@@ -31,13 +30,22 @@ public final class QuickSettingsActivity extends Activity {
     }
     @Override public void onCreate(Bundle state){
         super.onCreate(state);visible=new WeakReference<>(this);displayId=getDisplay().getDisplayId();audio=getSystemService(AudioManager.class);
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
+        events=new QuickSettingsEvents(this,displayId,this::update);
         FrameLayout root=new FrameLayout(this);root.setBackgroundColor(0x11101725);root.setOnClickListener(v->finish());
         LinearLayout panel=Ui.column(this);panel.setPadding(dp(20),dp(16),dp(20),dp(16));panel.setBackground(Appearance.surface(this,20));panel.setElevation(dp(16));panel.setOnClickListener(v->{});
         FrameLayout.LayoutParams box=new FrameLayout.LayoutParams(Math.min(dp(420),getResources().getDisplayMetrics().widthPixels-dp(24)),-2,Gravity.RIGHT|Gravity.BOTTOM);box.setMargins(dp(12),dp(12),dp(12),dp(68));root.addView(panel,box);
         LinearLayout heading=new LinearLayout(this);heading.setGravity(Gravity.CENTER_VERTICAL);heading.addView(Ui.text(this,getString(R.string.quick_settings),20,Ui.TEXT),new LinearLayout.LayoutParams(0,-2,1));
         Button close=Ui.button(this,"×",this::finish);close.setContentDescription(getString(R.string.ui_close));heading.addView(close,new LinearLayout.LayoutParams(dp(44),dp(44)));panel.addView(heading);
         screen=new CheckBox(this);screen.setText(R.string.quick_primary_screen_off);screen.setTextColor(Ui.TEXT);screen.setChecked(Bridge.get(this).screenOff());screen.setEnabled(displayId>0&&Bridge.get(this).ready());
-        screen.setOnClickListener(v->{screenBusy=true;screen.setEnabled(false);Bridge.get(this).screenOff(screen.isChecked(),(result,error)->{screenBusy=false;screen.setChecked(Bridge.get(this).screenOff());screen.setEnabled(displayId>0&&Bridge.get(this).ready());if(error!=null)Ui.message(this,error);});});panel.addView(screen);
+        screen.setOnClickListener(v->{screenBusy=true;screen.setEnabled(false);long epoch=events.generation();Bridge.get(this).screenOff(screen.isChecked(),(result,error)->{
+            // The Bridge cache may change after a pause/resume. Invalidate only a currently
+            // subscribed surface; never apply an obsolete command's busy/error UI to it.
+            if(isFinishing())return;
+            events.changed(QuickSettingsEvents.SCREEN);
+            if(!events.current(epoch))return;
+            screenBusy=false;if(error!=null)Ui.message(this,error);
+        });});panel.addView(screen);
         network=Ui.text(this,"",15,Ui.TEXT);network.setPadding(0,dp(12),0,dp(12));panel.addView(network);
         panel.addView(Ui.button(this,getString(R.string.quick_wifi_settings),()->{
             try{startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),ActivityOptions.makeBasic().setLaunchDisplayId(0).toBundle());finish();}
@@ -47,17 +55,18 @@ public final class QuickSettingsActivity extends Activity {
         volume=new SeekBar(this);volume.setContentDescription(getString(R.string.quick_media_volume));volume.setMin(audio.getStreamMinVolume(AudioManager.STREAM_MUSIC));volume.setMax(audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC));volume.setEnabled(!audio.isVolumeFixed());panel.addView(volume,new LinearLayout.LayoutParams(-1,dp(48)));
         volume.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
             public void onStartTrackingTouch(SeekBar v){dragging=true;}
-            public void onStopTrackingTouch(SeekBar v){dragging=false;update();}
+            public void onStopTrackingTouch(SeekBar v){dragging=false;events.changed(QuickSettingsEvents.AUDIO);}
             public void onProgressChanged(SeekBar v,int value,boolean user){if(user)try{audio.setStreamVolume(AudioManager.STREAM_MUSIC,value,0);label(audio.getStreamVolume(AudioManager.STREAM_MUSIC));}catch(SecurityException e){Ui.message(QuickSettingsActivity.this,e.getMessage());}}
         });
-        panel.addView(Ui.text(this,getString(R.string.quick_volume_note),12,Ui.MUTED));setContentView(root);ShellPanels.activate(displayId,this,this::finish);ShellPanels.track(displayId,this,panel);update();
+        panel.addView(Ui.text(this,getString(R.string.quick_volume_note),12,Ui.MUTED));setContentView(root);ShellPanels.activate(displayId,this,this::finish);ShellPanels.track(displayId,this,panel);
     }
     private void label(int value){volumeLabel.setText(getString(R.string.quick_media_volume)+"  "+Math.round(100f*value/Math.max(1,volume.getMax()))+"%");}
-    private void update(){
-        if(network==null)return;
+    private void update(int fields){
+        if(network==null||isFinishing())return;
         if(getSystemService(android.hardware.display.DisplayManager.class).getDisplay(displayId)==null||!ShellRuntime.enabled(this)){finish();return;}
-        if(!screenBusy){screen.setChecked(Bridge.get(this).screenOff());screen.setEnabled(displayId>0&&Bridge.get(this).ready());}
-        if(!dragging){int value=audio.getStreamVolume(AudioManager.STREAM_MUSIC);volume.setProgress(value);label(value);}
+        if((fields&QuickSettingsEvents.SCREEN)!=0&&!screenBusy){screen.setChecked(Bridge.get(this).screenOff());screen.setEnabled(displayId>0&&Bridge.get(this).ready());}
+        if((fields&QuickSettingsEvents.AUDIO)!=0&&!dragging){int value=audio.getStreamVolume(AudioManager.STREAM_MUSIC);volume.setProgress(value);volume.setEnabled(!audio.isVolumeFixed());label(value);}
+        if((fields&QuickSettingsEvents.NETWORK)==0)return;
         try{
             ConnectivityManager cm=getSystemService(ConnectivityManager.class);boolean wifi=false;
             for(Network n:cm.getAllNetworks()){NetworkCapabilities caps=cm.getNetworkCapabilities(n);if(caps!=null&&caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI))wifi=true;}
@@ -66,8 +75,14 @@ public final class QuickSettingsActivity extends Activity {
         }catch(RuntimeException e){network.setText(R.string.quick_wifi_unknown);}
     }
     private int dp(int n){return Ui.dp(this,n);}
-    @Override protected void onResume(){super.onResume();if(!isFinishing())ShellPanels.activate(displayId,this,this::finish);handler.removeCallbacks(refresh);handler.post(refresh);}
-    @Override protected void onPause(){handler.removeCallbacks(refresh);super.onPause();}
-    @Override protected void onDestroy(){ShellPanels.release(displayId,this);handler.removeCallbacks(refresh);if(visible.get()==this)visible.clear();super.onDestroy();}
-    @Override public boolean dispatchKeyEvent(KeyEvent e){if(e.getKeyCode()==KeyEvent.KEYCODE_ESCAPE&&e.getAction()==KeyEvent.ACTION_UP){finish();return true;}return super.dispatchKeyEvent(e);}
+    @Override protected void onResume(){super.onResume();if(!isFinishing()){ShellPanels.activate(displayId,this,this::finish);events.start();}}
+    @Override protected void onPause(){events.stop();screenBusy=false;dragging=false;super.onPause();}
+    @Override protected void onDestroy(){ShellPanels.release(displayId,this);events.close();if(visible.get()==this)visible.clear();super.onDestroy();}
+    @Override public boolean dispatchKeyEvent(KeyEvent e){
+        if(e.getKeyCode()==KeyEvent.KEYCODE_ESCAPE&&e.getAction()==KeyEvent.ACTION_UP){finish();return true;}
+        boolean handled=super.dispatchKeyEvent(e);
+        int key=e.getKeyCode();
+        if(key==KeyEvent.KEYCODE_VOLUME_UP||key==KeyEvent.KEYCODE_VOLUME_DOWN||key==KeyEvent.KEYCODE_VOLUME_MUTE)events.changed(QuickSettingsEvents.AUDIO);
+        return handled;
+    }
 }

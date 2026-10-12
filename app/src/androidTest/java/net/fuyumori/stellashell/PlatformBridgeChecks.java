@@ -1,54 +1,39 @@
 package net.fuyumori.stellashell;
 
 import android.app.Instrumentation;
-import android.content.ComponentName;
-import android.content.ServiceConnection;
-import android.os.IBinder;
-import java.lang.reflect.Field;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.json.JSONObject;
-import rikka.shizuku.Shizuku;
 
-/** Read-only calls through the installed Shizuku server; no task/input/settings operations. */
+/** Installed-server read wire checks via client port; read reasserts runtime primary mode.
+ * Version assertion is configured client39, not an observed server-upgrade proof. */
 final class PlatformBridgeChecks {
     static void run(Instrumentation test)throws Exception {
         Bridge bridge=Bridge.get(test.getTargetContext());
-        CountDownLatch ready=new CountDownLatch(1),connected=new CountDownLatch(1);
+        CountDownLatch ready=new CountDownLatch(1),read=new CountDownLatch(1);
         Runnable observer=()->{if(bridge.ready())ready.countDown();};
-        IDesktopBridge[] server={null};
-        ServiceConnection connection=new ServiceConnection(){
-            @Override public void onServiceConnected(ComponentName name,IBinder binder){
-                server[0]=IDesktopBridge.Stub.asInterface(binder);connected.countDown();
-            }
-            @Override public void onServiceDisconnected(ComponentName name){}
-        };
-        Field field=Bridge.class.getDeclaredField("args");field.setAccessible(true);
-        Shizuku.UserServiceArgs args=(Shizuku.UserServiceArgs)field.get(bridge);
-        boolean[] peeked={false};
+        Throwable[] failure={null};
         try{
             test.runOnMainSync(()->{
-                check(bridge.authorized(),"Requires existing Shizuku authorization");
+                check(bridge.authorized(),"Requires already enabled Power Mode and existing authorization");
+                check(bridge.serviceVersion()==39,"Client service contract version is not the Power Mode cleanup version");
                 bridge.observe(observer);bridge.connect();observer.run();
             });
             check(ready.await(20,TimeUnit.SECONDS),"Installed server did not connect");
-            test.runOnMainSync(()->{
-                peeked[0]=true;
-                check(Shizuku.peekUserService(args,connection)==38,"Old Shizuku user service survived gesture update");
-            });
-            check(connected.await(10,TimeUnit.SECONDS),"Read-only server connection unavailable");
-            check(server[0].asBinder().getInterfaceDescriptor().equals("net.fuyumori.stellashell.IDesktopBridge"),"Binder descriptor changed");
-            String settings=server[0].settingsSnapshot();
-            check(settings.matches("(?:null|0|1),(?:null|0|1)"),"Existing settings wire contract failed");
-            JSONObject scale=new JSONObject(server[0].snapshotDisplayScale(0));
-            check(scale.getInt("physicalDensity")>0&&scale.getInt("density")>0
-                    &&scale.getInt("width")>0&&scale.getInt("height")>0,"Existing density snapshot wire contract failed");
-        }finally{
-            test.runOnMainSync(()->{
-                bridge.remove(observer);
-                if(peeked[0])Shizuku.unbindUserService(args,connection,false);
-            });
-        }
+            test.runOnMainSync(()->bridge.read(server->{
+                try{
+                check(server.asBinder().getInterfaceDescriptor().equals("net.fuyumori.stellashell.IDesktopBridge"),"Binder descriptor changed");
+                String settings=server.settingsSnapshot();
+                check(settings.matches("(?:null|0|1),(?:null|0|1)"),"Existing settings wire contract failed");
+                JSONObject scale=new JSONObject(server.snapshotDisplayScale(0));
+                check(scale.getInt("physicalDensity")>0&&scale.getInt("density")>0
+                        &&scale.getInt("width")>0&&scale.getInt("height")>0,"Existing density snapshot wire contract failed");
+                return "OK";
+                }catch(AssertionError problem){throw new IllegalStateException(problem.getMessage(),problem);}
+            },(result,error)->{if(error!=null)failure[0]=new AssertionError(error);else if(!"OK".equals(result))failure[0]=new AssertionError("Read wire check did not finish");read.countDown();}));
+            check(read.await(20,TimeUnit.SECONDS),"Server read-model wire check did not complete");
+            if(failure[0]!=null)throw new AssertionError(failure[0]);
+        }finally{test.runOnMainSync(()->bridge.remove(observer));}
     }
     private static void check(boolean condition,String message){if(!condition)throw new AssertionError(message);}
 }

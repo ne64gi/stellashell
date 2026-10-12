@@ -43,6 +43,7 @@
     <string name="setup_screen_numbered">%1$s · %2$d</string>
     <string name="sidebar_settings_portrait">縦向き</string>
     <string name="sidebar_settings_landscape">横向き</string>
+    <string name="sidebar_settings_orientation_note">縦向き・横向きそれぞれで、呼び出し位置と開く方法を選べます。</string>
     <string name="sidebar_settings_landscape_note">選んだ端にハンドルを1つ表示します。スライダーで端に沿った位置を調整できます。</string>
     <string name="sidebar_settings_by_handle">ハンドルからDockを表示</string>
     <string name="sidebar_settings_handle_note">ハンドルから呼び出すまでDockを隠します。選んだ端とスライダーでハンドルの位置を調整できます。</string>

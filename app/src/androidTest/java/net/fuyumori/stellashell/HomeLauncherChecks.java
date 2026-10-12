@@ -9,7 +9,7 @@ import android.widget.*;
 import java.lang.reflect.Field;
 import java.util.*;
 
-/** No default-role mutation, no Shizuku server shutdown. Disconnect only this test process. */
+/** Actual HOME with already-OFF Power Mode; disconnected policy probe uses an isolated transport. */
 final class HomeLauncherChecks {
     private final Instrumentation test;private final Context context;
     HomeLauncherChecks(Instrumentation test){this.test=test;context=test.getTargetContext();}
@@ -17,16 +17,18 @@ final class HomeLauncherChecks {
     private static void require(boolean ok,String message){if(!ok)throw new AssertionError(message);}
     private static Field field(Class<?> owner,String name)throws Exception{Field f=owner.getDeclaredField(name);f.setAccessible(true);return f;}
     void run(int externalDisplay)throws Exception{
+        require(!PowerMode.of(context).requested()&&!PowerMode.of(context).transition(),"Actual HOME fixture requires already-OFF Power Mode; it never changes this preference");
+        main(()->{
+            try(BridgeFixtureContext isolated=new BridgeFixtureContext(context,false,null)){
+                require(!Bridge.get(isolated).ready()&&!Bridge.get(isolated).authorized(),"Isolated OFF bridge was available");
+                require(Launches.basicHome(isolated,0),"Unavailable bridge did not select basic HOME");
+            }
+        });
         SharedPreferences prefs=Launches.prefs(context);Map<String,?> before=prefs.getAll();
         boolean defaultBefore=HomeRegistration.selected(context);
         ComponentName legacy=new ComponentName(context,DesktopActivity.class),homeComponent=new ComponentName(context,HomeActivity.class);
         int legacyState=context.getPackageManager().getComponentEnabledSetting(legacy);
-        Bridge bridge=Bridge.get(context);Field serviceField=field(Bridge.class,"service"),bindingField=field(Bridge.class,"binding");
-        main(bridge::connect);
-        long bindUntil=SystemClock.uptimeMillis()+15000;
-        while(!bridge.ready()&&SystemClock.uptimeMillis()<bindUntil)Thread.sleep(100);
-        test.waitForIdleSync();
-        Object service=serviceField.get(bridge);boolean binding=bindingField.getBoolean(bridge);
+        Bridge bridge=Bridge.get(context);
         HomeActivity home=null;AppMenu drawer=null;
         try{
             main(()->{
@@ -38,7 +40,6 @@ final class HomeLauncherChecks {
             awaitState("Previous ShellRuntime did not stop",()->ShellRuntime.running()?"runtime still running":null);
             // Even stale enabled=true after a restart must permit normal HOME with no bridge.
             main(()->{
-                try{serviceField.set(bridge,null);bindingField.setBoolean(bridge,true);}catch(Exception e){throw new RuntimeException(e);}
                 prefs.edit().putBoolean("enabled",true).putBoolean("primary_mode",true).putBoolean("phone_window_management",false).putBoolean("phone_sidebar",true).putBoolean("phone_taskbar",false).putInt("preferred_display",0).putBoolean("workspace_auto",false).remove("workspace_display").commit();
             });
             // startActivitySync must create an instance, not deliver onNewIntent to a
@@ -51,7 +52,7 @@ final class HomeLauncherChecks {
             System.out.println("HOME check: launching");home=(HomeActivity)test.startActivitySync(homeIntent);System.out.println("HOME check: launched");HomeActivity shown=home;test.waitForIdleSync();
             ShellRuntime.HomeVisibilityLease homeLease=ShellFixtureAccess.homeVisibility(shown);
             require(homeLease!=null,"HOME did not acquire its visibility lease");
-            require(!home.isFinishing(),"HOME finished without bridge");require(!bridge.ready(),"Disconnect fixture was not active");
+            require(!home.isFinishing(),"HOME finished without bridge");require(!bridge.ready(),"Already-OFF Power Mode unexpectedly exposed a bridge");
             main(()->shown.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON));
             require(Launches.basicHome(home,0),"Unavailable bridge did not select basic HOME");
             awaitPhoneSidebar();
@@ -135,7 +136,6 @@ final class HomeLauncherChecks {
             HomeActivity closing=home;AppMenu closingDrawer=drawer;
             main(()->{
                 if(closingDrawer!=null)closingDrawer.close();if(closing!=null)closing.finish();
-                try{serviceField.set(bridge,service);bindingField.setBoolean(bridge,binding);}catch(Exception e){throw new RuntimeException(e);}
                 SharedPreferences.Editor edit=prefs.edit();
                 for(String key:new String[]{"enabled","primary_mode","workspace_display","active_display","preferred_display","compact_workspace","workspace_auto","phone_sidebar","phone_taskbar","phone_sidebar_over_apps","sidebar_height","phone_window_management","recent","last_error"}){
                     Object old=before.get(key);if(old instanceof Boolean)edit.putBoolean(key,(Boolean)old);else if(old instanceof Integer)edit.putInt(key,(Integer)old);else if(old instanceof String)edit.putString(key,(String)old);else edit.remove(key);

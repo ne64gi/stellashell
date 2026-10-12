@@ -60,7 +60,7 @@ public final class DisplaySettingsActivity extends Activity implements DisplayMa
         reset=DashboardUi.action(this,getString(R.string.display_settings_reset),()->apply(ScreenScalePolicy.DEFAULT),false);card.addView(reset);
         message=DashboardUi.text(this,"",14,Ui.MUTED);DashboardUi.space(card,12);card.addView(message);
         reload=DashboardUi.action(this,getString(R.string.display_settings_reload),this::load,false);body.addView(reload);
-        permissions=DashboardUi.action(this,getString(R.string.display_settings_permissions),()->startActivity(new Intent(this,PrerequisitesActivity.class).putExtra("manual",true)),false);body.addView(permissions);
+        permissions=DashboardUi.action(this,getString(R.string.display_settings_permissions),()->PowerModeActivity.open(this),false);body.addView(permissions);
         scale.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
             public void onProgressChanged(SeekBar bar,int value,boolean user){if(user){draft=ScreenScalePolicy.MIN+value*5;dirty=true;render();}}
             public void onStartTrackingTouch(SeekBar bar){}public void onStopTrackingTouch(SeekBar bar){}

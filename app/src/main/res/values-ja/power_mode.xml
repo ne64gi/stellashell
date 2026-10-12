@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="power_mode_title">拡張機能</string>
+    <string name="power_mode_summary">任意位置ジェスチャー・デスクトップ・タスク操作</string>
+    <string name="power_mode_intro">Shizukuと連携し、他のアプリ使用中のジェスチャー、実行中タスクの操作、複数ウィンドウを使うデスクトップを追加します。HOME・Start・画面端のDockは拡張機能なしでも使えます。</string>
+    <string name="power_mode_enable">拡張機能を使う</string>
+    <string name="power_mode_active">追加機能を使えます。OFFにしても通常のシェルは続けて使えます。</string>
+    <string name="power_mode_enabled">拡張機能はONです。下から接続すると追加機能を使えます。</string>
+    <string name="power_mode_disabled">拡張機能はOFFです。通常のシェルと保存済みの設定はそのままです。</string>
+    <string name="power_mode_connection_title">Shizukuとの接続</string>
+    <string name="power_mode_connection_note">Shizukuを起動してから接続し、拡張機能の利用を許可してください。拡張機能はいつでもOFFにできます。</string>
+    <string name="power_mode_connected">接続済み</string>
+    <string name="power_mode_connect_note">接続すると追加の操作を使えます。</string>
+    <string name="power_mode_cleanup_title">拡張機能の終了を完了する</string>
+    <string name="power_mode_cleanup_note">追加の操作はOFFです。端末の操作を解除する処理が残っています。Shizukuを起動して再試行してください。通常のシェルは続けて使えます。</string>
+    <string name="power_mode_cleanup_retry">終了処理を再試行</string>
+    <string name="power_mode_back_settings">拡張機能へ戻る</string>
+    <string name="power_mode_operation_failed">操作を完了できませんでした。詳細は診断で確認できます。</string>
+</resources>

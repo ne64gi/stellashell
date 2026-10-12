@@ -1,10 +1,14 @@
 package net.fuyumori.stellashell;
 
 import net.fuyumori.stellashell.core.layout.WidgetGeometry;
+import net.fuyumori.stellashell.core.layout.WidgetLayoutProfiles;
+import net.fuyumori.stellashell.core.layout.WidgetPages;
+import net.fuyumori.stellashell.core.layout.WidgetSidePlacement;
 
 import android.app.*;
 import android.appwidget.*;
 import android.content.*;
+import android.graphics.Rect;
 import android.os.Bundle;
 import android.view.*;
 import android.widget.*;
@@ -20,15 +24,25 @@ final class DesktopWidgets {
     private final AppWidgetHost host;
     private final android.content.SharedPreferences prefs;
     private final List<Entry> entries=new ArrayList<>();
-    private boolean editing,editorLeft,editorCollapsed;
+    private static final String LAYOUTS="layout_profiles_v1";
+    private WidgetLayoutProfiles layouts;
+    private WidgetLayoutProfiles.Profile profile;
+    private WidgetPages pages;
+    private Runnable pagesChanged=()->{};
+    private final View.OnLayoutChangeListener layoutChanged=(v,l,t,r,b,ol,ot,or,ob)->{if(r-l!=or-ol||b-t!=ob-ot)relayout();};
+    private boolean editing,editorLeft,editorCollapsed,hubFromRight;
+    private WidgetDetails details;
     private Entry selected;
     private View editor;
+    private TextView overlapHint;
+    private final Rect reservedControls=new Rect();
     private Runnable editingChanged=()->{};
     private final TextView[] values=new TextView[4];
     private int step=8;
     private int pending=-1;
     private boolean destroyed;
     private AlertDialog contentDialog;
+    private AlertDialog geometryDialog;
     private final java.util.concurrent.ExecutorService importer=java.util.concurrent.Executors.newSingleThreadExecutor();
     private static final class Entry {
         int id,x,y,w,h,mode,baseW,baseH;
@@ -56,12 +70,57 @@ final class DesktopWidgets {
                 e.textColor=j.optInt("textColor",e.textColor);e.textSize=Math.max(10,Math.min(128,j.optInt("textSize",20)));e.align=Math.max(0,Math.min(2,j.optInt("align",0)));entries.add(e);
             }
         }catch(JSONException e){Ui.message(a,activity.getString(R.string.ui_could_not_load_saved_widgets));}
+        profile=currentProfile();
+        String savedLayouts=prefs.getString(LAYOUTS,null);
+        layouts=new WidgetLayoutProfiles(savedLayouts,geometrySnapshot());
+        // Seed every profile before applying any profile-specific edit. IDs/content stay shared.
+        String initializedLayouts=layouts.encode();
+        if(!initializedLayouts.equals(savedLayouts))prefs.edit().putString(LAYOUTS,initializedLayouts).apply();
+        applyProfile();
         // Reconcile only this host's unreferenced allocations, never other launchers' widgets.
         Set<Integer> retained=new HashSet<>();for(Entry e:entries)if(e.kind.equals("widget"))retained.add(e.id);if(pending>=0)retained.add(pending);
         for(int id:host.getAppWidgetIds())if(!retained.contains(id))host.deleteAppWidgetId(id);
-        canvas.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{if(r-l!=or-ol||b-t!=ob-ot)relayout();});
+        canvas.addOnLayoutChangeListener(layoutChanged);
         // Empty-surface holds must not enter widget editing during window gestures.
         rebuild();
+    }
+    void enablePages(Runnable changed){pagesChanged=changed;loadPages();applyPages();}
+    int pageCount(){return pages==null?1:pages.count();}
+    int currentPage(){return pages==null?0:pages.current();}
+    boolean emptyPage(){return pages!=null&&pages.empty();}
+    private List<Integer> widgetIds(){List<Integer> ids=new ArrayList<>();for(Entry e:entries)ids.add(e.id);return ids;}
+    private String pagesKey(){return "pages_v1_"+profile.key;}
+    private void loadPages(){pages=new WidgetPages(prefs.getString(pagesKey(),null),widgetIds());}
+    private void savePages(){
+        if(pages==null)return;
+        List<Integer> ids=widgetIds();pages.reconcile(ids,pages.current());
+        android.content.SharedPreferences.Editor edit=prefs.edit();boolean changed=false;
+        for(WidgetLayoutProfiles.Profile target:WidgetLayoutProfiles.Profile.values()){
+            String key="pages_v1_"+target.key,old=prefs.getString(key,null);
+            if(target!=profile&&old==null)continue;
+            String value=(target==profile?pages:new WidgetPages(old,ids)).encode();
+            if(!value.equals(old)){edit.putString(key,value);changed=true;}
+        }
+        if(changed)edit.apply();
+    }
+    private boolean onPage(Entry e){return pages==null||pages.page(e.id)==pages.current();}
+    private List<Entry> visibleEntries(){List<Entry> out=new ArrayList<>();for(Entry e:entries)if(onPage(e))out.add(e);return out;}
+    private void applyPages(){for(Entry e:entries)if(e.frame!=null)e.frame.setVisibility(onPage(e)?View.VISIBLE:View.GONE);pagesChanged.run();}
+    void selectPage(int page){
+        if(pages==null||page<0||page>=pages.count()||page==pages.current())return;
+        finishEditing();cancelGeometryInteraction();pages.select(page);savePages();applyPages();
+    }
+    void addPage(){if(pages==null||pages.count()==WidgetPages.LIMIT)return;finishEditing();cancelGeometryInteraction();pages.add();savePages();applyPages();}
+    void removeEmptyPage(){if(pages==null||!pages.empty()||pages.count()==1)return;finishEditing();pages.removeEmpty();savePages();applyPages();}
+    void moveWidgetToPage(int id,int page){
+        if(pages==null||!pages.move(id,page))return;
+        cancelGeometryInteraction();savePages();selected=null;finishEditing();applyPages();
+    }
+    private void moveToPage(Entry entry){
+        String[] labels=new String[pageCount()];for(int i=0;i<labels.length;i++)labels[i]=activity.getString(R.string.widget_page_number,i+1);
+        DesktopBackdrop.showDialog(activity,new AlertDialog.Builder(activity).setTitle(R.string.widget_move_page).setSingleChoiceItems(labels,currentPage(),(dialog,index)->{
+            moveWidgetToPage(entry.id,index);dialog.dismiss();
+        }).setNegativeButton(R.string.ui_cancel,null).create());
     }
     void start(){try{host.startListening();}catch(RuntimeException e){Ui.message(activity,activity.getString(R.string.ui_widget_update)+e.getMessage());}}
     void stop(){host.stopListening();}
@@ -69,19 +128,20 @@ final class DesktopWidgets {
         // Pixel bounds may stay unchanged on a density-only display update.
         // Recreate content too: text sizes, provider resources and edit chrome
         // were resolved against the previous Resources configuration.
-        for(Entry e:entries)((WidgetEditFrame)e.frame).cancelEditingGesture();
+        cancelGeometryInteraction();
+        switchProfile();
         rebuild();
     }
-    void destroy(){destroyed=true;importer.shutdownNow();if(contentDialog!=null)contentDialog.dismiss();if(activity.isFinishing()&&pending>=0)cancel();}
+    void destroy(){closeDetails();destroyed=true;canvas.removeOnLayoutChangeListener(layoutChanged);importer.shutdownNow();if(contentDialog!=null)contentDialog.dismiss();if(geometryDialog!=null)geometryDialog.dismiss();if(activity.isFinishing()&&pending>=0)cancel();}
     boolean isEditing(){return editing;}
     void onEditingChanged(Runnable listener){editingChanged=listener;}
     boolean finishEditing(){if(!editing)return false;setEditing(false);return true;}
     void setEditing(boolean value){
-        editing=value;if(value&&selected==null&&!entries.isEmpty())selected=entries.get(entries.size()-1);
+        if(!value)closeDetails();editing=value;List<Entry> shown=visibleEntries();if(value&&selected==null&&!shown.isEmpty())selected=shown.get(shown.size()-1);
         if(!value){for(Entry e:entries)((WidgetEditFrame)e.frame).cancelEditingGesture();save();selected=null;}
         editorCollapsed=false;updateSelection();showEditor();editingChanged.run();
     }
-    private void select(Entry entry){boolean entering=!editing;boolean different=selected!=entry;selected=entry;editing=true;
+    private void select(Entry entry){closeDetails();boolean entering=!editing;boolean different=selected!=entry;selected=entry;editing=true;
         if(entering){editorCollapsed=false;editingChanged.run();}
         updateSelection();if(entering||different)showEditor();
     }
@@ -215,8 +275,37 @@ final class DesktopWidgets {
         }));contentDialog=dialog;DesktopBackdrop.showDialog(activity,dialog);
     }
     private void save(){
+        savePages();
+        // Another live host instance may have saved a different profile in this same store.
+        // Refresh inactive profiles, then replace only the geometry owned by this instance.
+        layouts=new WidgetLayoutProfiles(prefs.getString(LAYOUTS,null),geometrySnapshot());
+        layouts.capture(profile,geometrySnapshot());
         JSONArray array=new JSONArray();for(Entry e:entries)try{array.put(new JSONObject().put("id",e.id).put("x",e.x).put("y",e.y).put("w",e.w).put("h",e.h).put("mode",e.mode).put("baseW",e.baseW).put("baseH",e.baseH).put("kind",e.kind).put("text",e.text).put("image",e.image).put("background",e.background).put("opacity",e.opacity).put("textColor",e.textColor).put("textSize",e.textSize).put("align",e.align));}catch(JSONException ignored){}
-        prefs.edit().putString("items",array.toString()).putInt("pending",pending).apply();
+        prefs.edit().putString("items",array.toString()).putString(LAYOUTS,layouts.encode()).putInt("pending",pending).apply();
+    }
+    private WidgetLayoutProfiles.Profile currentProfile(){
+        return WidgetLayoutProfiles.resolve(WorkspaceProfile.phone(activity),activity.getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE);
+    }
+    private Map<Integer,WidgetLayoutProfiles.Geometry> geometrySnapshot(){
+        Map<Integer,WidgetLayoutProfiles.Geometry> snapshot=new LinkedHashMap<>();
+        for(Entry e:entries)snapshot.put(e.id,new WidgetLayoutProfiles.Geometry(e.x,e.y,e.w,e.h,e.mode,e.baseW,e.baseH));
+        return snapshot;
+    }
+    private void applyProfile(){
+        Map<Integer,WidgetLayoutProfiles.Geometry> snapshot=layouts.snapshot(profile);
+        for(Entry e:entries){WidgetLayoutProfiles.Geometry g=snapshot.get(e.id);if(g==null)continue;
+            e.x=g.x;e.y=g.y;e.w=g.w;e.h=g.h;e.mode=g.mode;e.baseW=g.baseW;e.baseH=g.baseH;
+        }
+    }
+    private void cancelGeometryInteraction(){
+        closeDetails();
+        for(Entry e:entries)if(e.frame instanceof WidgetEditFrame)((WidgetEditFrame)e.frame).cancelEditingGesture();
+        if(geometryDialog!=null){geometryDialog.dismiss();geometryDialog=null;}
+    }
+    private boolean switchProfile(){
+        WidgetLayoutProfiles.Profile next=currentProfile();if(next==profile)return false;
+        // Cancel before capture so a half-completed pointer gesture cannot leak across layouts.
+        cancelGeometryInteraction();save();profile=next;applyProfile();if(pages!=null){loadPages();selected=null;applyPages();}return true;
     }
     private void rebuild(){
         canvas.removeAllViews();editor=null;for(Entry e:entries){
@@ -227,20 +316,25 @@ final class DesktopWidgets {
                 public boolean canResize(){return resizable(e,2)||resizable(e,3);}
                 public void select(){DesktopWidgets.this.select(e);}
                 public void begin(boolean resize){
+                    if(editor!=null)editor.setVisibility(View.INVISIBLE);
                     resizing=resize;FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)e.frame.getLayoutParams();
                     x=pxToDp(p.leftMargin);y=pxToDp(p.topMargin);w=pxToDp(p.width);h=pxToDp(p.height);
                     originalX=e.x;originalY=e.y;originalW=e.w;originalH=e.h;
                 }
                 public void move(float dx,float dy){
+                    int oldX=e.x,oldY=e.y,oldW=e.w,oldH=e.h;
+                    long oldOverlap=controlsOverlap(e);
                     int aw=pxToDp(canvas.getWidth()),ah=pxToDp(canvas.getHeight()),deltaX=pxToDp(Math.round(dx)),deltaY=pxToDp(Math.round(dy));
                     if(resizing){
-                        e.x=x;e.y=y;
+                        e.y=y;
                         if(resizable(e,2))e.w=WidgetGeometry.resize(w+deltaX,aw-x,e.info==null?80:minimum(e,true),e.info==null?0:maximum(e,true));
                         if(resizable(e,3))e.h=WidgetGeometry.resize(h+deltaY,ah-y,e.info==null?60:minimum(e,false),e.info==null?0:maximum(e,false));
-                    }else{e.x=Math.max(0,Math.min(x+deltaX,aw-Math.min(e.w,aw)));e.y=Math.max(0,Math.min(y+deltaY,ah-Math.min(e.h,ah)));}
+                        e.x=sideX(x,e.w,aw);
+                    }else{e.x=sideX(x+deltaX,e.w,aw);e.y=Math.max(0,Math.min(y+deltaY,ah-Math.min(e.h,ah)));}
+                    if(controlsOverlap(e)>oldOverlap){e.x=oldX;e.y=oldY;e.w=oldW;e.h=oldH;}
                     layout(e);updateValues();
                 }
-                public void end(boolean cancel){if(cancel){e.x=originalX;e.y=originalY;e.w=originalW;e.h=originalH;layout(e);updateValues();}else save();}
+                public void end(boolean cancel){if(editor!=null)editor.setVisibility(View.VISIBLE);if(cancel){e.x=originalX;e.y=originalY;e.w=originalW;e.h=originalH;layout(e);updateValues();}else save();}
 
             });
             e.frame.setContentDescription(activity.getString(R.string.ui_edit_widgets)+": "+label(e));
@@ -257,31 +351,76 @@ final class DesktopWidgets {
             }else{e.view=null;TextView missing=Ui.text(activity,activity.getString(R.string.ui_widget_unavailable_remove_it_in_edit_mode),14,Ui.MUTED);e.frame.addView(missing);}
             canvas.addView(e.frame,new FrameLayout.LayoutParams(dp(e.w),dp(e.h)));layout(e);
         }
-        updateSelection();showEditor();
+        applyPages();updateSelection();showEditor();
     }
     private String label(Entry e){if(e.kind.equals("text"))return e.text.isEmpty()?activity.getString(R.string.widget_text):e.text.split("\\n",2)[0];if(e.kind.equals("image"))return activity.getString(R.string.widget_image);return e.info==null?activity.getString(R.string.ui_widget)+" #"+e.id:e.info.loadLabel(activity.getPackageManager());}
     private void showEditor(){
-        if(editor!=null)canvas.removeView(editor);editor=null;Arrays.fill(values,null);if(!editing)return;
+        if(editor!=null)canvas.removeView(editor);editor=null;overlapHint=null;if(!editing)return;
         if(editorCollapsed){
-            Button tab=Ui.button(activity,editorLeft?"›":"‹",()->{editorCollapsed=false;showEditor();});tab.setContentDescription(activity.getString(R.string.widget_edit_open));editor=tab;
-            canvas.addView(tab,new FrameLayout.LayoutParams(dp(48),dp(64),(editorLeft?Gravity.LEFT:Gravity.RIGHT)|Gravity.CENTER_VERTICAL));return;
+            Button tab=editorButton(editorLeft?"›":"‹",R.string.widget_edit_open,()->{editorCollapsed=false;showEditor();});
+            editor=tab;canvas.addView(tab,new FrameLayout.LayoutParams(dp(48),dp(56),(editorLeft?Gravity.LEFT:Gravity.RIGHT)|Gravity.CENTER_VERTICAL));return;
         }
-        ScrollView scroll=new ScrollView(activity);scroll.setFillViewport(false);scroll.setBackground(Ui.rounded(activity,Ui.BG,14));scroll.setElevation(dp(12));editor=scroll;
-        LinearLayout panel=Ui.column(activity);panel.setPadding(dp(8),dp(8),dp(8),dp(12));scroll.addView(panel);
+        LinearLayout card=Ui.column(activity);card.setPadding(dp(6),dp(4),dp(6),dp(4));
+        card.setBackground(Ui.rounded(activity,Ui.BG,14));card.setElevation(dp(12));editor=card;
+        List<Entry> shown=visibleEntries();
+        LinearLayout heading=new LinearLayout(activity);
+        if(!shown.isEmpty()){
+            List<String> labels=new ArrayList<>();for(Entry e:shown)labels.add(label(e));
+            Spinner picker=new Spinner(activity);picker.setAdapter(new ArrayAdapter<>(activity,android.R.layout.simple_spinner_dropdown_item,labels));
+            picker.setSelection(Math.max(0,shown.indexOf(selected)));picker.setContentDescription(activity.getString(R.string.widget_edit_select));
+            picker.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> parent){}public void onItemSelected(AdapterView<?> parent,View view,int index,long id){if(editing&&editor==card&&index>=0&&index<shown.size()&&selected!=shown.get(index))select(shown.get(index));}});
+            heading.addView(picker,new LinearLayout.LayoutParams(0,dp(48),1));
+        }else heading.addView(Ui.text(activity,activity.getString(R.string.ui_add_widget),14,Ui.TEXT),new LinearLayout.LayoutParams(0,dp(48),1));
+        heading.addView(editorButton("⇄",R.string.widget_edit_side,()->{editorLeft=!editorLeft;showEditor();}),new LinearLayout.LayoutParams(dp(48),dp(48)));card.addView(heading);
+        TextView hint=Ui.text(activity,activity.getString(R.string.widget_direct_edit_hint),11,Ui.MUTED);hint.setMaxLines(2);card.addView(hint);
+        overlapHint=Ui.text(activity,activity.getString(R.string.widget_controls_overlap),11,Ui.ACCENT);card.addView(overlapHint);updateOverlapHint();
         LinearLayout tools=new LinearLayout(activity);
-        tools.addView(editorButton("⇄",R.string.widget_edit_side,()->{editorLeft=!editorLeft;showEditor();}),new LinearLayout.LayoutParams(0,dp(48),1));
-        tools.addView(editorButton(editorLeft?"‹":"›",R.string.widget_edit_hide,()->{editorCollapsed=true;showEditor();}),new LinearLayout.LayoutParams(0,dp(48),1));panel.addView(tools);
-        panel.addView(Ui.button(activity,activity.getString(R.string.widget_edit_done),()->setEditing(false)));
-        TextView title=Ui.text(activity,activity.getString(R.string.ui_edit_widgets),16,Ui.ACCENT);title.setPadding(0,dp(12),0,dp(4));panel.addView(title);
-        if(!entries.isEmpty()){
-            Spinner picker=new Spinner(activity);List<String> labels=new ArrayList<>();for(Entry e:entries)labels.add(label(e));
-            ArrayAdapter<String> adapter=new ArrayAdapter<>(activity,android.R.layout.simple_spinner_dropdown_item,labels);picker.setAdapter(adapter);picker.setSelection(Math.max(0,entries.indexOf(selected)));picker.setContentDescription(activity.getString(R.string.widget_edit_select));panel.addView(picker,new LinearLayout.LayoutParams(-1,dp(48)));
-            picker.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,View v,int index,long id){if(selected!=entries.get(index))select(entries.get(index));}});
+        Button detail=editorButton(selected==null?"+":"⚙",selected==null?R.string.ui_add_widget:R.string.widget_details,()->{if(selected==null)choose();else showDetails();});
+        tools.addView(detail,new LinearLayout.LayoutParams(0,dp(48),1));
+        tools.addView(editorButton(editorLeft?"‹":"›",R.string.widget_edit_hide,()->{editorCollapsed=true;showEditor();}),new LinearLayout.LayoutParams(0,dp(48),1));
+        tools.addView(editorButton("✓",R.string.widget_edit_done,()->setEditing(false)),new LinearLayout.LayoutParams(0,dp(48),1));card.addView(tools);
+        canvas.addView(card,editorBounds());
+    }
+    /** Hub-only view transform. Reopening from another edge does not write a second layout. */
+    void hubSide(boolean fromRight){
+        if(hubFromRight!=fromRight){
+            cancelGeometryInteraction();hubFromRight=fromRight;
+            for(Entry e:entries)layout(e);
+            updateValues();
         }
-        if(selected!=null){
-            Entry entry=selected;
+        editorLeft=!fromRight;if(editing)showEditor();
+    }
+    private int sideX(int coordinate,int width,int canvasWidth){return WidgetSidePlacement.x(coordinate,width,canvasWidth,hubFromRight);}
+    private int screenX(Entry e){return sideX(e.x,e.w,pxToDp(canvas.getWidth()));}
+    /** Coordinates are canvas pixels. Reservation never changes stored or displayed widget geometry. */
+    void reservedControls(Rect area){
+        if(reservedControls.equals(area))return;
+        reservedControls.set(area);updateOverlapHint();
+        if(editor!=null&&!editorCollapsed)editor.setLayoutParams(editorBounds());
+    }
+    private long controlsOverlap(Entry e){
+        if(reservedControls.isEmpty())return 0;
+        int aw=pxToDp(canvas.getWidth()),ah=pxToDp(canvas.getHeight());
+        int w=Math.min(e.w,aw),h=Math.min(e.h,ah);
+        int x=dp(sideX(e.x,w,aw)),y=dp(Math.max(0,Math.min(e.y,ah-h)));
+        return (long)Math.max(0,Math.min(x+dp(w),reservedControls.right)-Math.max(x,reservedControls.left))
+                *Math.max(0,Math.min(y+dp(h),reservedControls.bottom)-Math.max(y,reservedControls.top));
+    }
+    private void updateOverlapHint(){
+        if(overlapHint==null)return;
+        boolean overlap=false;for(Entry entry:visibleEntries())if(controlsOverlap(entry)>0){overlap=true;break;}
+        overlapHint.setVisibility(overlap?View.VISIBLE:View.GONE);
+    }
+    private void closeDetails(){if(details!=null){WidgetDetails old=details;details=null;old.close();}Arrays.fill(values,null);}
+    private void showDetails(){
+        if(selected==null)return;closeDetails();Entry entry=selected;
+        details=new WidgetDetails(activity,label(entry),tab->detailContent(entry,tab),()->{details=null;Arrays.fill(values,null);});
+    }
+    private View detailContent(Entry entry,int tab){
+        Arrays.fill(values,null);LinearLayout panel=Ui.column(activity);panel.setPadding(dp(12),dp(8),dp(12),dp(8));
+        if(tab==0){
             TextView hint=Ui.text(activity,activity.getString(R.string.widget_edit_hint),12,Ui.MUTED);panel.addView(hint);
-            Button precision=Ui.button(activity,activity.getString(R.string.widget_edit_step,step),()->{step=step==1?8:1;showEditor();});panel.addView(precision);
+            Button precision=Ui.button(activity,activity.getString(R.string.widget_edit_step,step),()->{step=step==1?8:1;if(details!=null)details.refresh();});panel.addView(precision);
             int[] names={R.string.widget_edit_x,R.string.widget_edit_y,R.string.widget_edit_width,R.string.widget_edit_height};
             for(int i=0;i<4;i++){
                 final int axis=i;LinearLayout row=new LinearLayout(activity);row.setGravity(Gravity.CENTER_VERTICAL);
@@ -291,40 +430,55 @@ final class DesktopWidgets {
                 row.addView(less,new LinearLayout.LayoutParams(dp(48),dp(48)));row.addView(value,new LinearLayout.LayoutParams(0,dp(48),1));row.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));panel.addView(row);
                 boolean enabled=resizable(entry,axis);less.setEnabled(enabled);more.setEnabled(enabled);value.setEnabled(enabled);row.setAlpha(enabled?1:.45f);
             }
+        }else if(tab==1){
             if(entry.info!=null){
                 panel.addView(Ui.text(activity,activity.getString(R.string.ui_widget_display_settings),13,Ui.MUTED));
                 RadioGroup modes=new RadioGroup(activity);String[] labels={activity.getString(R.string.widget_edit_normal),activity.getString(R.string.widget_edit_force),activity.getString(R.string.widget_edit_scale)};
-                for(int i=0;i<labels.length;i++){RadioButton radio=new RadioButton(activity);radio.setText(labels[i]);radio.setTextColor(Ui.TEXT);radio.setId(View.generateViewId());modes.addView(radio,new RadioGroup.LayoutParams(-1,dp(48)));radio.setChecked(entry.mode==i);final int mode=i;radio.setOnClickListener(v->{entry.mode=mode;if(mode==WidgetGeometry.SCALE&&(entry.baseW<=0||entry.baseH<=0)){entry.baseW=defaultSize(entry.info,true);entry.baseH=defaultSize(entry.info,false);}save();layout(entry);showEditor();});}panel.addView(modes);
+                for(int i=0;i<labels.length;i++){RadioButton radio=new RadioButton(activity);radio.setText(labels[i]);radio.setTextColor(Ui.TEXT);radio.setId(View.generateViewId());modes.addView(radio,new RadioGroup.LayoutParams(-1,dp(48)));radio.setChecked(entry.mode==i);final int mode=i;radio.setOnClickListener(v->{entry.mode=mode;if(mode==WidgetGeometry.SCALE&&(entry.baseW<=0||entry.baseH<=0)){entry.baseW=defaultSize(entry.info,true);entry.baseH=defaultSize(entry.info,false);}save();layout(entry);if(details!=null)details.refresh();});}panel.addView(modes);
                 if(entry.mode==WidgetGeometry.SCALE)panel.addView(Ui.button(activity,activity.getString(R.string.ui_render_size),()->renderSize(entry)));
-                panel.addView(Ui.button(activity,activity.getString(R.string.ui_reset_to_recommended_size),()->{entry.w=defaultSize(entry.info,true);entry.h=defaultSize(entry.info,false);entry.baseW=entry.w;entry.baseH=entry.h;layout(entry);save();updateValues();}));
+                panel.addView(Ui.button(activity,activity.getString(R.string.ui_reset_to_recommended_size),()->{int left=screenX(entry);entry.w=defaultSize(entry.info,true);entry.h=defaultSize(entry.info,false);if(hubFromRight)entry.x=sideX(left,entry.w,pxToDp(canvas.getWidth()));entry.baseW=entry.w;entry.baseH=entry.h;layout(entry);save();updateValues();}));
             }
             panel.addView(Ui.button(activity,activity.getString(R.string.widget_item_background),()->contentDialog=WidgetItemBackground.show(activity,entry.background,entry.opacity,(color,opacity)->{entry.background=color;entry.opacity=opacity;save();entry.frame.setBackground(Ui.rounded(activity,WidgetItemBackground.color(color,opacity),12));})));
-            if(entry.kind.equals("text"))panel.addView(Ui.button(activity,activity.getString(R.string.widget_edit_text),()->textDialog(entry,false)));
-            panel.addView(Ui.button(activity,activity.getString(R.string.ui_remove_widget),()->DesktopBackdrop.showDialog(activity,new AlertDialog.Builder(activity).setMessage(R.string.ui_remove_this_widget).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_remove,(d,w)->{entries.remove(entry);selected=entries.isEmpty()?null:entries.get(entries.size()-1);save();if(entry.kind.equals("widget"))host.deleteAppWidgetId(entry.id);else if(entry.kind.equals("image"))WidgetImages.remove(activity,entry.image);rebuild();}).create())));
+            if(entry.kind.equals("text"))panel.addView(Ui.button(activity,activity.getString(R.string.widget_edit_text),()->{closeDetails();textDialog(entry,false);}));
+        }else{
+            if(pages!=null&&pageCount()>1)panel.addView(Ui.button(activity,activity.getString(R.string.widget_move_page),()->{closeDetails();moveToPage(entry);}));
+            Button remove=Ui.button(activity,activity.getString(R.string.ui_remove_widget),()->DesktopBackdrop.showDialog(activity,new AlertDialog.Builder(activity).setMessage(R.string.ui_remove_this_widget).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_remove,(dialog,which)->{
+                closeDetails();entries.remove(entry);selected=null;save();
+                if(entry.kind.equals("widget"))host.deleteAppWidgetId(entry.id);else if(entry.kind.equals("image"))WidgetImages.remove(activity,entry.image);rebuild();
+            }).create()));
+            panel.addView(remove);
         }
-        panel.addView(Ui.button(activity,activity.getString(R.string.ui_add_widget),this::choose));
-        panel.addView(Ui.button(activity,activity.getString(R.string.widget_add_text),this::addText));
-        panel.addView(Ui.button(activity,activity.getString(R.string.widget_add_image),this::addImage));
-        canvas.addView(scroll,editorBounds());updateValues();
+        updateValues();return panel;
     }
-    private FrameLayout.LayoutParams editorBounds(){int available=canvas.getWidth()>0?canvas.getWidth():activity.getResources().getDisplayMetrics().widthPixels;return new FrameLayout.LayoutParams(Math.min(available,Math.min(dp(240),Math.max(dp(160),Math.round(available*.72f)))),-1,(editorLeft?Gravity.LEFT:Gravity.RIGHT)|Gravity.TOP);}
+    private FrameLayout.LayoutParams editorBounds(){
+        int available=canvas.getWidth()>0?canvas.getWidth():activity.getResources().getDisplayMetrics().widthPixels;
+        int gravity=(editorLeft?Gravity.LEFT:Gravity.RIGHT)|Gravity.BOTTOM;
+        // Prefer the opposite vertical half of the selected item; folds remain available in either position.
+        if(selected!=null&&selected.frame!=null&&selected.frame.getTop()+selected.frame.getHeight()/2>canvas.getHeight()/2)gravity=(editorLeft?Gravity.LEFT:Gravity.RIGHT)|Gravity.TOP;
+        // Keep the inspector itself out of the controls, even when selection is near the top.
+        if(!reservedControls.isEmpty()&&(editorLeft?reservedControls.left<dp(200):reservedControls.right>available-dp(200)))gravity=(editorLeft?Gravity.LEFT:Gravity.RIGHT)|Gravity.TOP;
+        return new FrameLayout.LayoutParams(Math.min(available,dp(200)),-2,gravity);
+    }
     private Button editorButton(String text,int description,Runnable action){Button b=Ui.toolbarButton(activity,text,action);b.setContentDescription(activity.getString(description));b.setPadding(0,0,0,0);b.setMinWidth(0);b.setMinimumWidth(0);return b;}
-    private int geometry(Entry e,int axis){return axis==0?e.x:axis==1?e.y:axis==2?e.w:e.h;}
+    private int geometry(Entry e,int axis){return axis==0?(hubFromRight?screenX(e):e.x):axis==1?e.y:axis==2?e.w:e.h;}
     private boolean resizable(Entry e,int axis){return axis<2||e.info==null||e.mode!=WidgetGeometry.NORMAL||(e.info.resizeMode&(axis==2?AppWidgetProviderInfo.RESIZE_HORIZONTAL:AppWidgetProviderInfo.RESIZE_VERTICAL))!=0;}
-    private void updateValues(){if(selected==null)return;String[] names={"X","Y",activity.getString(R.string.widget_edit_width),activity.getString(R.string.widget_edit_height)};for(int i=0;i<4;i++)if(values[i]!=null)values[i].setText(names[i]+"\n"+geometry(selected,i)+" dp");}
+    private void updateValues(){updateOverlapHint();if(selected==null)return;String[] names={"X","Y",activity.getString(R.string.widget_edit_width),activity.getString(R.string.widget_edit_height)};for(int i=0;i<4;i++)if(values[i]!=null)values[i].setText(names[i]+"\n"+geometry(selected,i)+" dp");}
     private void adjust(Entry e,int axis,int value){
         if(!resizable(e,axis))return;int aw=Math.max(1,pxToDp(canvas.getWidth())),ah=Math.max(1,pxToDp(canvas.getHeight()));
-        e.x=Math.max(0,Math.min(e.x,aw-Math.min(e.w,aw)));e.y=Math.max(0,Math.min(e.y,ah-Math.min(e.h,ah)));
-        if(axis==0)e.x=Math.max(0,Math.min(value,aw-Math.min(e.w,aw)));
+        int oldX=e.x,oldY=e.y,oldW=e.w,oldH=e.h;long oldOverlap=controlsOverlap(e);
+        int left=sideX(e.x,e.w,aw);e.y=Math.max(0,Math.min(e.y,ah-Math.min(e.h,ah)));
+        if(axis==0)left=Math.max(0,Math.min(value,aw-Math.min(e.w,aw)));
         if(axis==1)e.y=Math.max(0,Math.min(value,ah-Math.min(e.h,ah)));
-        if(axis==2)e.w=WidgetGeometry.resize(value,aw-Math.min(e.x,aw-1),e.info==null?80:minimum(e,true),e.info==null?0:maximum(e,true));
+        if(axis==2)e.w=WidgetGeometry.resize(value,aw-Math.min(left,aw-1),e.info==null?80:minimum(e,true),e.info==null?0:maximum(e,true));
         if(axis==3)e.h=WidgetGeometry.resize(value,ah-Math.min(e.y,ah-1),e.info==null?60:minimum(e,false),e.info==null?0:maximum(e,false));
+        e.x=sideX(left,e.w,aw);
+        if(controlsOverlap(e)>oldOverlap){e.x=oldX;e.y=oldY;e.w=oldW;e.h=oldH;}
         layout(e);save();updateValues();
     }
     private void number(Entry e,int axis,int name){
         EditText input=new EditText(activity);input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);input.setSingleLine(true);input.setText(String.valueOf(geometry(e,axis)));input.selectAll();
         AlertDialog dialog=new AlertDialog.Builder(activity).setTitle(activity.getString(name)+" (dp)").setView(input).setNegativeButton(R.string.ui_cancel,null).setPositiveButton(R.string.ui_apply,null).create();
-        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{int n=Integer.parseInt(input.getText().toString());if(n<0||n>10000)throw new NumberFormatException();adjust(e,axis,n);dialog.dismiss();}catch(NumberFormatException ex){input.setError(activity.getString(R.string.widget_edit_number));}}));DesktopBackdrop.showDialog(activity,dialog);
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{int n=Integer.parseInt(input.getText().toString());if(n<0||n>10000)throw new NumberFormatException();adjust(e,axis,n);dialog.dismiss();}catch(NumberFormatException ex){input.setError(activity.getString(R.string.widget_edit_number));}}));geometryDialog=dialog;DesktopBackdrop.showDialog(activity,dialog);
     }
     private int padding(AppWidgetProviderInfo info,boolean horizontal){
         android.graphics.Rect p=AppWidgetHostView.getDefaultPaddingForWidget(activity,info.provider,null);
@@ -358,14 +512,14 @@ final class DesktopWidgets {
                 if(w<80||h<60||w>2048||h>2048)throw new NumberFormatException();
                 e.baseW=w;e.baseH=h;e.mode=WidgetGeometry.SCALE;save();dialog.dismiss();rebuild();
             }catch(NumberFormatException ex){Ui.message(activity,activity.getString(R.string.ui_enter_width_80_2048_and_height_60_2048_dp));}
-        }));DesktopBackdrop.showDialog(activity,dialog);
+        }));geometryDialog=dialog;DesktopBackdrop.showDialog(activity,dialog);
     }
-    private void relayout(){for(Entry e:entries)layout(e);if(editor!=null&&!editorCollapsed)editor.setLayoutParams(editorBounds());}
+    private void relayout(){if(switchProfile()){rebuild();return;}for(Entry e:entries)layout(e);if(editor!=null&&!editorCollapsed)editor.setLayoutParams(editorBounds());}
     private void layout(Entry e){
         int availableW=pxToDp(canvas.getWidth()),availableH=pxToDp(canvas.getHeight());if(availableW<=0||availableH<=0)return;
         int w=Math.min(e.w,availableW),h=Math.min(e.h,availableH);
-        // Editing adds no chrome or margins to provider content. Coordinates never jump.
-        FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(dp(w),dp(h));p.leftMargin=dp(Math.max(0,Math.min(e.x,availableW-w)));p.topMargin=dp(Math.max(0,Math.min(e.y,availableH-h)));e.frame.setLayoutParams(p);
+        // Only placement follows the Hub edge; provider pixels, IDs and stored X stay canonical.
+        FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(dp(w),dp(h));p.leftMargin=dp(sideX(e.x,w,availableW));p.topMargin=dp(Math.max(0,Math.min(e.y,availableH-h)));e.frame.setLayoutParams(p);
         View content=e.frame.getChildAt(0);content.setLayoutParams(new FrameLayout.LayoutParams(-1,-1));
         if(e.view!=null){
             int logicalW=w,logicalH=h;

@@ -22,6 +22,7 @@
         android:localeConfig="@xml/locales_config" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true">
         <activity android:name=".IconSettingsActivity" android:exported="false" android:resizeableActivity="true" android:excludeFromRecents="true" />
         <activity android:name=".PrerequisitesActivity" android:exported="false" />
+        <activity android:name=".PowerModeActivity" android:exported="false" android:resizeableActivity="true" />
         <activity android:name=".DisplayManagementActivity" android:exported="false" />
         <activity android:name=".AppearanceActivity" android:exported="false" android:resizeableActivity="true"
             android:launchMode="singleTask" android:taskAffinity="net.fuyumori.stellashell.appearance" android:excludeFromRecents="true" />
@@ -83,8 +84,5 @@
         <service android:name=".DockService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-enabled external display desktop dock and cable connection monitoring" />
         </service>
-        <provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="${applicationId}.shizuku"
-            android:multiprocess="false" android:enabled="true" android:exported="true"
-            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
     </application>
 </manifest>

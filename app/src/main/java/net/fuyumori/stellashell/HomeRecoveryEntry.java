@@ -5,7 +5,6 @@ import android.content.Intent;
 /** OS HOME intents only: internal navigation and restored/history tasks are not presses. */
 final class HomeRecoveryEntry {
     static final String INTERNAL_HOME = "net.fuyumori.stellashell.INTERNAL_HOME";
-    static final String SETTINGS_PAGE = "net.fuyumori.stellashell.SETTINGS_PAGE";
 
     private HomeRecoveryEntry() {}
 

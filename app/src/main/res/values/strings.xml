@@ -355,7 +355,7 @@
     <string name="dashboard_appearance_note">Colors, fonts and desktop style</string>
     <string name="dashboard_connection_help">How to connect an external screen</string>
     <string name="dashboard_permissions">Connection &amp; permissions</string>
-    <string name="dashboard_permissions_note">Shizuku and taskbar overlay access</string>
+    <string name="dashboard_permissions_note">Overlay and notification permissions</string>
     <string name="dashboard_layout_note">Automatic, desktop or compact</string>
     <string name="dashboard_workspace">Workspace</string>
     <string name="dashboard_windows">App windows</string>
@@ -369,14 +369,14 @@
     <string name="dashboard_enabled">Enabled</string>
     <string name="dashboard_disabled">Disabled</string>
     <string name="onboard_title">Set up your workspace</string>
-    <string name="onboard_intro">Allow these two connections to use the desktop. You only need to set them up once.</string>
+    <string name="onboard_intro">Allow Dock and the taskbar to appear over your apps. Additional features can be enabled separately in Extensions.</string>
     <string name="onboard_shizuku">01  Shizuku</string>
     <string name="onboard_open_shizuku">Open Shizuku</string>
     <string name="onboard_install_shizuku">Install and start Shizuku, then return here to grant StellaShell access.</string>
     <string name="onboard_connect">Connect and authorize</string>
     <string name="onboard_retry">Retry connection</string>
-    <string name="onboard_overlay">02  Taskbar overlay</string>
-    <string name="onboard_overlay_note">Allows the taskbar to appear above other apps.</string>
+    <string name="onboard_overlay">Dock and taskbar</string>
+    <string name="onboard_overlay_note">Allows Dock and the taskbar to appear above other apps.</string>
     <string name="onboard_allow_overlay">Allow overlay</string>
     <string name="onboard_allowed">● Allowed</string>
     <string name="onboard_notifications">Notifications · optional</string>
@@ -401,8 +401,8 @@
     <string name="home_set_default">Set as default home</string>
     <string name="home_change">Change home app</string>
     <string name="home_change_note">Choose StellaShell or another launcher in Android settings.</string>
-    <string name="home_selected">StellaShell is your default home. Basic home works without Shizuku.</string>
-    <string name="home_available">Use as an optional home app. App launching and wallpaper work without Shizuku.</string>
+    <string name="home_selected">StellaShell is your default home.</string>
+    <string name="home_available">Use StellaShell as your home for apps and widgets.</string>
     <string name="workspace_role_unavailable">The app could not use the requested window role. Try a different role.</string>
     <string name="icons_title">Icons</string>
     <string name="icons_edit">Change icon</string>

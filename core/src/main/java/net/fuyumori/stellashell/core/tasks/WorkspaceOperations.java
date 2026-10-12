@@ -44,7 +44,12 @@ public final class WorkspaceOperations {
     }
     public long begin(){busy=true;return generation;}
     public boolean current(long ticket){return ticket==generation;}
+    public boolean current(long ticket,BooleanSupplier permitted){return current(ticket)&&permitted.getAsBoolean();}
     public void requireCurrent(long ticket){if(!current(ticket))throw new IllegalStateException("Workspace session ended");}
+    public void requireCurrent(long ticket,BooleanSupplier permitted){
+        requireCurrent(ticket);
+        if(!permitted.getAsBoolean())throw new IllegalStateException("Extensions session ended");
+    }
     public boolean release(long ticket){if(!current(ticket))return false;busy=false;return true;}
     public void drain(){
         if(draining)return;

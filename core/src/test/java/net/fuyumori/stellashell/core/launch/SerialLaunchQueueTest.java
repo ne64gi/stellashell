@@ -17,6 +17,30 @@ public class SerialLaunchQueueTest {
     }
     private static void unexpected(RuntimeException failure){throw new AssertionError("Unexpected launch failure",failure);}
 
+    @Test public void revokedLaunchDrainsDespiteBusyWorkspaceAndCannotReviveAfterReconnect(){
+        Scheduler scheduler=new Scheduler();SerialLaunchQueue queue=new SerialLaunchQueue(scheduler);
+        net.fuyumori.stellashell.core.power.PowerSession power=new net.fuyumori.stellashell.core.power.PowerSession(true);
+        power.connected(true);long generation=power.generation();
+        queue.enqueueWhile(()->power.active()&&power.permits(generation),()->true,
+                done->fail("Old privileged launch revived"),SerialLaunchQueueTest::unexpected);
+        assertTrue(queue.pending());assertEquals(1,scheduler.callbacks.size());
+        power.connected(false);power.connected(true);
+        scheduler.tick();
+        assertFalse(queue.pending());assertTrue(scheduler.callbacks.isEmpty());
+        int[] fresh={0};queue.enqueue(()->false,done->{fresh[0]++;done.finish();},SerialLaunchQueueTest::unexpected);
+        assertEquals(1,fresh[0]);
+    }
+
+    @Test public void revokedCommandBehindAnActiveLaunchNeverDispatches(){
+        Scheduler scheduler=new Scheduler();SerialLaunchQueue queue=new SerialLaunchQueue(scheduler);
+        SerialLaunchQueue.Completion[] active={null};boolean[] allowed={true};int[] busyReads={0};
+        queue.enqueue(()->false,done->active[0]=done,SerialLaunchQueueTest::unexpected);
+        queue.enqueueWhile(()->allowed[0],()->{busyReads[0]++;return true;},
+                done->fail("Revoked queued command ran"),SerialLaunchQueueTest::unexpected);
+        allowed[0]=false;active[0].finish();
+        assertEquals(0,busyReads[0]);assertFalse(queue.pending());assertTrue(scheduler.callbacks.isEmpty());
+    }
+
     @Test public void asyncJobsRemainFifoAndOldCompletionsCannotReleaseTheNextJob(){
         Scheduler scheduler=new Scheduler();SerialLaunchQueue queue=new SerialLaunchQueue(scheduler);
         List<Integer> started=new ArrayList<>();List<SerialLaunchQueue.Completion> completions=new ArrayList<>();

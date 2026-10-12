@@ -40,6 +40,14 @@ public final class SerialLaunchQueue {
         drain();
     }
 
+    /** Revoked queued commands neither wait on busy state nor execute in a later session. */
+    public void enqueueWhile(BooleanSupplier permitted,BooleanSupplier busy,Action action,Consumer<RuntimeException> failed){
+        Objects.requireNonNull(permitted);Objects.requireNonNull(busy);Objects.requireNonNull(action);
+        enqueue(()->permitted.getAsBoolean()&&busy.getAsBoolean(),done->{
+            if(permitted.getAsBoolean())action.run(done);else done.finish();
+        },failed);
+    }
+
     /** Includes the active job, waiting jobs and a busy-gated head awaiting its retry. */
     public boolean pending(){return active!=null||!waiting.isEmpty();}
 

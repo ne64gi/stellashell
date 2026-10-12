@@ -5,9 +5,36 @@ import java.util.Arrays;
 import java.util.List;
 import org.junit.Test;
 import net.fuyumori.stellashell.core.display.AutoOutputReconciler;
+import net.fuyumori.stellashell.core.power.PowerSession;
 import static org.junit.Assert.*;
 
 public class WorkspaceOperationsTest {
+    @Test public void powerRevocationSkipsQueuedTransferBeforeResolvingSource(){
+        WorkspaceOperations operations=new WorkspaceOperations();PowerSession power=new PowerSession(true);power.connected(true);
+        long generation=power.generation(),command=operations.begin();int[] skipped={0};
+        operations.enqueueTransfer(()->{fail("Revoked request resolved saved target");return 0;},
+                ()->power.active()&&power.permits(generation),source->fail("Revoked request committed target"),()->skipped[0]++);
+        power.request(false);power.released(true);power.request(true);power.connected(true);
+        assertTrue(operations.release(command));operations.drain();assertEquals(1,skipped[0]);
+    }
+    @Test public void lateTransferSuccessCannotCommitOrFocusAfterOffAndNewOn(){
+        WorkspaceOperations operations=new WorkspaceOperations();PowerSession power=new PowerSession(true);power.connected(true);
+        long command=operations.begin(),generation=power.generation();int[] savedTarget={4},focused={0};
+        java.util.function.BooleanSupplier lifetime=()->power.active()&&power.permits(generation);
+        operations.requireCurrent(command,lifetime); // One move was already accepted by the OS.
+        power.request(false);power.released(true);power.request(true);power.connected(true);
+        if(operations.current(command,lifetime)){savedTarget[0]=0;focused[0]++;}
+        assertEquals(4,savedTarget[0]);assertEquals(0,focused[0]);
+        try{operations.requireCurrent(command,lifetime);fail("Stale generation dispatched rollback/focus");}
+        catch(IllegalStateException expected){assertEquals("Extensions session ended",expected.getMessage());}
+        assertTrue(operations.release(command));assertFalse(operations.busy());
+    }
+    @Test public void disconnectedPowerRejectsDispatchEvenBeforeItsGenerationChanges(){
+        WorkspaceOperations operations=new WorkspaceOperations();PowerSession power=new PowerSession(true);
+        long command=operations.begin(),generation=power.generation();
+        assertFalse(operations.current(command,()->power.active()&&power.permits(generation)));
+        assertTrue(operations.release(command));
+    }
     @Test public void disconnectAndReconnectWaitForTheWholeTransfer(){
         WorkspaceOperations operations=new WorkspaceOperations();List<Integer> destinations=new ArrayList<>();
         long first=operations.begin();long[] next={-1};

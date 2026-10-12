@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="base_shell_title">Dockとランチャー</string>
+    <string name="base_shell_note">本体でDockとアプリランチャーを使います。</string>
+    <string name="base_shell_start">Dockを開始</string>
+    <string name="base_shell_stop">Dockを停止</string>
+    <string name="base_shell_running">本体でDockを表示しています</string>
+</resources>

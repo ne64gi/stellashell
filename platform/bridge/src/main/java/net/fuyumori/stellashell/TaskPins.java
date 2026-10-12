@@ -8,6 +8,8 @@ final class TaskPins {
         List<FrameworkTaskAccess.Entry> all()throws Exception;
         void set(FrameworkTaskAccess.Entry task,boolean enabled)throws Exception;
         default boolean supports(FrameworkTaskAccess.Entry task){return true;}
+        /** Exhaustive stores can prove absence; capped framework adapters must check root IDs. */
+        default boolean absentConfirmed(int taskId)throws Exception{return true;}
     }
     private static final class Pin {
         final int id;final Object token;final String component;boolean suspended;
@@ -46,7 +48,8 @@ final class TaskPins {
         Map<Integer,FrameworkTaskAccess.Entry> live=new HashMap<>();for(FrameworkTaskAccess.Entry task:access.all())live.put(task.id,task);
         for(Pin pin:new ArrayList<>(pins.values())){
             FrameworkTaskAccess.Entry task=live.get(pin.id);
-            if(task==null||!pin.matches(task)){pins.remove(pin.id);continue;}
+            if(task==null){if(access.absentConfirmed(pin.id))pins.remove(pin.id);continue;}
+            if(!pin.matches(task)){pins.remove(pin.id);continue;}
             if(task.windowMode!=5||!access.supports(task)){access.set(task,false);pins.remove(pin.id);continue;}
             if(pin.suspended&&task.visible&&task.focused)resume(task);
             else if(!pin.suspended&&!task.alwaysOnTop)pins.remove(pin.id); // Respect external changes.
@@ -57,7 +60,9 @@ final class TaskPins {
         Map<Integer,FrameworkTaskAccess.Entry> live=new HashMap<>();for(FrameworkTaskAccess.Entry task:access.all())live.put(task.id,task);
         Exception failure=null;
         for(Pin pin:new ArrayList<>(pins.values()))try{
-            FrameworkTaskAccess.Entry task=live.get(pin.id);if(task!=null&&pin.matches(task))access.set(task,false);pins.remove(pin.id);
+            FrameworkTaskAccess.Entry task=live.get(pin.id);
+            if(task==null&&!access.absentConfirmed(pin.id))throw new IllegalStateException("Pinned task is outside the current snapshot");
+            if(task!=null&&pin.matches(task))access.set(task,false);pins.remove(pin.id);
         }catch(Exception e){if(failure==null)failure=e;else failure.addSuppressed(e);}
         if(failure!=null)throw failure;
     }

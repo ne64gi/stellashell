@@ -40,7 +40,8 @@ final class ShellSettingsChecks {
                     && defaults.phoneDock.triggerPercent == 80
                     && defaults.phoneDock.scalePercent == 100, "phone Dock defaults changed");
             check(defaults.phoneLandscapeDock.edge == ShellSettings.DockEdge.BOTTOM
-                    && defaults.phoneLandscapeDock.positionPercent == 50,
+                    && defaults.phoneLandscapeDock.positionPercent == 50
+                    && !defaults.phoneLandscapeDock.gesture && defaults.phoneLandscapeDock.openMethod == Method.SWIPE,
                     "landscape handle defaults must be independent of portrait sides/height");
             check(defaults.phoneDock.openMethod == Method.SWIPE && defaults.externalDock.openMethod == Method.SWIPE,
                     "missing opening preferences must retain swipe on both screens");
@@ -81,10 +82,12 @@ final class ShellSettingsChecks {
                     && seeded.externalDock.xPercent == 23 && seeded.externalDock.yPercent == 42
                     && seeded.externalDock.scalePercent == 50, "legacy external Dock values not restored");
             check(seeded.phoneLandscapeDock.edge == ShellSettings.DockEdge.BOTTOM
-                    && seeded.phoneLandscapeDock.positionPercent == 50 && !seeded.externalDock.revealByHandle,
+                    && seeded.phoneLandscapeDock.positionPercent == 50 && !seeded.phoneLandscapeDock.gesture
+                    && seeded.phoneLandscapeDock.openMethod == Method.SWIPE && !seeded.externalDock.revealByHandle,
                     "legacy installs must not infer new reveal settings from existing geometry");
             check(!prefs.contains("phone_dock_landscape_edge") && !prefs.contains("phone_dock_landscape_position")
                     && !prefs.contains("desktop_dock_by_handle")
+                    && !prefs.contains("phone_dock_landscape_gesture") && !prefs.contains("phone_dock_landscape_open_method")
                     && !prefs.contains("phone_dock_open_method") && !prefs.contains("desktop_dock_open_method"),
                     "snapshot unexpectedly migrated preferences");
             check(seeded.phoneTaskbar.enabled && seeded.phoneTaskbar.scalePercent == 120
@@ -218,6 +221,7 @@ final class ShellSettingsChecks {
                     "new handle preferences corrupted portrait/always-visible geometry");
 
             verifyOpenMethods(prefs, owner);
+            verifyLandscapeOpening(prefs, owner);
             owner.setPhoneDockSide(ShellSettings.PhoneSide.GESTURE);
             check(owner.snapshot().phoneDock.phoneSide==ShellSettings.PhoneSide.GESTURE
                     && "gesture".equals(prefs.getString("phone_sidebar_side","")),"gesture selection did not round-trip");
@@ -342,6 +346,74 @@ final class ShellSettingsChecks {
         }
     }
 
+    private static void verifyLandscapeOpening(SharedPreferences prefs, ShellSettings owner) throws Exception {
+        // An installed portrait gesture/tap choice must not opt games in landscape into gestures.
+        owner.setPhoneDockSide(ShellSettings.PhoneSide.GESTURE);
+        owner.setPhoneDockOpenMethod(Method.DOUBLE_TAP);
+        prefs.edit().remove("phone_dock_landscape_gesture").remove("phone_dock_landscape_open_method").commit();
+        Map<String, ?> legacy = prefs.getAll();
+        ShellSettings.Snapshot defaults = owner.snapshot();
+        check(!defaults.phoneLandscapeDock.gesture && defaults.phoneLandscapeDock.openMethod == Method.SWIPE
+                && defaults.phoneDock.phoneSide == ShellSettings.PhoneSide.GESTURE
+                && defaults.phoneDock.openMethod == Method.DOUBLE_TAP,
+                "landscape inherited installed portrait opening choices");
+        check(legacy.equals(prefs.getAll()), "landscape defaults migrated installed preferences on read");
+        owner.setPhoneLandscapeDockGesture(false);
+        owner.setPhoneLandscapeDockOpenMethod(Method.SWIPE);
+        EnumSet<ShellSettings.Change> events = EnumSet.noneOf(ShellSettings.Change.class);
+        AutoCloseable observer = owner.observe((changes, snapshot) -> events.addAll(changes));
+        try {
+            for (Method method : new Method[]{Method.SINGLE_TAP, Method.DOUBLE_TAP, Method.SWIPE}) {
+                Map<String, ?> before = prefs.getAll();
+                events.clear();
+                owner.setPhoneLandscapeDockOpenMethod(method);
+                check(events.equals(EnumSet.of(ShellSettings.Change.PHONE_DOCK_LANDSCAPE_OPEN_METHOD)),
+                        "landscape opening method emitted another domain's change");
+                check(owner.snapshot().phoneLandscapeDock.openMethod == method
+                        && method.storedValue().equals(prefs.getString("phone_dock_landscape_open_method", null)),
+                        "landscape opening method did not persist");
+                assertOnlyKeyChanged(before, prefs.getAll(), "phone_dock_landscape_open_method");
+                for (boolean gesture : new boolean[]{true, false}) {
+                    before = prefs.getAll();
+                    events.clear();
+                    owner.setPhoneLandscapeDockGesture(gesture);
+                    check(events.equals(EnumSet.of(ShellSettings.Change.PHONE_DOCK_LANDSCAPE_GESTURE)),
+                            "landscape gesture emitted portrait/external changes");
+                    check(owner.snapshot().phoneLandscapeDock.gesture == gesture
+                            && owner.snapshot().phoneLandscapeDock.openMethod == method
+                            && owner.snapshot().phoneDock.phoneSide == ShellSettings.PhoneSide.GESTURE
+                            && owner.snapshot().phoneDock.openMethod == Method.DOUBLE_TAP,
+                            "landscape mode crossed portrait choices or discarded its handle method");
+                    assertOnlyKeyChanged(before, prefs.getAll(), "phone_dock_landscape_gesture");
+                }
+            }
+            // Portrait changes cannot turn off the independently selected landscape gesture or method.
+            owner.setPhoneLandscapeDockGesture(true);
+            owner.setPhoneLandscapeDockOpenMethod(Method.SINGLE_TAP);
+            owner.setPhoneDockSide(ShellSettings.PhoneSide.RIGHT);
+            owner.setPhoneDockOpenMethod(Method.SWIPE);
+            check(owner.snapshot().phoneLandscapeDock.gesture
+                    && owner.snapshot().phoneLandscapeDock.openMethod == Method.SINGLE_TAP
+                    && owner.snapshot().phoneLandscapeDock.edge == ShellSettings.DockEdge.RIGHT
+                    && owner.snapshot().phoneLandscapeDock.positionPercent == 27,
+                    "portrait changes rewrote landscape mode, method or saved geometry");
+            try (ShellSettings recreated = ShellSettings.isolated(prefs)) {
+                check(recreated.snapshot().phoneLandscapeDock.gesture
+                        && recreated.snapshot().phoneLandscapeDock.openMethod == Method.SINGLE_TAP,
+                        "recreated settings owner lost landscape choices");
+            }
+            prefs.edit().putString("phone_dock_landscape_open_method", "obsolete").commit();
+            check(owner.snapshot().phoneLandscapeDock.openMethod == Method.SWIPE
+                    && "obsolete".equals(prefs.getString("phone_dock_landscape_open_method", null)),
+                    "invalid landscape opening method was not normalized without rewriting storage");
+            owner.setPhoneLandscapeDockOpenMethod(Method.SWIPE);
+            owner.setPhoneLandscapeDockGesture(false);
+            assertTypes(prefs.getAll(), new String[]{"phone_dock_landscape_gesture", "phone_dock_landscape_open_method"});
+        } finally {
+            observer.close();
+        }
+    }
+
     private static void assertOnlyKeyChanged(Map<String, ?> before, Map<String, ?> after, String expected) {
         check(before.keySet().equals(after.keySet()), "opening method added unrelated preference keys");
         for (String key : before.keySet()) {
@@ -355,9 +427,11 @@ final class ShellSettingsChecks {
             Object value = values.get(key);
             Class<?> expected = key.equals("phone_sidebar_side") || key.equals("dock_edge")
                     || key.equals("shell_layout") || key.equals("phone_dock_landscape_edge")
+                    || key.equals("phone_dock_landscape_open_method")
                     || key.equals("phone_dock_open_method") || key.equals("desktop_dock_open_method") ? String.class
                     : key.equals("phone_sidebar") || key.equals("phone_sidebar_over_apps")
                     || key.equals("desktop_dock") || key.equals("desktop_dock_by_handle") || key.equals("phone_taskbar")
+                    || key.equals("phone_dock_landscape_gesture")
                     || key.equals("compact_workspace") || key.equals("workspace_auto")
                     || key.equals("primary_mode") ? Boolean.class : Integer.class;
             check(expected.isInstance(value), "legacy preference type changed for " + key);

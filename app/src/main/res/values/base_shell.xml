@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="base_shell_title">Dock and launcher</string>
+    <string name="base_shell_note">Use Dock and the app launcher on this device.</string>
+    <string name="base_shell_start">Start Dock</string>
+    <string name="base_shell_stop">Stop Dock</string>
+    <string name="base_shell_running">Dock is running on this device</string>
+</resources>

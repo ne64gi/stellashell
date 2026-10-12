@@ -43,11 +43,12 @@ final class WorkAreaObserver implements AutoCloseable {
     void refresh(){
         if(closed||!context.getDisplay().isValid())return;
         try{last=windows.getCurrentWindowMetrics().getWindowInsets();}catch(RuntimeException error){android.util.Log.w("StellaWorkArea","Metrics unavailable",error);return;}
-        WorkArea next=WorkArea.read(context,last),before=WorkArea.get(context,display);
-        WorkArea.put(display,next);
-        String diagnostic="display="+display+" physical="+next.physical+" usable="+next.usable+" application="+next.application+" content="+next.content+" compact="+next.compact+" ime="+next.imeVisible;
-        if(!diagnostic.equals(Launches.prefs(context).getString("work_area_diagnostics","")))Launches.prefs(context).edit().putString("work_area_diagnostics",diagnostic).apply();
-        if(!next.same(before)){probe.removeCallbacks(changed);probe.postDelayed(changed,120);}
+        WorkArea next=WorkArea.read(context,last);
+        if(!WorkArea.update(display,next))return;
+        // Geometry is live, display-scoped state. Do not persist every metrics
+        // event into one shared diagnostic preference (which alternating
+        // displays would continually overwrite, even with unchanged geometry).
+        probe.removeCallbacks(changed);probe.postDelayed(changed,120);
     }
     public void close(){if(closed)return;closed=true;displays.unregisterDisplayListener(displayListener);probe.removeCallbacks(changed);try{windows.removeViewImmediate(probe);}catch(RuntimeException ignored){}WorkArea.remove(display);}
 }

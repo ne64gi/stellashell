@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="power_mode_title">Extensions</string>
+    <string name="power_mode_summary">Gestures, desktop workspace and task controls</string>
+    <string name="power_mode_intro">Use Shizuku to add gestures while using other apps, running-task controls and a multi-window desktop. Home, Start and the edge Dock work without extensions.</string>
+    <string name="power_mode_enable">Enable extensions</string>
+    <string name="power_mode_active">The extra controls are available. Turning this off keeps your shell running.</string>
+    <string name="power_mode_enabled">Extensions are on. Connect below to use its extra controls.</string>
+    <string name="power_mode_disabled">Extensions are off. Your normal shell and saved settings are unchanged.</string>
+    <string name="power_mode_connection_title">Shizuku connection</string>
+    <string name="power_mode_connection_note">Start Shizuku, then connect to enable extensions. You can turn extensions off at any time.</string>
+    <string name="power_mode_connected">Connected</string>
+    <string name="power_mode_connect_note">Connect to enable the extra controls.</string>
+    <string name="power_mode_cleanup_title">Finish turning extensions off</string>
+    <string name="power_mode_cleanup_note">Extension controls are off. The device controls still need to be released. Start Shizuku, then retry; your normal shell continues to work.</string>
+    <string name="power_mode_cleanup_retry">Retry cleanup</string>
+    <string name="power_mode_back_settings">Back to extensions</string>
+    <string name="power_mode_operation_failed">Could not complete this action. See Diagnostics for details.</string>
+</resources>

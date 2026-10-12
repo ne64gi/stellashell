@@ -27,7 +27,7 @@ public class DesktopActivity extends Activity implements DisplayManager.DisplayL
             if(displayId!=0){finish();return;}
         }else{
             try{Displays.require(this,displayId);}catch(RuntimeException e){finish();return;}
-            if(!ShellRuntime.enabled(this)){finish();return;}
+            if(!ShellRuntime.enabled(this)||!PowerMode.of(this).active()){finish();return;}
         }
         displays=getSystemService(DisplayManager.class);displays.registerDisplayListener(this,new Handler(Looper.getMainLooper()));
         WorkspaceProfile.initialize(this);
@@ -135,7 +135,7 @@ public class DesktopActivity extends Activity implements DisplayManager.DisplayL
                 ||changes.contains(ShellSettings.Change.EXTERNAL_DOCK_EDGE)
                 ||changes.contains(ShellSettings.Change.EXTERNAL_DOCK_POSITION);
     }
-    private void runtimeChanged(){if(!homeSurface()&&!ShellRuntime.enabled(this))finishAndRemoveTask();}
+    private void runtimeChanged(){if(!homeSurface()&&(!ShellRuntime.enabled(this)||!PowerMode.of(this).active()))finishAndRemoveTask();}
     @Override public void onSharedPreferenceChanged(SharedPreferences p,String key){
         if(key!=null&&(key.startsWith("wallpaper")||key.startsWith("phone_wallpaper"))){
             if(visualStarted){wallpaper();if(imageWallpaper!=null)imageWallpaper.reload();}else wallpaperDirty=true;

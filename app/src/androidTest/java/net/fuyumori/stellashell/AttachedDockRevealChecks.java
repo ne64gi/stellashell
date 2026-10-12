@@ -197,6 +197,7 @@ final class AttachedDockRevealChecks {
                 WorkArea measured=WorkArea.read(window,window.getSystemService(WindowManager.class).getCurrentWindowMetrics().getWindowInsets());
                 WorkArea[] geometry={measured};
                 sandbox.shellSettings().setPhoneDockSide(ShellSettings.PhoneSide.GESTURE);
+                sandbox.shellSettings().setPhoneLandscapeDockGesture(true);
                 sandbox.shellSettings().setPhoneDockOverApps(true);
                 dock=new PhoneSidebar(sandbox,()->{},new Feed(),()->geometry[0]);
                 View panel=(View)get(dock,"panel");LinearLayout entries=(LinearLayout)get(dock,"entries");
@@ -206,8 +207,8 @@ final class AttachedDockRevealChecks {
                     check(panel.getVisibility()==View.VISIBLE&&measured.dockAvailable.contains(rect(panel)),"Gesture Dock escaped work area");
                     check(entries.getLayoutDirection()==View.LAYOUT_DIRECTION_LTR,"Vertical item order changed with gesture direction");
                     Rect initial=rect(panel);dock.showGesture(.5f,.2f,!right);check(initial.equals(rect(panel)),"Open Dock moved under a second gesture");
-                    boolean fromRight=initial.exactCenterX()>=measured.physical.exactCenterX();
-                    check((Boolean)get(dock,"right")==fromRight,"Widget pull side follows stroke instead of clamped Dock position");
+                    boolean fromRight=right;
+                    check((Boolean)get(dock,"right")==fromRight,"Widget pull must return along the last L-stroke leg");
                     View scroll=(View)get(dock,"strip");long start=SystemClock.uptimeMillis();
                     sandbox.captureWidgetPull=true;sandbox.capturedPull=null;
                     touch(scroll,"top",MotionEvent.ACTION_DOWN,0,start);
@@ -236,7 +237,22 @@ final class AttachedDockRevealChecks {
                 dock.showGesture(.5f,.55f,true);Rect changed=new Rect(measured.usable);changed.right--;
                 geometry[0]=new WorkArea(measured.physical,changed,measured.compact,measured.caption,measured.usable.bottom-measured.dockAvailable.bottom);
                 dock.relayout();check(panel.getVisibility()==View.GONE,"Geometry change kept an old gesture anchor");
+                // WorkArea publishes geometry before its delayed layout callback. A
+                // fresh completed gesture in that interval must survive the relayout.
+                Rect landscape=new Rect(measured.usable);
+                landscape.bottom=Math.min(landscape.bottom,landscape.top+Math.max(1,landscape.width()/2));
+                geometry[0]=new WorkArea(new Rect(0,0,measured.physical.width(),Math.max(1,measured.physical.width()/2)),landscape,false,0,0);
+                dock.showGesture(.65f,.55f,true);
+                check(panel.getVisibility()==View.VISIBLE&&geometry[0].dockAvailable.contains(rect(panel)),"Fresh landscape gesture was discarded by pending relayout");
+                check(((LinearLayout)get(dock,"entries")).getOrientation()==LinearLayout.VERTICAL,"Landscape gesture Dock became horizontal");
+                Rect opened=rect(panel);dock.relayout();
+                check(panel.getVisibility()==View.VISIBLE&&opened.equals(rect(panel)),"Delayed unchanged relayout closed the fresh Dock");
+                // A portrait gesture arriving before the old landscape Dock is
+                // relaid out should replace its stale anchor, not be ignored as open.
+                geometry[0]=measured;dock.showGesture(.35f,.55f,false);
+                check(panel.getVisibility()==View.VISIBLE&&measured.dockAvailable.contains(rect(panel)),"Fresh portrait gesture retained the old landscape state");
                 check(get(dock,"gestures")==null,"Isolated geometry fixture opened a global input reader");
+                edgeWidgetPulls(dock,sandbox,geometry,landscape,measured);
                 Intent home=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
                 check(HomeRecoveryEntry.isPress(home),"OS HOME was rejected");
                 check(!HomeRecoveryEntry.isPress(new Intent(home).putExtra(HomeRecoveryEntry.INTERNAL_HOME,true)),"Internal HOME counted");
@@ -245,6 +261,39 @@ final class AttachedDockRevealChecks {
                 check(!HomeRecoveryEntry.isPress(new Intent(Intent.ACTION_MAIN)),"Explicit Activity launch counted as HOME");
             }finally{if(dock!=null)dock.close();sandbox.cleanup();}
         });
+    }
+    private static void edgeWidgetPulls(PhoneSidebar dock,Sandbox sandbox,WorkArea[] geometry,Rect landscape,WorkArea measured){
+        dock.hide();
+        sandbox.shellSettings().setPhoneLandscapeDockGesture(false);
+        geometry[0]=new WorkArea(new Rect(0,0,measured.physical.width(),Math.max(1,measured.physical.width()/2)),landscape,false,0,0);
+        dock.relayout();dock.showGesture(.5f,.55f,true);
+        check(!(Boolean)get(dock,"shown")&&dock.handles.get(0).getVisibility()==View.VISIBLE,"Portrait gesture enabled global gesture in landscape handle mode");
+        for(ShellSettings.DockEdge selected:ShellSettings.DockEdge.values()){
+            String edge=selected.storedValue();sandbox.shellSettings().setPhoneLandscapeDockEdge(selected);dock.relayout();dock.show(true);
+            View panel=(View)get(dock,"panel"),scroll=(View)get(dock,"strip");
+            sandbox.captureWidgetPull=true;sandbox.capturedPull=null;
+            long start=SystemClock.uptimeMillis();String tangent=vertical(edge)?"top":"left";
+            touch(scroll,tangent,MotionEvent.ACTION_DOWN,0,start);
+            touch(scroll,tangent,MotionEvent.ACTION_MOVE,Ui.dp(scroll.getContext(),60),start);
+            touch(scroll,tangent,MotionEvent.ACTION_CANCEL,Ui.dp(scroll.getContext(),60),start);
+            check(sandbox.capturedPull==null,"Item scrolling opened Widgets at "+edge);
+            touch(scroll,edge,MotionEvent.ACTION_DOWN,0,start+100);
+            touch(scroll,edge,MotionEvent.ACTION_MOVE,Ui.dp(scroll.getContext(),60),start+100);
+            HubActivity.SidebarDrag pull=(HubActivity.SidebarDrag)get(dock,"drag");
+            check(pull!=null&&sandbox.capturedPull!=null&&edge.equals(pull.edge)&&pull.origin==null,"Second pull lost handle edge at "+edge);
+            Rect before=rect(panel);float leading=200;
+            pull.leading.accept(leading);Rect moved=rect(panel);
+            boolean negative="right".equals(edge)||"bottom".equals(edge);
+            if(vertical(edge))check(moved.top==before.top&&moved.left==Math.round(leading)-(negative?before.width():0),"Widget pull moved Dock on wrong axis at "+edge);
+            else check(moved.left==before.left&&moved.top==Math.round(leading)-(negative?before.height():0),"Widget pull moved Dock on wrong axis at "+edge);
+            touch(scroll,edge,MotionEvent.ACTION_UP,Ui.dp(scroll.getContext(),60),start+100);
+            check(pull.commit,"Second inward pull did not commit at "+edge);
+            // Even a released-but-pending commit must be canceled by new geometry.
+            geometry[0]=new WorkArea(geometry[0].physical,new Rect(landscape.left,landscape.top,landscape.right-1,landscape.bottom),false,0,0);
+            dock.relayout();check(pull.finished&&!pull.commit&&get(dock,"drag")==null,"Geometry change retained an old Widget pull");
+            pull.complete();sandbox.captureWidgetPull=false;
+            geometry[0]=new WorkArea(new Rect(0,0,measured.physical.width(),Math.max(1,measured.physical.width()/2)),landscape,false,0,0);dock.relayout();
+        }
     }
     private static void hiddenPhone(PhoneSidebar dock,Feed feed,int requests,String operation){
         View panel=(View)get(dock,"panel");
@@ -260,8 +309,9 @@ final class AttachedDockRevealChecks {
     private static void phoneTapMethods(Instrumentation test,PhoneSidebar dock,Sandbox sandbox,WorkArea[] geometry,Feed feed)throws Exception{
         for(Method method:new Method[]{Method.SINGLE_TAP,Method.DOUBLE_TAP})for(String edge:new String[]{"left","right","top","bottom"}){
             main(test,()->{
-                sandbox.shellSettings().setPhoneDockOpenMethod(method);
-                check(sandbox.shellSettings().snapshot().phoneDock.openMethod==method
+                sandbox.shellSettings().setPhoneLandscapeDockOpenMethod(method);
+                check(sandbox.shellSettings().snapshot().phoneLandscapeDock.openMethod==method
+                    &&sandbox.shellSettings().snapshot().phoneDock.openMethod==Method.SWIPE
                     &&sandbox.shellSettings().snapshot().externalDock.openMethod==Method.SWIPE,"Phone method selection crossed external Dock domain");
                 check(Launches.prefs(sandbox).edit().putString("phone_dock_landscape_edge",edge).putInt("phone_dock_landscape_position",37).commit(),"Phone tap method edge write failed");dock.rebuild();
             });
@@ -296,7 +346,7 @@ final class AttachedDockRevealChecks {
                 hiddenPhone(dock,feed,before+1,"Attached tap cancel");
             });
         }
-        main(test,()->{sandbox.shellSettings().setPhoneDockOpenMethod(Method.SWIPE);
+        main(test,()->{sandbox.shellSettings().setPhoneLandscapeDockOpenMethod(Method.SWIPE);
             check(Launches.prefs(sandbox).edit().putString("phone_dock_landscape_edge","bottom").commit(),"Phone swipe fixture restore failed");dock.rebuild();});
         await(test,()->dock.handles.get(0).isAttachedToWindow(),"Restored swipe handle did not attach");
     }

@@ -4,7 +4,7 @@ import android.app.Instrumentation;
 import android.content.*;
 import android.hardware.display.*;
 import android.os.*;
-import java.lang.reflect.*;
+import java.lang.reflect.Proxy;
 import java.util.*;
 import java.util.concurrent.*;
 import org.json.*;
@@ -15,31 +15,39 @@ final class WorkspaceTransferChecks {
     WorkspaceTransferChecks(Instrumentation test){this.test=test;}
     private void main(Runnable action){test.runOnMainSync(action);}
     private static void require(boolean value,String text){if(!value)throw new AssertionError(text);}
-    private static Field field(Class<?> type,String name)throws Exception{Field f=type.getDeclaredField(name);f.setAccessible(true);return f;}
     private static JSONObject task(int id)throws Exception{return new JSONObject().put("id",id).put("component","fixture/Task"+id).put("mode",5).put("visible",true).put("focused",false).put("left",20).put("top",100).put("right",400).put("bottom",500);}
     void run()throws Exception{
         Context actual=test.getTargetContext();
-        class Sandbox extends ContextWrapper implements ShellSettings.Provider,TaskState.Provider {
-            private ShellSettings settings;private TaskState tasks;
+        String storeName="workspace_transfer_fixture_"+System.nanoTime();
+        class Sandbox extends ContextWrapper implements ShellSettings.Provider,TaskState.Provider,PowerMode.Provider,Bridge.Provider {
+            private ShellSettings settings;private TaskState tasks;private PowerMode power;private Bridge fixtureBridge;
             Sandbox(){super(actual);}
             @Override public Context getApplicationContext(){return this;}
-            @Override public SharedPreferences getSharedPreferences(String name,int mode){return actual.getSharedPreferences("workspace_transfer_fixture",mode);}
+            @Override public SharedPreferences getSharedPreferences(String name,int mode){return actual.getSharedPreferences(storeName,mode);}
             public ShellSettings shellSettings(){if(settings==null)settings=ShellSettings.isolated(getSharedPreferences("desktop",0));return settings;}
             public TaskState taskState(){if(tasks==null)tasks=TaskState.isolated(this);return tasks;}
-            void close(){if(tasks!=null)tasks.closeOwner();if(settings!=null)settings.close();}
+            public PowerMode powerMode(){if(power==null)power=PowerMode.forPreferences(Launches.prefs(this),new PowerMode.Backend(){
+                public void connect(){}public void resumeHome(){}
+                public void powerChanged(boolean requested,Bridge.Reply reply){reply.done("OK",null);}
+                public void retry(Bridge.Reply reply){reply.done("OK",null);}
+            });return power;}
+            public Bridge bridge(){if(fixtureBridge==null)throw new AssertionError("Fixture backend not installed");return fixtureBridge;}
+            void install(IDesktopBridge backend){fixtureBridge=Bridge.forService(this,backend,powerMode());}
+            void close(){if(tasks!=null)tasks.closeOwner();if(settings!=null)settings.close();if(fixtureBridge!=null)fixtureBridge.closeIsolated();}
         }
         Sandbox context=new Sandbox();
-        SharedPreferences prefs=Launches.prefs(context),real=Launches.prefs(actual);Map<String,?> before=real.getAll();
-        Bridge bridge=Bridge.get(actual);Field service=field(Bridge.class,"service"),binding=field(Bridge.class,"binding");
-        Object previous=service.get(bridge);boolean wasBinding=binding.getBoolean(bridge);VirtualDisplay display=null;
+        SharedPreferences prefs=Launches.prefs(context);VirtualDisplay display=null;
         try{
-            main(()->{ShellRuntime.stop(actual,false);real.edit().putBoolean("workspace_auto",false).commit();prefs.edit().clear().putBoolean("enabled",true).putBoolean("primary_mode",true).putInt("workspace_display",0).commit();});test.waitForIdleSync();
+            main(()->prefs.edit().clear().putBoolean("enabled",true).putBoolean("primary_mode",true).putBoolean("power_mode",true).putInt("workspace_display",0).commit());test.waitForIdleSync();
             display=actual.getSystemService(DisplayManager.class).createVirtualDisplay("Stella rollback fixture",800,600,160,null,DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC|DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY);
             require(display!=null,"Could not create disposable fixture display");int external=display.getDisplay().getDisplayId();
             require(Displays.allIds(context).contains(external),"Fixture display unavailable");
             Map<Integer,Integer> locations=new ConcurrentHashMap<>();locations.put(1,0);locations.put(2,0);
             List<Integer> rollback=new CopyOnWriteArrayList<>();java.util.concurrent.atomic.AtomicBoolean fail=new java.util.concurrent.atomic.AtomicBoolean(true);Binder binder=new Binder();
             CountDownLatch entered=new CountDownLatch(1),resume=new CountDownLatch(1);
+            CountDownLatch lateEntered=new CountDownLatch(1),lateResume=new CountDownLatch(1);
+            java.util.concurrent.atomic.AtomicBoolean holdLate=new java.util.concurrent.atomic.AtomicBoolean();
+            java.util.concurrent.atomic.AtomicInteger focused=new java.util.concurrent.atomic.AtomicInteger();
             IDesktopBridge fake=(IDesktopBridge)Proxy.newProxyInstance(IDesktopBridge.class.getClassLoader(),new Class<?>[]{IDesktopBridge.class},(proxy,method,args)->{
                 switch(method.getName()){
                     case "asBinder":return binder;
@@ -56,10 +64,17 @@ final class WorkspaceTransferChecks {
                         if(fail.get()&&from==0&&to==external&&id==2)throw new IllegalStateException("Injected error after task moved");
                         return "OK";
                     }
+                    case "checkedTaskOperation":{
+                        if("focus".equals(args[3]))focused.incrementAndGet();
+                        if(holdLate.get()&&(Integer)args[0]==external&&(Integer)args[1]==2&&"bounds".equals(args[3])){
+                            lateEntered.countDown();require(lateResume.await(5,TimeUnit.SECONDS),"Late transfer fixture timeout");holdLate.set(false);
+                        }
+                        return "OK";
+                    }
                     default:return "OK";
                 }
             });
-            main(()->{try{service.set(bridge,fake);binding.setBoolean(bridge,true);TaskState.of(context).reset(context);prefs.edit().putInt("workspace_display",0).commit();for(int id:new int[]{1,2})TaskState.of(context).launched(context,new JSONObject().put("task",task(id)),0,true);}catch(Exception e){throw new RuntimeException(e);}});
+            main(()->{try{context.install(fake);TaskState.of(context).reset(context);prefs.edit().putInt("workspace_display",0).commit();for(int id:new int[]{1,2})TaskState.of(context).launched(context,new JSONObject().put("task",task(id)),0,true);}catch(Exception e){throw new RuntimeException(e);}});
             CountDownLatch first=new CountDownLatch(1),second=new CountDownLatch(1);
             List<Throwable> errors=new CopyOnWriteArrayList<>();
             main(()->TaskState.of(context).transfer(context,external,()->{
@@ -77,11 +92,31 @@ final class WorkspaceTransferChecks {
             require(retry.await(10,TimeUnit.SECONDS),"Recovery retry timed out");
             require(locations.get(1)==0&&locations.get(2)==0,"Recovery stranded a synthetic task");
             main(()->require(!TaskState.of(context).isBusy()&&TaskState.of(context).target(context)==0,"Transfer state stuck"));
-        }finally{
-            main(()->{TaskState.of(context).reset(context);try{service.set(bridge,previous);binding.setBoolean(bridge,wasBinding);}catch(Exception e){throw new RuntimeException(e);}prefs.edit().clear().commit();
-                SharedPreferences.Editor edit=real.edit();for(String key:new String[]{"enabled","workspace_auto","workspace_display","active_display","preferred_display","last_error"}){Object old=before.get(key);if(old instanceof Boolean)edit.putBoolean(key,(Boolean)old);else if(old instanceof Integer)edit.putInt(key,(Integer)old);else if(old instanceof String)edit.putString(key,(String)old);else edit.remove(key);}edit.commit();
+            // Both OS moves have completed, but the async success belongs to a
+            // revoked generation. Neither target commit, focus nor rollback may resume.
+            holdLate.set(true);int focusBefore=focused.get(),rollbackBefore=rollback.size();
+            CountDownLatch stale=new CountDownLatch(1),queued=new CountDownLatch(1);
+            main(()->TaskState.of(context).transfer(context,external,stale::countDown));
+            require(lateEntered.await(5,TimeUnit.SECONDS),"Late transfer never reached backend");
+            main(()->{
+                TaskState.of(context).transfer(context,0,queued::countDown);
+                context.powerMode().setRequested(false,(result,error)->require(error==null,"Fixture OFF failed"));
+                context.powerMode().setRequested(true,(result,error)->require(error==null,"Fixture ON failed"));context.powerMode().connected(true);
             });
-            if(display!=null)display.release();context.close();
+            lateResume.countDown();
+            require(stale.await(10,TimeUnit.SECONDS)&&queued.await(10,TimeUnit.SECONDS),"Revoked transfer lost completion");
+            require(prefs.getInt("workspace_display",-1)==0,"Late transfer success overwrote saved target");
+            require(locations.get(1)==external&&locations.get(2)==external&&rollback.size()==rollbackBefore,"Revoked transfer dispatched rollback");
+            require(focused.get()==focusBefore,"Revoked transfer dispatched focus");
+            main(()->{try{
+                TaskState.of(context).observe(context,0,Collections.emptyList());
+                require(TaskState.of(context).owns(new TaskSnapshot.Task(task(1)))&&TaskState.of(context).owns(new TaskSnapshot.Task(task(2))),"Revocation forgot partially moved identities");
+            }catch(Exception error){throw new RuntimeException(error);}});
+            CountDownLatch recovered=new CountDownLatch(1);main(()->TaskState.of(context).transfer(context,0,recovered::countDown));
+            require(recovered.await(10,TimeUnit.SECONDS)&&locations.get(1)==0&&locations.get(2)==0,"New active recovery could not locate retained identities");
+        }finally{
+            main(context::close);
+            if(display!=null)display.release();require(actual.deleteSharedPreferences(storeName),"Fixture store cleanup failed");
         }
     }
 }

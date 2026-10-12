@@ -262,4 +262,5 @@ final class MouseRouting {
             events.postDelayed(cleanupRetry,delay);
         }
     }
+    synchronized boolean releaseSession(){release();return lease.isEmpty();}
 }

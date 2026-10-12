@@ -2,6 +2,7 @@ package net.fuyumori.stellashell;
 
 import net.fuyumori.stellashell.core.launch.Policy;
 import net.fuyumori.stellashell.core.settings.SettingTransaction;
+import net.fuyumori.stellashell.core.power.PowerSessionRelease;
 
 import android.content.Context;
 import android.hardware.display.DisplayManager;
@@ -21,10 +22,26 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
         try{return LauncherSystemAction.register(context,action);}
         catch(Exception error){return "ERROR: "+TaskBackend.reason(error);}
     }
-    @Override public synchronized void destroy() { dockGestures.close();if(externalDisplayPolicy!=null)externalDisplayPolicy.close();taskChanges.close();if(desktopBackdrop!=null)desktopBackdrop.close();releaseWindowPins();if(primaryScreen!=null)primaryScreen.release();if(mouseRouting!=null)mouseRouting.release();if(virtualKeyboard!=null)virtualKeyboard.release();System.exit(0); }
+    @Override public synchronized void destroy() {
+        // A process exit must not abandon a panel/input restoration retry or a
+        // still-draining independent guardian. An explicit destroy can be retried.
+        if ("OK".equals(releasePowerSession())) System.exit(0);
+    }
+    @Override public synchronized String releasePowerSession() {
+        primaryMode=false;
+        return PowerSessionRelease.release(
+            new PowerSessionRelease.Step("gesture reader",dockGestures::releaseSession),
+            new PowerSessionRelease.Step("task notifications",taskChanges::releaseSession),
+            new PowerSessionRelease.Step("desktop backdrop",()->desktopBackdrop==null||desktopBackdrop.releaseSession()),
+            new PowerSessionRelease.Step("primary screen",()->primaryScreen==null||primaryScreen.releaseSession()),
+            new PowerSessionRelease.Step("mouse routing",()->mouseRouting==null||mouseRouting.releaseSession()),
+            new PowerSessionRelease.Step("virtual keyboard",()->virtualKeyboard==null||virtualKeyboard.releaseSession()),
+            new PowerSessionRelease.Step("window pins",()->!releaseWindowPins().startsWith("ERROR:")),
+            new PowerSessionRelease.Step("external display guardian",()->externalDisplayPolicy==null||externalDisplayPolicy.releaseSession().startsWith("SAFE:")));
+    }
     private final DockGestureMonitor dockGestures=new DockGestureMonitor(DesktopBridgeService::exec);
-    @Override public String observeDockGesture(IDockGestureListener listener,int width,int height,int density,int rotation){return dockGestures.observe(listener,width,height,density,rotation);}
-    @Override public void removeDockGesture(IDockGestureListener listener){dockGestures.remove(listener);}
+    @Override public synchronized String observeDockGesture(IDockGestureListener listener,int width,int height,int density,int rotation){return dockGestures.observe(listener,width,height,density,rotation);}
+    @Override public synchronized void removeDockGesture(IDockGestureListener listener){dockGestures.remove(listener);}
     private DesktopBackdropLease desktopBackdrop;
     private ExternalDisplayPolicy externalDisplayPolicy;
     private ExternalDisplayPolicy externalPolicy(){if(externalDisplayPolicy==null&&context!=null)externalDisplayPolicy=new ExternalDisplayPolicy(context);return externalDisplayPolicy;}
@@ -38,8 +55,8 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
         catch(Exception error){return "ERROR: "+TaskBackend.reason(error);}
     }
     private final TaskChangeMonitor taskChanges = new TaskChangeMonitor();
-    @Override public String observeTaskChanges(ITaskChangeListener listener) { return taskChanges.observe(listener); }
-    @Override public void removeTaskObserver(ITaskChangeListener listener) { taskChanges.remove(listener); }
+    @Override public synchronized String observeTaskChanges(ITaskChangeListener listener) { return taskChanges.observe(listener); }
+    @Override public synchronized void removeTaskObserver(ITaskChangeListener listener) { taskChanges.remove(listener); }
     private static String exec(String... args) throws Exception {
         Process process = new ProcessBuilder(args).redirectErrorStream(true).start();
         ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -181,7 +198,7 @@ public final class DesktopBridgeService extends IDesktopBridge.Stub {
     private String releaseWindowPins(){
         try{if(taskBackend!=null)taskBackend.releasePins();}
         catch(Exception e){return "ERROR: "+TaskBackend.reason(e);}
-        if(pinOwner!=null&&pinDeath!=null)pinOwner.unlinkToDeath(pinDeath,0);
+        if(pinOwner!=null&&pinDeath!=null)try{pinOwner.unlinkToDeath(pinDeath,0);}catch(RuntimeException ignored){}
         pinOwner=null;pinDeath=null;return "inactive";
     }
     @Override public synchronized String syncWindowPins(boolean enabled,android.os.IBinder owner){

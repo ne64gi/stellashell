@@ -14,7 +14,7 @@
 
 ## はじめる
 
-Android 11以降。デスクトップの完全なウィンドウ操作には **Shizuku・freeform対応・重ねて表示の許可** が必要です。外部画面には端末の映像出力、またはPCのscrcpyを使います。
+Android 11以降。HOME・Start・端から出すDockは通常モードで使えます（Dockには重ねて表示の許可が必要）。任意位置ジェスチャーや完全なウィンドウ操作は **設定 → 拡張機能** でShizukuと連携します。小窓には端末のfreeform対応も必要です。外部画面には端末の映像出力、またはPCのscrcpyを使います。
 
 - [Phone / HOMEとDock](docs/PHONE-WORKSPACE.md)
 - PCで使う：[Windows](tools/windows/README.md) / [Linux・macOS](tools/unix/README.md)

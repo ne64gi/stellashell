@@ -31,13 +31,15 @@ final class MenuAppIcon extends ImageView {
     private Future<?> pending;
     private long generation;
     private boolean loaded;
+    private final NotificationBadge badge=new NotificationBadge();
+    void notificationCount(int count){if(badge.count(count))invalidate();}
 
     MenuAppIcon(Context context,String component,Drawable original){
         super(context);this.component=component;this.original=original;
         setImageResource(android.R.drawable.sym_def_app_icon);
     }
     @Override protected void onDraw(Canvas canvas){
-        super.onDraw(canvas);
+        super.onDraw(canvas);badge.draw(canvas,this);
         if(loaded||pending!=null||!isAttachedToWindow())return;
         Context context=getContext().getApplicationContext();
         if(context==null)return;

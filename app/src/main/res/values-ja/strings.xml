@@ -354,7 +354,7 @@
     <string name="dashboard_appearance_note">テーマ・フォント・デスクトップの見た目</string>
     <string name="dashboard_connection_help">外部画面の接続方法</string>
     <string name="dashboard_permissions">接続と権限</string>
-    <string name="dashboard_permissions_note">Shizuku・操作バーの表示許可</string>
+    <string name="dashboard_permissions_note">操作バーの表示・通知の許可</string>
     <string name="dashboard_layout_note">自動・デスクトップ・コンパクト</string>
     <string name="dashboard_workspace">ワークスペース</string>
     <string name="dashboard_windows">アプリのウィンドウ</string>
@@ -368,14 +368,14 @@
     <string name="dashboard_enabled">Enabled</string>
     <string name="dashboard_disabled">Disabled</string>
     <string name="onboard_title">使いはじめる準備</string>
-    <string name="onboard_intro">デスクトップに必要な2つの接続を確認します。許可済みの項目は、そのままで大丈夫です。</string>
+    <string name="onboard_intro">Dockとタスクバーを他のアプリの上に表示する許可を確認します。追加機能は、あとから拡張機能で設定できます。</string>
     <string name="onboard_shizuku">01  Shizuku</string>
     <string name="onboard_open_shizuku">Shizukuを開く</string>
     <string name="onboard_install_shizuku">Shizukuをインストールして起動し、この画面に戻ってStellaShellの接続を許可してください。</string>
     <string name="onboard_connect">接続を許可する</string>
     <string name="onboard_retry">接続を再試行</string>
-    <string name="onboard_overlay">02  操作バーの表示</string>
-    <string name="onboard_overlay_note">他のアプリの上にタスクバーを表示するために必要です。</string>
+    <string name="onboard_overlay">Dock・タスクバーの表示</string>
+    <string name="onboard_overlay_note">他のアプリの上にDockとタスクバーを表示するために必要です。</string>
     <string name="onboard_allow_overlay">表示を許可する</string>
     <string name="onboard_allowed">● 許可済み</string>
     <string name="onboard_notifications">通知 · 任意</string>
@@ -400,8 +400,8 @@
     <string name="home_set_default">標準ホームに設定</string>
     <string name="home_change">ホームアプリを変更</string>
     <string name="home_change_note">Androidの設定で、StellaShellや元のホームを選べます。</string>
-    <string name="home_selected">StellaShellが標準ホームです。Shizukuなしでも基本機能を使えます。</string>
-    <string name="home_available">任意でホームアプリに設定できます。アプリ起動や壁紙はShizukuなしで使えます。</string>
+    <string name="home_selected">StellaShellが標準ホームです。</string>
+    <string name="home_available">アプリやウィジェットを置くホーム画面として使えます。</string>
     <string name="workspace_role_unavailable">このアプリでは指定した表示モードを適用できませんでした。別の役割で開き直してください。</string>
     <string name="icons_title">アイコン</string>
     <string name="icons_edit">アイコンを変更</string>

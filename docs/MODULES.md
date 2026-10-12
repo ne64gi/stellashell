@@ -8,7 +8,7 @@ graph TD
     APP --> SEARCH[feature-search: settings / Start session]
     APP --> LAUNCH[feature-launch: catalog / public launcher / launch items]
     LAUNCH --> CORE
-    APP --> BRIDGE[platform-bridge: privileged server / Binder]
+    APP --> BRIDGE[platform-bridge: Shizuku transport / privileged server]
     SEARCH --> CORE
     BRIDGE --> CORE
 ```
@@ -20,14 +20,14 @@ graph TD
 | `:core` / `core/` | geometry、launch profile、task/display/input policy、限定transaction、検索URL、起動routeと直列queue | Android、JSON、View、app・feature・platformの実装 |
 | `:feature-search` / `features/search/` | 検索設定の保存・購読とwindow単位の明示検索操作 | app型、Bridge、ShellRuntime、他feature |
 | `:feature-launch` / `features/launch/` | app catalog、公開launcher解決、4系統pins・recent・desktop配置の保存 | app型、Bridge、ShellRuntime、他feature |
-| `:platform-bridge` / `platform/bridge/` | 特権task・display・input・density・capture操作とAIDL server | app画面、app resources、app保存設定、ShellRuntime |
+| `:platform-bridge` / `platform/bridge/` | Shizuku SDK・Provider・接続transport、特権task・display・input・density・capture操作とAIDL server | app画面、app resources、app保存設定、ShellRuntime |
 | `:app` / `app/` | Activity/Service入口、View、配線、起動executor・Shell coordinator、保存adapter、Shell/task owner | 下位moduleの内部stateを別の正本として保持すること |
 
 core は Java 17 library。他のmoduleは Android library / application。Gradle が下位moduleからappへの参照を拒否する。`ModuleArchitectureFitnessTest`は許可したproject依存、core/featureのpackage/import、保存owner、移動済み型の重複を検査する。
 
-coreのpackageは `net.fuyumori.stellashell.core.{layout,navigation,launch,tasks,display,input,settings,assets,search}`。検索featureは `net.fuyumori.stellashell.feature.search`、起動featureは `net.fuyumori.stellashell.feature.launch`。
+coreのpackageは `net.fuyumori.stellashell.core.{layout,navigation,launch,tasks,display,input,settings,assets,search,power}`。検索featureは `net.fuyumori.stellashell.feature.search`、起動featureは `net.fuyumori.stellashell.feature.launch`。
 
-platform bridgeは既存Java/AIDL package `net.fuyumori.stellashell` を維持する。Shizukuが起動する`DesktopBridgeService`のFQCN、Binder descriptor・transaction ID・引数・JSON schemaを変えないための互換境界であり、appへの逆依存を認める例外ではない。Bridge clientの接続・設定・UI policyはappに残す。
+platform bridgeは既存Java/AIDL package `net.fuyumori.stellashell` を維持する。Shizukuが起動する`DesktopBridgeService`のFQCN、Binder descriptor・transaction ID・引数・JSON schemaを変えないための互換境界であり、appへの逆依存を認める例外ではない。SDK接続は `platform.power.ShizukuConnection` だけが所有し、appの `Bridge` はExtensionsの許可境界とShell policyを担当する。SDK依存・Provider登録もplatformに置く。
 
 ## 状態は窓口から操作する
 
@@ -44,6 +44,14 @@ platform bridgeは既存Java/AIDL package `net.fuyumori.stellashell` を維持�
 - Shell設定・実行画面・task状態は従来の独立ownerを維持する。[所有境界](STATE-OWNERSHIP.md)を参照。
 - coreの`AutoOutputReconciler`はAUTO判断のticket・session照合・移送中イベントの寿命だけを所有する。`ShellController`が最新のdisplay候補と設定を渡し、実commandのbusy/idleと移送元は`TaskState`の窓口で扱う。coreにAndroid listener・Handler・保存設定を持ち込まない。
 - SOG06 / Android 14の外部バー互換処理はplatformの`ExternalDisplayPolicy`が所有する。appの`Bridge`はセッションの有効状態と選択先を伝えるだけで、global設定の一時値や復元・マウス更新の可否を複製しない。設定のsnapshot/applyは`DesktopBridgeService`でこのleaseと調停する。独立guardianは接続・切断と制御接続の終了をイベントとして処理し、待機中の定期ポーリングを行わない。既に作られたAndroid側のバーを強制的に作り直す処理ではない。
+
+## 通常Shellと拡張機能
+
+- 通常HOME・Start・端のDockの開始にShizukuを要求しない。`SetupActivity` / `PrerequisitesActivity` / `HomeActivity` はSDKや`Bridge`を直接呼ばず、追加機能の可用性だけ`PowerMode`から読む。
+- `PowerMode`がユーザーのON/OFFと終了処理の保存状態を所有し、core `PowerSession`が実接続との区別・世代・終了失敗の再試行を管理する。新規はOFF、既存利用者は設定を引き継ぐ。
+- `Bridge`は投入時のモード世代とtransport接続世代を照合する。OFFではキュー・遅延応答から追加操作を再開しない。通常の本体起動は特権タスク用queueの待ち合わせを経由しない。
+- OFFは通常Shellの停止とは別。`releasePowerSession`でglobal gesture、task通知、背景lease、本体画面消灯、mouse、IME、pin、外部バーguardianを解放する。一つの失敗でも他の解放を試し、失敗したownerを残して明示的に再試行する。端末の恒久設定を戻す操作とは分ける。
+- `ModuleArchitectureFitnessTest`でSDK・保存キー・通常入口の依存を制約する。非Shizuku版APKを別に作ったわけではなく、一つのAPK内の任意機能として分離している。
 
 ## 新機能を追加するとき
 
@@ -68,8 +76,8 @@ platform bridgeは既存Java/AIDL package `net.fuyumori.stellashell` を維持�
 - `Launches`の互換facadeには設定画面・desktop action・エラー表示のapp配線が残る。HOMEの全task最小化とopaque desktop前面化は既知の別修正対象。今回のqueue整理をHOME修正とは扱わない。
 - `Profiles`のlaunch-in-flight / cascade / task-key対応付けはappの既存coordinatorに残る。ID再利用とsession identityの改善は保存ownerの分離と別に扱う。
 - `TaskSnapshot`のAndroid/JSON parse、workspace orchestration、`DesktopWidgets`や通知・アイコン・外観のView/adapterはappに残る。固まった契約から順にfeatureへ移す。
-- appの`Bridge`は接続transportとShell policyの両方を持つ。server側のmodule分離を根拠に、clientのpolicyまで特権側へ移さない。
+- appの`Bridge`にはShell policyと特権commandのadapterが残る。SDK接続transportはplatformへ分離済みであり、appの設定・UI policyを特権processへ移さない。
 
 既知のHOME/PiP/mouse・長期性能の未検証事項は、この構造変更で解決済みとはしない。
 
-任意位置Dockの形状認識・Type-B touch frame・配置・三連HOMEカウントはcore、選別された内蔵タッチパネルのread-only監視はplatform/bridge、可用性と画面寿命・チュートリアル・表示はappに置く。Bridge UserServiceは38、既存AIDL番号を保ちgesture購読29/解除30のみ追加。raw入力をapp側へ流さない。
+任意位置Dockの形状認識・Type-B touch frame・配置・二連HOME判定はcore、選別された内蔵タッチパネルのread-only監視はplatform/bridge、可用性と画面寿命・チュートリアル・表示はappに置く。Bridge UserServiceは39。既存AIDL番号を保ち、gesture購読29/解除30に続いてExtensions終了31を追加。raw入力をapp側へ流さない。

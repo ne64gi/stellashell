@@ -5,11 +5,8 @@ import android.app.Instrumentation;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.ServiceConnection;
-import android.content.pm.PackageManager;
 import android.graphics.Rect;
 import android.hardware.display.DisplayManager;
-import android.os.IBinder;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.view.Display;
@@ -23,7 +20,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import rikka.shizuku.Shizuku;
 
 /** Bounded event regressions; only the preflight-absent test Activity may be launched/closed. */
 final class IdleEventChecks {
@@ -281,35 +277,29 @@ final class IdleEventChecks {
         Context target = test.getTargetContext(), fixtures = test.getContext();
         ComponentName activity = new ComponentName(fixtures.getPackageName(), PinInputActivity.class.getName());
         String component = activity.flattenToString();
-        // Same installed service identity as Bridge, but no bind/connect/maintenance call.
-        Shizuku.UserServiceArgs args = new Shizuku.UserServiceArgs(new ComponentName(target, DesktopBridgeService.class))
-                .daemon(false).processNameSuffix("desktop_bridge").debuggable(false).version(33);
+        // Use an already active Power Mode connection. Bridge.read can reassert primary-mode
+        // policy; it does not reacquire mouse/pin/IME leases or open a second SDK connection.
+        Bridge bridge = Bridge.get(target);
+        String[] connectionError = {null};
         CountDownLatch connected = new CountDownLatch(1), invalidation = new CountDownLatch(1);
         IDesktopBridge[] remote = {null};
         AtomicInteger callbacks = new AtomicInteger();
         ITaskChangeListener observer = new ITaskChangeListener.Stub() {
             @Override public void onChanged() { callbacks.incrementAndGet(); invalidation.countDown(); }
         };
-        ServiceConnection connection = new ServiceConnection() {
-            @Override public void onServiceConnected(ComponentName name, IBinder binder) {
-                remote[0] = IDesktopBridge.Stub.asInterface(binder); connected.countDown();
-            }
-            @Override public void onServiceDisconnected(ComponentName name) {}
-        };
-        boolean[] peeked = {false};
         boolean registrationAttempted = false, removed = false, launchAttempted = false;
         Set<Integer> owned = new LinkedHashSet<>();
         Throwable failure = null;
         try {
             main(() -> {
-                check(Shizuku.pingBinder() && Shizuku.getVersion() >= 13
-                                && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED,
-                        "Requires existing Shizuku authorization");
-                peeked[0] = true;
-                check(Shizuku.peekUserService(args, connection) == 38,
-                        "Requires already installed event-capable Shizuku36 server");
+                check(bridge.ready() && bridge.authorized(), "Requires already active Power Mode");
+                check(bridge.serviceVersion() == 39, "Unexpected configured service version");
+                bridge.read(server -> { remote[0] = server; return "OK"; }, (result, error) -> {
+                    connectionError[0] = error; connected.countDown();
+                });
             });
             check(connected.await(10, TimeUnit.SECONDS), "Installed task-event server unavailable");
+            check(connectionError[0] == null && remote[0] != null, "Power Mode connection changed");
             IDesktopBridge server = remote[0];
             check("net.fuyumori.stellashell.IDesktopBridge".equals(server.asBinder().getInterfaceDescriptor()),
                     "Task event Binder descriptor changed");
@@ -369,10 +359,6 @@ final class IdleEventChecks {
                     } catch (Throwable error) { failure = combine(failure, error); }
                 }
                 try { await(() -> fixtureIds(phoneTasks(server), component).isEmpty(), "Event fixture cleanup left a task"); }
-                catch (Throwable error) { failure = combine(failure, error); }
-            }
-            if (peeked[0]) {
-                try { main(() -> Shizuku.unbindUserService(args, connection, false)); }
                 catch (Throwable error) { failure = combine(failure, error); }
             }
         }

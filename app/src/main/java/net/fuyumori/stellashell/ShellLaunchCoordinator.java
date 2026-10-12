@@ -18,7 +18,9 @@ final class ShellLaunchCoordinator {
         public void remove(Runnable action){main.removeCallbacks(action);}
     });
     private void enqueue(Context context,TaskState state,SerialLaunchQueue.Action action){
-        queue.enqueue(state::isBusy,done->action.run(()->{
+        PowerMode power=PowerMode.of(context);long generation=power.generation();boolean admitted=power.active();
+        queue.enqueueWhile(()->!admitted||power.active()&&power.permits(generation),
+                ()->admitted&&state.isBusy(),done->action.run(()->{
             done.finish();
             if(!queue.pending())state.refresh();
         }),error->Launches.problem(context,error.getMessage()));
@@ -68,9 +70,15 @@ final class ShellLaunchCoordinator {
         }));
     }
     void app(Context c,String component,int display,boolean newWindow,Boolean explicitFloating){
-        TaskState state=TaskState.of(c);
         AppLaunchDecision.Choice choice=explicitFloating==null?AppLaunchDecision.Choice.AUTO:
                 explicitFloating?AppLaunchDecision.Choice.FLOATING:AppLaunchDecision.Choice.PRIMARY;
+        // Ordinary phone apps must not wait behind a disconnected desktop's task command.
+        if(Launches.basicHome(c,display)&&choice!=AppLaunchDecision.Choice.FLOATING){
+            ShellPanels.dismiss(display);
+            try{ShellLaunchExecutor.normal(c,component);}catch(RuntimeException failure){Launches.problem(c,failure.getMessage());}
+            return;
+        }
+        TaskState state=TaskState.of(c);
         AppLaunchDecision.Request request=new AppLaunchDecision.Request(component,display,newWindow,choice);
         enqueue(c,state,done->ShellLaunchExecutor.app(c,state,request,done));
     }

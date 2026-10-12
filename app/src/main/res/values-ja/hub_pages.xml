@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_pages">ページ切り替え・追加</string>
+    <string name="widget_page_number">%1$dページ目</string>
+    <string name="widget_page_status">%2$dページ中、%1$dページ目</string>
+    <string name="widget_add_page">ページを追加</string>
+    <string name="widget_remove_page">空のページを削除</string>
+    <string name="widget_move_page">別のページへ移動</string>
+    <string name="widget_previous_page">前のページ</string>
+    <string name="widget_next_page">次のページ</string>
+    <string name="widget_section_geometry">位置とサイズ</string>
+    <string name="widget_section_appearance">見た目</string>
+    <string name="widget_details">詳細設定</string>
+    <string name="widget_section_management">管理</string>
+    <string name="widget_direct_edit_hint">ドラッグで移動、角を引いてサイズ変更</string>
+    <string name="widget_page_fraction">%1$d/%2$d</string>
+    <plurals name="app_notification_count">
+        <item quantity="one">通知%1$d件</item>
+        <item quantity="other">通知%1$d件</item>
+    </plurals>
+</resources>

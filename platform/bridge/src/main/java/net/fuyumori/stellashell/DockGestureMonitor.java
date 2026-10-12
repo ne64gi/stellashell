@@ -16,11 +16,12 @@ final class DockGestureMonitor implements AutoCloseable {
     interface Command { String run(String... args) throws Exception; }
     private final Command command;
     private Session current;
+    private final Set<Process> cleanupDebt=new HashSet<>();
     DockGestureMonitor(Command command){this.command=command;}
 
     synchronized String observe(IDockGestureListener listener,int width,int height,int density,int rotation){
         if(listener==null||width<100||height<100||width>16384||height>16384||density<72||density>1600||rotation<0||rotation>3)return "ERROR: invalid gesture request";
-        close();
+        if(!releaseSession())return "ERROR: gesture cleanup pending";
         Session session=new Session(listener,width/(density/160f),height/(density/160f),rotation);
         current=session;
         try{listener.asBinder().linkToDeath(session,0);}
@@ -31,12 +32,22 @@ final class DockGestureMonitor implements AutoCloseable {
     synchronized void remove(IDockGestureListener listener){
         if(listener!=null&&current!=null&&current.listener.asBinder().equals(listener.asBinder()))close();
     }
-    @Override public synchronized void close(){
+    @Override public synchronized void close(){releaseSession();}
+    synchronized boolean releaseSession(){
         Session old=current;current=null;
-        if(old==null)return;
-        old.listener.asBinder().unlinkToDeath(old,0);
-        for(Process process:old.processes)process.destroyForcibly();
-        old.processes.clear();
+        if(old!=null){
+            try{old.listener.asBinder().unlinkToDeath(old,0);}catch(RuntimeException ignored){}
+            cleanupDebt.addAll(old.processes);old.processes.clear();
+        }
+        for(Process process:new ArrayList<>(cleanupDebt)){
+            try{
+                process.destroyForcibly();
+                process.waitFor(300,java.util.concurrent.TimeUnit.MILLISECONDS);
+            }catch(InterruptedException interrupted){Thread.currentThread().interrupt();}
+            catch(RuntimeException ignored){/* Retain the live process handle for retry. */}
+            if(!process.isAlive())cleanupDebt.remove(process);
+        }
+        return cleanupDebt.isEmpty();
     }
     private final class Session implements IBinder.DeathRecipient {
         final IDockGestureListener listener;
@@ -72,7 +83,8 @@ final class DockGestureMonitor implements AutoCloseable {
             }catch(Exception failure){
                 synchronized(DockGestureMonitor.this){
                     if(current!=this)return;
-                    for(Process process:processes)process.destroyForcibly();processes.clear();available(false);
+                    available(false);
+                    if(current==this)releaseSession();
                 }
             }
         }
@@ -112,8 +124,12 @@ final class DockGestureMonitor implements AutoCloseable {
                 }
             }catch(Exception ignored){/* Closed, disconnected or unsupported: keep fallback handles. */}
             finally{
-                frames.cancel();process.destroyForcibly();
-                synchronized(DockGestureMonitor.this){if(current==this){processes.remove(process);if(processes.isEmpty())available(false);}}
+                frames.cancel();
+                synchronized(DockGestureMonitor.this){
+                    try{process.destroyForcibly();}catch(RuntimeException ignored){}
+                    if(process.isAlive())cleanupDebt.add(process);else cleanupDebt.remove(process);
+                    processes.remove(process);if(current==this&&processes.isEmpty())available(false);
+                }
             }
         }
     }

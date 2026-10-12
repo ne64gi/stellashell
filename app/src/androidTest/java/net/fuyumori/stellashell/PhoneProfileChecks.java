@@ -11,11 +11,20 @@ import java.util.*;
 final class PhoneProfileChecks {
     private static void check(boolean value,String message){if(!value)throw new AssertionError(message);}
     static void run(Instrumentation test,int external){
-        Context base=test.getTargetContext();Set<String> stores=new HashSet<>();String prefix="phone_profile_fixture_";ShellSettings[] settings={null};TaskState[] tasks={null};
-        class Capture extends ContextWrapper implements ShellSettings.Provider,TaskState.Provider {
+        Context base=test.getTargetContext();Set<String> stores=new HashSet<>();String prefix="phone_profile_fixture_";ShellSettings[] settings={null};TaskState[] tasks={null};PowerMode[] power={null};
+        class Capture extends ContextWrapper implements ShellSettings.Provider,TaskState.Provider,PowerMode.Provider {
             @Override public Context getApplicationContext(){return this;}
             public ShellSettings shellSettings(){if(settings[0]==null)settings[0]=ShellSettings.isolated(getSharedPreferences("desktop",0));return settings[0];}
             public TaskState taskState(){if(tasks[0]==null)tasks[0]=TaskState.isolated(this);return tasks[0];}
+            public PowerMode powerMode(){
+                if(power[0]==null)power[0]=PowerMode.forStore(this,"power",new PowerMode.Backend(){
+                    public void connect(){}
+                    public void resumeHome(){}
+                    public void powerChanged(boolean requested,Bridge.Reply reply){reply.done("OK",null);}
+                    public void retry(Bridge.Reply reply){reply.done("OK",null);}
+                });
+                return power[0];
+            }
             final Display display;Intent launched;Bundle options;
             Capture(int id){super(base);display=base.getSystemService(DisplayManager.class).getDisplay(id);if(display==null)throw new AssertionError("missing fixture display");}
             @Override public Display getDisplay(){return display;}
@@ -47,6 +56,9 @@ final class PhoneProfileChecks {
             phone.launched=null;Launches.home(phone,0);
             check(phone.launched!=null&&phone.launched.hasCategory(Intent.CATEGORY_HOME),"home must use Android HOME without minimizing tasks");
             prefs.edit().putBoolean("primary_mode",true).putBoolean("compact_workspace",true).putInt("workspace_display",0).commit();
+            PowerMode fixturePower=PowerMode.of(phone);
+            fixturePower.setRequested(true,(result,error)->check(error==null,"Isolated Power Mode setup failed"));
+            fixturePower.connected(true); // Fake capability only; the empty workspace has no Binder work.
             boolean[] transferred={false};TaskState.of(phone).transfer(phone,external,()->transferred[0]=true);
             check(transferred[0]&&TaskState.of(phone).target(phone)==external,"empty standard workspace handoff required a task bridge");
             check(WorkspaceProfile.phone(phone),"Phone profile changed with shell destination");

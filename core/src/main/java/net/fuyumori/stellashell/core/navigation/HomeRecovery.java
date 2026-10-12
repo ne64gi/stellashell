@@ -1,21 +1,32 @@
 package net.fuyumori.stellashell.core.navigation;
 
-/** Three distinct HOME requests within 1.5 seconds; no timer or background work. */
+/** Two distinct HOME requests within 600 ms; no timer or background work. */
 public final class HomeRecovery {
-    private long first, last;
-    private int count;
+    public enum Action { HOME, DUPLICATE, OPEN_START }
 
-    public boolean press(long uptimeMillis) {
-        if (count > 0 && uptimeMillis >= last && uptimeMillis - last < 120) return false;
-        if (count == 0 || uptimeMillis < last || uptimeMillis - first > 1500) {
-            first = uptimeMillis;
-            count = 0;
+    private long last = -1;
+    private boolean pending;
+
+    public Action press(long uptimeMillis) {
+        // Keep the last delivery after a completed pair too: a duplicate must
+        // neither close the newly opened menu nor begin a new pair.
+        if (last >= 0 && uptimeMillis >= last && uptimeMillis - last < 120) {
+            return Action.DUPLICATE;
         }
+        boolean open = pending && uptimeMillis >= last && uptimeMillis - last <= 600;
         last = uptimeMillis;
-        if (++count < 3) return false;
-        reset();
-        return true;
+        pending = !open;
+        return open ? Action.OPEN_START : Action.HOME;
     }
 
-    public void reset() { count = 0; }
+    /** Menu attachment can block delivery; debounce queued HOME after it settles. */
+    public void startShown(long uptimeMillis) {
+        last = uptimeMillis;
+        pending = false;
+    }
+
+    public void reset() {
+        pending = false;
+        last = -1;
+    }
 }

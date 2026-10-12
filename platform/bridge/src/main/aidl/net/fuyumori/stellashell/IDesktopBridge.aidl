@@ -35,4 +35,5 @@ interface IDesktopBridge {
     String syncExternalDisplayPolicy(boolean enabled, IBinder owner) = 28;
     String observeDockGesture(IDockGestureListener listener, int width, int height, int densityDpi, int rotation) = 29;
     void removeDockGesture(IDockGestureListener listener) = 30;
+    String releasePowerSession() = 31;
 }

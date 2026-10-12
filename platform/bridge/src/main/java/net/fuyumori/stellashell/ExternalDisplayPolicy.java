@@ -152,6 +152,8 @@ public final class ExternalDisplayPolicy implements AutoCloseable {
     @Override public synchronized void close() {
         stopGuardian("SAFE:inactive");
     }
+    /** Cleanup-only: never starts a guardian or acquires a new display lease. */
+    public synchronized String releaseSession() { return stopGuardian("SAFE:inactive"); }
 
     private boolean applicable() {
         return Build.VERSION.SDK_INT == 34 && "SOG06".equals(Build.MODEL);

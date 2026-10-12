@@ -15,6 +15,10 @@ final class ShellController implements ShellRuntime.Session,DisplayManager.Displ
     private final Host host;
     private final DisplayManager displays;
     private final PhoneNavigationOwner phone;
+    private final PowerMode power;
+    private final Runnable powerChanged=this::powerChanged;
+    private boolean powerActive;
+    private long powerGeneration;
     private final ShellRuntime.Binding runtime;
     private final AutoCloseable settingsSubscription;
     private final AutoCloseable routingSubscription;
@@ -31,6 +35,7 @@ final class ShellController implements ShellRuntime.Session,DisplayManager.Displ
     private boolean closed,resetting;
     ShellController(Context context,Host host){
         this.context=context;this.host=host;
+        power=PowerMode.of(context);powerActive=power.active();powerGeneration=power.generation();
         displays=context.getSystemService(DisplayManager.class);
         phone=new PhoneNavigationOwner(context,this::publish,this::phoneAreaChanged);
         runtime=ShellRuntime.bind(context,this);
@@ -41,7 +46,19 @@ final class ShellController implements ShellRuntime.Session,DisplayManager.Displ
         phone.suspend(ExternalAppMode.active());
         displays.registerDisplayListener(this,main);
         Launches.prefs(context).registerOnSharedPreferenceChangeListener(this);
-        Bridge.get(context).connect();
+        power.observe(powerChanged);
+        if(powerActive)Bridge.get(context).connect();
+    }
+    private void powerChanged(){
+        if(closed)return;
+        boolean active=power.active();long generation=power.generation();
+        if(active==powerActive&&generation==powerGeneration)return;
+        powerActive=active;powerGeneration=generation;resetting=false;
+        cancelAutomaticOutput();cancelManualOutput();explicitOutputChange++;
+        ShellRuntime.enableHome(context,active);
+        closeOutput(); // Release only the optional desktop; phone navigation stays attached.
+        update(false,true);
+        if(active)reconcileAutomaticOutput();
     }
     private void publish(){if(runtime!=null&&!closed)runtime.publish(displayId,phone.ready());}
     private void phoneAreaChanged(){if(output!=null)output.phoneAreaChanged();}
@@ -57,10 +74,13 @@ final class ShellController implements ShellRuntime.Session,DisplayManager.Displ
         reconcileAutomaticOutput();
     }
     private void reset(){
+        if(!powerActive){update(false,true);return;}
         if(resetting)return;cancelAutomaticOutput();cancelManualOutput();explicitOutputChange++;resetting=true;closeOutput();
+        long choice=explicitOutputChange,generation=power.generation();
         ShellSettings.of(context).clearPreferredDisplay();publish();
         Bridge.get(context).resetMouseRouting((result,error)->{
-            if(closed)return;resetting=false;
+            if(closed||choice!=explicitOutputChange||generation!=power.generation()||!power.active())return;
+            resetting=false;
             if(!ShellRuntime.enabled(context))return;
             if(error!=null){Launches.problem(context,error);ShellRuntime.stop(context,false);return;}
             update(true,false);
@@ -79,6 +99,13 @@ final class ShellController implements ShellRuntime.Session,DisplayManager.Displ
     private void update(boolean openHome,boolean keepDashboard){
         if(closed||resetting)return;
         phone.reconcile();
+        if(!powerActive){
+            if(output!=null)closeOutput();
+            displayId=0;publish();
+            if(openHome&&!keepDashboard)Launches.home(context,0);
+            host.status(R.string.base_shell_running);
+            return;
+        }
         int preferred=displayId>0?displayId:ShellSettings.of(context).snapshot().preferredDisplayId;
         int next=Displays.target(context,preferred);boolean changed=next!=displayId;
         if(changed){closeOutput();displayId=next;}
@@ -116,7 +143,8 @@ final class ShellController implements ShellRuntime.Session,DisplayManager.Displ
         phone.reconcile();
         if(intersects(changes,ShellSettings.Change.PHONE_DOCK_SCALE,ShellSettings.Change.PHONE_TASKBAR_SCALE))phone.rebuild();
         else if(intersects(changes,ShellSettings.Change.PHONE_DOCK_SIDE,ShellSettings.Change.PHONE_DOCK_OVER_APPS,ShellSettings.Change.PHONE_DOCK_TRIGGER_POSITION,
-                ShellSettings.Change.PHONE_DOCK_LANDSCAPE_EDGE,ShellSettings.Change.PHONE_DOCK_LANDSCAPE_POSITION,ShellSettings.Change.PHONE_DOCK_OPEN_METHOD))phone.relayout();
+                ShellSettings.Change.PHONE_DOCK_LANDSCAPE_EDGE,ShellSettings.Change.PHONE_DOCK_LANDSCAPE_POSITION,ShellSettings.Change.PHONE_DOCK_OPEN_METHOD,
+                ShellSettings.Change.PHONE_DOCK_LANDSCAPE_GESTURE,ShellSettings.Change.PHONE_DOCK_LANDSCAPE_OPEN_METHOD))phone.relayout();
         if(output!=null&&intersects(changes,ShellSettings.Change.EXTERNAL_DOCK_ENABLED,ShellSettings.Change.EXTERNAL_DOCK_EDGE,
                 ShellSettings.Change.EXTERNAL_DOCK_POSITION,ShellSettings.Change.EXTERNAL_DOCK_SCALE,ShellSettings.Change.EXTERNAL_DOCK_REVEAL,ShellSettings.Change.EXTERNAL_DOCK_OPEN_METHOD,
                 ShellSettings.Change.EXTERNAL_TASKBAR_SCALE,ShellSettings.Change.SHELL_LAYOUT))output.settingsChanged(changes);
@@ -130,10 +158,11 @@ final class ShellController implements ShellRuntime.Session,DisplayManager.Displ
     @Override public void onDisplayAdded(int id){
         if(closed)return;
         reconcileAutomaticOutput();
-        if(!Displays.primary(context))update(true,false);
+        if(powerActive&&!Displays.primary(context))update(true,false);
     }
     @Override public void onDisplayRemoved(int id){
         if(closed)return;
+        if(!powerActive){update(false,true);return;}
         boolean decisionQueued=automaticDecision!=null||automaticIdle!=null;
         invalidateAutomaticRouting();
         TaskState state=TaskState.of(context);
@@ -142,7 +171,7 @@ final class ShellController implements ShellRuntime.Session,DisplayManager.Displ
             boolean manualChoiceInProgress=pendingManualChoice>=0||activeManualChoice>=0;
             state.recoverDisconnectedOutput(context,id,session,
                     ()->!closed&&!resetting&&runtime.current()&&ShellRuntime.enabled(context)&&choice==explicitOutputChange,()->{
-                if(closed||resetting||!runtime.current()||!state.currentSession(session)||!ShellRuntime.enabled(context))return;
+                if(closed||resetting||!power.active()||choice!=explicitOutputChange||!runtime.current()||!state.currentSession(session)||!ShellRuntime.enabled(context))return;
                 update(true,false);
                 // DisplayAdded may have arrived while the old external target was still committed.
                 if(!manualChoiceInProgress&&choice==explicitOutputChange)reconcileAutomaticOutput();
@@ -178,7 +207,7 @@ final class ShellController implements ShellRuntime.Session,DisplayManager.Displ
         if(!runtime.current()||!ShellRuntime.enabled(context)){cancelAutomaticOutput();cancelManualOutput();explicitOutputChange++;}
     }
     private void reconcileAutomaticOutput(){
-        if(closed||resetting||ExternalAppMode.active()||!runtime.current()||pendingManualChoice>=0||activeManualChoice>=0)return;
+        if(!powerActive||closed||resetting||ExternalAppMode.active()||!runtime.current()||pendingManualChoice>=0||activeManualChoice>=0)return;
         TaskState state=TaskState.of(context);
         AutoOutputReconciler.Ticket ticket=automaticOutput.request(state.session(),state.target(context));
         if(ticket==null)return;
@@ -194,7 +223,7 @@ final class ShellController implements ShellRuntime.Session,DisplayManager.Displ
         TaskState state=TaskState.of(context);
         if(!automaticOutput.current(ticket,state.session(),state.target(context)))return;
         ShellSettings.Snapshot settings=ShellSettings.of(context).snapshot();
-        boolean eligible=!closed&&!resetting&&!ExternalAppMode.active()&&runtime.current()&&ShellRuntime.enabled(context)
+        boolean eligible=powerActive&&!closed&&!resetting&&!ExternalAppMode.active()&&runtime.current()&&ShellRuntime.enabled(context)
                 &&settings.primaryMode&&settings.workspaceAuto&&state.enabled(context)&&state.target(context)==0;
         if(eligible&&state.isBusy()){
             automaticIdle=state.whenIdle(()->{automaticIdle=null;decideAutomaticOutput(ticket);});return;
@@ -204,6 +233,7 @@ final class ShellController implements ShellRuntime.Session,DisplayManager.Displ
         if(destination>0)transferOutput(destination,ticket);
     }
     private void requestManualOutput(int destination){
+        if(!powerActive)return;
         TaskState state=TaskState.of(context);
         long choice=explicitOutputChange,session=state.session();
         pendingManualChoice=choice;manualSession=session;
@@ -217,13 +247,14 @@ final class ShellController implements ShellRuntime.Session,DisplayManager.Displ
         });
     }
     private void transferOutput(int destination,AutoOutputReconciler.Ticket automatic){
+        if(!powerActive)return;
         TaskState state=TaskState.of(context);
         long session=state.session(),choice=explicitOutputChange;
         if(automatic==null){activeManualChoice=choice;manualSession=session;}
         state.transfer(context,destination,()->{
             boolean reconcile=automatic!=null&&automaticOutput.finished(automatic);
             if(automatic==null&&activeManualChoice==choice){activeManualChoice=-1;if(pendingManualChoice<0)manualSession=-1;}
-            if(closed||resetting||!runtime.current()||!state.currentSession(session)
+            if(closed||resetting||!power.active()||!runtime.current()||!state.currentSession(session)
                     ||!ShellRuntime.enabled(context)||choice!=explicitOutputChange)return;
             update(true,false);
             if(reconcile){
@@ -248,12 +279,13 @@ final class ShellController implements ShellRuntime.Session,DisplayManager.Displ
     }
     @Override public void close(){
         if(closed)return;boolean current=runtime.current();cancelAutomaticOutput();cancelManualOutput();explicitOutputChange++;closed=true;main.removeCallbacksAndMessages(null);
+        power.remove(powerChanged);
         ShellRuntime.unobserveNavigation(runtimeChanged);
         ExternalAppMode.unobserve(externalModeChanged);
         displays.unregisterDisplayListener(this);
         Launches.prefs(context).unregisterOnSharedPreferenceChangeListener(this);
         try{settingsSubscription.close();}catch(Exception error){Launches.problem(context,error.getMessage());}
         try{routingSubscription.close();}catch(Exception error){Launches.problem(context,error.getMessage());}
-        closeOutput();phone.close();runtime.close();if(current)Bridge.get(context).mouseDisplay(-1);
+        closeOutput();phone.close();runtime.close();if(current&&powerActive)Bridge.get(context).mouseDisplay(-1);
     }
 }

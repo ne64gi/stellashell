@@ -161,13 +161,14 @@ final class NotificationList {
     }
 
     private final class Card {
-        final LinearLayout view,top,metadata;
+        final NotificationSwipeCard view;
+        final LinearLayout top,metadata;
         final TextView title,body,sender,time;
         final Button close;
         StatusBarNotification current;
         NotificationContent content;
         Card(){
-            view=Ui.column(context);view.setPadding(dp(8),dp(6),dp(8),dp(12));view.setBackground(Ui.toolbarBackground(context,10));view.setLayoutParams(new LinearLayout.LayoutParams(-1,-2));
+            view=new NotificationSwipeCard(context,()->current!=null&&current.isClearable(),()->{if(current!=null)dismiss.accept(current);});view.setPadding(dp(8),dp(6),dp(8),dp(12));view.setBackground(Ui.toolbarBackground(context,10));view.setLayoutParams(new LinearLayout.LayoutParams(-1,-2));
             top=new LinearLayout(context);top.setGravity(Gravity.CENTER_VERTICAL);
             title=Ui.text(context,"",16,Ui.TEXT);title.setMaxLines(2);title.setEllipsize(TextUtils.TruncateAt.END);top.addView(title,new LinearLayout.LayoutParams(0,-2,1));
             close=Ui.toolbarButton(context,"×",()->{if(current!=null)dismiss.accept(current);});close.setContentDescription(context.getString(R.string.hub_dismiss));close.setPadding(0,0,0,0);
@@ -181,6 +182,7 @@ final class NotificationList {
         }
         void bind(StatusBarNotification item,String app){
             current=item;content=NotificationContent.from(item);
+            if(!item.isClearable())view.cancelSwipe();
             String heading=content.title.isEmpty()?app:content.title;
             text(title,heading);text(body,content.body);body.setVisibility(content.body.isEmpty()?View.GONE:View.VISIBLE);
             text(sender,content.sender);bindTime(content.formatTime(context));
@@ -198,7 +200,7 @@ final class NotificationList {
             if(!TextUtils.equals(view.getContentDescription(),description))view.setContentDescription(description);
         }
         void clear(){
-            current=null;content=null;view.setOnClickListener(null);close.setOnClickListener(null);view.setContentDescription(null);
+            view.cancelSwipe();current=null;content=null;view.setOnClickListener(null);close.setOnClickListener(null);view.setContentDescription(null);
             for(TextView child:new TextView[]{title,body,sender,time})child.setText("");
         }
     }

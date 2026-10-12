@@ -202,4 +202,5 @@ final class PrimaryScreenPower {
             events.postDelayed(()->{synchronized(PrimaryScreenPower.this){if(epoch==eventGeneration&&owner==null)release();}},delay);
         }
     }
+    synchronized boolean releaseSession(){release();return token==null&&wake==null;}
 }

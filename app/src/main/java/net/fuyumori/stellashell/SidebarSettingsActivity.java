@@ -29,11 +29,11 @@ public final class SidebarSettingsActivity extends Activity {
     private AutoCloseable settingsSubscription;
     private CheckBox phoneShow,phoneOverApps,desktopShow,desktopByHandle;
     private LinearLayout phoneControls,desktopControls;
-    private LinearLayout phoneHandleControls;
-    private Button gestureTutorial;
+    private LinearLayout phoneHandleControls,phoneLandscapeHandleControls;
+    private Button gestureTutorial,landscapeGestureTutorial;
     private static final ShellSettings.PhoneSide[] PHONE_SIDES={ShellSettings.PhoneSide.BOTH,ShellSettings.PhoneSide.RIGHT,ShellSettings.PhoneSide.LEFT,ShellSettings.PhoneSide.GESTURE};
-    private Button phoneSide,phoneLandscapeEdge,desktopEdge,phoneOpenMethod,desktopOpenMethod;
-    private TextView desktopPositionNote,phoneMethodNote,desktopMethodNote;
+    private Button phoneSide,phoneLandscapeEdge,desktopEdge,phoneOpenMethod,phoneLandscapeOpenMethod,desktopOpenMethod;
+    private TextView desktopPositionNote,phoneMethodNote,phoneLandscapeMethodNote,desktopMethodNote;
     private Slider phoneHeight,phoneLandscapeX,phoneLandscapeY,desktopX,desktopY,phoneScale,desktopScale;
     private boolean refreshing;
 
@@ -55,6 +55,8 @@ public final class SidebarSettingsActivity extends Activity {
         phoneShow=checkbox(card,R.string.sidebar_settings_show_phone,
                 ()->settings.snapshot().phoneDock.enabled,settings::setPhoneDockEnabled);
         DashboardUi.divider(card);phoneControls=Ui.column(this);card.addView(phoneControls);
+        Ui.note(phoneControls,getString(R.string.sidebar_settings_orientation_note));
+        DashboardUi.section(phoneControls,getString(R.string.sidebar_settings_portrait));
         phoneSide=choice(phoneControls,R.string.dock_handle_position,phoneSideLabels(),
                 this::phoneSideIndex,index->{
                     if(PHONE_SIDES[index]==ShellSettings.PhoneSide.GESTURE)DockGestureTutorial.show(this,()->settings.setPhoneDockSide(ShellSettings.PhoneSide.GESTURE));
@@ -65,17 +67,27 @@ public final class SidebarSettingsActivity extends Activity {
         phoneOpenMethod=choice(phoneHandleControls,R.string.sidebar_settings_open_method,methodLabels(),
                 ()->settings.snapshot().phoneDock.openMethod.ordinal(),index->settings.setPhoneDockOpenMethod(Method.values()[index]));
         phoneMethodNote=DashboardUi.text(this,"",13,Ui.MUTED);phoneHandleControls.addView(phoneMethodNote);
-        DashboardUi.section(phoneHandleControls,getString(R.string.sidebar_settings_portrait));
         phoneHeight=new Slider(phoneHandleControls,R.string.sidebar_settings_vertical,()->settings.snapshot().phoneDock.triggerPercent,
                 settings::setPhoneDockTriggerPercent,R.string.sidebar_settings_top,R.string.sidebar_settings_bottom,0,100,1,false);
-        DashboardUi.section(phoneHandleControls,getString(R.string.sidebar_settings_landscape));
-        phoneLandscapeEdge=choice(phoneHandleControls,R.string.sidebar_settings_edge,edgeLabels(),
-                ()->settings.snapshot().phoneLandscapeDock.edge.ordinal(),index->settings.setPhoneLandscapeDockEdge(ShellSettings.DockEdge.values()[index]));
-        Ui.note(phoneHandleControls,getString(R.string.sidebar_settings_landscape_note));
-        phoneLandscapeX=new Slider(phoneHandleControls,R.string.sidebar_settings_horizontal,
+        DashboardUi.section(phoneControls,getString(R.string.sidebar_settings_landscape));
+        phoneLandscapeEdge=choice(phoneControls,R.string.dock_handle_position,landscapeLabels(),
+                this::landscapeIndex,index->{
+                    if(index==ShellSettings.DockEdge.values().length)DockGestureTutorial.show(this,()->settings.setPhoneLandscapeDockGesture(true));
+                    else{
+                        settings.setPhoneLandscapeDockEdge(ShellSettings.DockEdge.values()[index]);
+                        settings.setPhoneLandscapeDockGesture(false);
+                    }
+                });
+        landscapeGestureTutorial=DashboardUi.action(this,getString(R.string.dock_gesture_tutorial),()->DockGestureTutorial.show(this,()->{}),false);phoneControls.addView(landscapeGestureTutorial);
+        phoneLandscapeHandleControls=Ui.column(this);phoneControls.addView(phoneLandscapeHandleControls);
+        phoneLandscapeOpenMethod=choice(phoneLandscapeHandleControls,R.string.sidebar_settings_open_method,methodLabels(),
+                ()->settings.snapshot().phoneLandscapeDock.openMethod.ordinal(),index->settings.setPhoneLandscapeDockOpenMethod(Method.values()[index]));
+        phoneLandscapeMethodNote=DashboardUi.text(this,"",13,Ui.MUTED);phoneLandscapeHandleControls.addView(phoneLandscapeMethodNote);
+        Ui.note(phoneLandscapeHandleControls,getString(R.string.sidebar_settings_landscape_note));
+        phoneLandscapeX=new Slider(phoneLandscapeHandleControls,R.string.sidebar_settings_horizontal,
                 ()->settings.snapshot().phoneLandscapeDock.positionPercent,settings::setPhoneLandscapeDockPosition,
                 R.string.sidebar_settings_left,R.string.sidebar_settings_right,0,100,1,false);
-        phoneLandscapeY=new Slider(phoneHandleControls,R.string.sidebar_settings_vertical,
+        phoneLandscapeY=new Slider(phoneLandscapeHandleControls,R.string.sidebar_settings_vertical,
                 ()->settings.snapshot().phoneLandscapeDock.positionPercent,settings::setPhoneLandscapeDockPosition,
                 R.string.sidebar_settings_top,R.string.sidebar_settings_bottom,0,100,1,false);
         DashboardUi.divider(phoneControls);
@@ -127,6 +139,8 @@ public final class SidebarSettingsActivity extends Activity {
     private int phoneSideIndex(){ShellSettings.PhoneSide side=settings.snapshot().phoneDock.phoneSide;for(int i=0;i<PHONE_SIDES.length;i++)if(PHONE_SIDES[i]==side)return i;return 0;}
     private String[] phoneSideLabels(){return new String[]{getString(R.string.sidebar_settings_both),getString(R.string.sidebar_settings_right),getString(R.string.sidebar_settings_left),getString(R.string.dock_gesture_title)};}
     private String[] edgeLabels(){return new String[]{getString(R.string.sidebar_settings_left),getString(R.string.sidebar_settings_right),getString(R.string.sidebar_settings_top),getString(R.string.sidebar_settings_bottom)};}
+    private String[] landscapeLabels(){return new String[]{getString(R.string.sidebar_settings_left),getString(R.string.sidebar_settings_right),getString(R.string.sidebar_settings_top),getString(R.string.sidebar_settings_bottom),getString(R.string.dock_gesture_title)};}
+    private int landscapeIndex(){ShellSettings.DockTrigger landscape=settings.snapshot().phoneLandscapeDock;return landscape.gesture?ShellSettings.DockEdge.values().length:landscape.edge.ordinal();}
     private String[] methodLabels(){return new String[]{getString(R.string.sidebar_settings_single_tap),getString(R.string.sidebar_settings_double_tap),getString(R.string.sidebar_settings_swipe)};}
     private int methodNote(Method method){
         switch(method){
@@ -141,14 +155,18 @@ public final class SidebarSettingsActivity extends Activity {
         phoneShow.setChecked(snapshot.phoneDock.enabled);phoneOverApps.setChecked(snapshot.phoneDock.overApps);
         desktopShow.setChecked(snapshot.externalDock.enabled);desktopByHandle.setChecked(snapshot.externalDock.revealByHandle);
         phoneOpenMethod.setText(getString(R.string.sidebar_settings_choice,getString(R.string.sidebar_settings_open_method),methodLabels()[snapshot.phoneDock.openMethod.ordinal()]));
+        phoneLandscapeOpenMethod.setText(getString(R.string.sidebar_settings_choice,getString(R.string.sidebar_settings_open_method),methodLabels()[snapshot.phoneLandscapeDock.openMethod.ordinal()]));
         desktopOpenMethod.setText(getString(R.string.sidebar_settings_choice,getString(R.string.sidebar_settings_open_method),methodLabels()[snapshot.externalDock.openMethod.ordinal()]));
         phoneMethodNote.setText(methodNote(snapshot.phoneDock.openMethod));desktopMethodNote.setText(methodNote(snapshot.externalDock.openMethod));
+        phoneLandscapeMethodNote.setText(methodNote(snapshot.phoneLandscapeDock.openMethod));
         desktopOpenMethod.setVisibility(snapshot.externalDock.revealByHandle?View.VISIBLE:View.GONE);
         desktopMethodNote.setVisibility(snapshot.externalDock.revealByHandle?View.VISIBLE:View.GONE);
         phoneSide.setText(getString(R.string.sidebar_settings_choice,getString(R.string.dock_handle_position),phoneSideLabels()[phoneSideIndex()]));
         boolean gesture=snapshot.phoneDock.phoneSide==ShellSettings.PhoneSide.GESTURE;
         phoneHandleControls.setVisibility(gesture?View.GONE:View.VISIBLE);gestureTutorial.setVisibility(gesture?View.VISIBLE:View.GONE);
-        phoneLandscapeEdge.setText(getString(R.string.sidebar_settings_choice,getString(R.string.sidebar_settings_edge),edgeLabels()[snapshot.phoneLandscapeDock.edge.ordinal()]));
+        phoneLandscapeHandleControls.setVisibility(snapshot.phoneLandscapeDock.gesture?View.GONE:View.VISIBLE);
+        landscapeGestureTutorial.setVisibility(snapshot.phoneLandscapeDock.gesture?View.VISIBLE:View.GONE);
+        phoneLandscapeEdge.setText(getString(R.string.sidebar_settings_choice,getString(R.string.dock_handle_position),landscapeLabels()[landscapeIndex()]));
         desktopEdge.setText(getString(R.string.sidebar_settings_choice,getString(R.string.sidebar_settings_edge),edgeLabels()[snapshot.externalDock.edge.ordinal()]));
         boolean landscapeHorizontal=horizontalEdge(snapshot.phoneLandscapeDock.edge),desktopHorizontal=horizontalEdge(snapshot.externalDock.edge);
         phoneLandscapeX.setVisible(landscapeHorizontal);phoneLandscapeY.setVisible(!landscapeHorizontal);
