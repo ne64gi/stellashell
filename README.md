@@ -26,6 +26,8 @@ Dockとタスクバーは別機能で、アプリのピン留めも別々です�
 
 ## 開発
 
+[Stella RSS](https://github.com/ne64gi/stella-rss)は独立したRSSリーダー／標準AppWidgetアプリとして別Gitリポジトリで管理します。本リポジトリのモジュールやサブモジュールではなく、StellaShellのビルドにも不要です。
+
 日常の操作は[ユーザーガイド](docs/USER-GUIDE.md)、導入・接続・診断は[セットアップ](docs/setup/README.md)を参照してください。
 
 ソースからのビルドにはJDK 17、Android SDK Platform 35／Build Tools 35.0.0を使います。`ANDROID_HOME`、またはローカルの `local.properties` の `sdk.dir` でSDKを指定します。Gradle 8.11.1はWrapperで取得します。

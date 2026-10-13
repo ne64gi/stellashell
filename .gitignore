@@ -23,3 +23,6 @@ local.properties
 
 # Local conversation attachments (may contain personal screen content)
 /.agenttalk/
+
+# Stella RSS is an independent repository, not a nested Shell module.
+/stella-rss/
