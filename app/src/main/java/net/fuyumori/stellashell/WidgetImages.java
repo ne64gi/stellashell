@@ -25,5 +25,15 @@ final class WidgetImages {
             return name;
         }catch(IOException|RuntimeException e){out.delete();throw e;}finally{bitmap.recycle();}
     }
+    /** Display decode only; keep the private saved image at its existing import resolution. */
+    static Bitmap decodeForDisplay(File file,int width,int height)throws IOException{
+        if(width<=0||height<=0)throw new IllegalArgumentException("Image bounds must be positive");
+        return ImageDecoder.decodeBitmap(ImageDecoder.createSource(file),(decoder,info,source)->{
+            int sourceWidth=info.getSize().getWidth(),sourceHeight=info.getSize().getHeight();
+            double scale=Math.min(1d,Math.min((double)width/sourceWidth,(double)height/sourceHeight));
+            decoder.setTargetSize(Math.max(1,(int)Math.floor(sourceWidth*scale)),Math.max(1,(int)Math.floor(sourceHeight*scale)));
+            decoder.setAllocator(ImageDecoder.ALLOCATOR_SOFTWARE);
+        });
+    }
     static void remove(Context c,String name){File f=file(c,name);if(f!=null)f.delete();}
 }

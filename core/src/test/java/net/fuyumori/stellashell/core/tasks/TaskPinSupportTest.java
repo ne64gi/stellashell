@@ -11,8 +11,18 @@ public class TaskPinSupportTest {
         assertEquals(TaskPinSupport.Route.UNSUPPORTED,TaskPinSupport.select(33,"Sony","SOG06",true,true));
         assertEquals(TaskPinSupport.Route.UNSUPPORTED,TaskPinSupport.select(34,"Other","SOG06",true,true));
     }
-    @Test public void nxCrashGuardCannotBeBypassedByEitherMethod(){
-        assertEquals(TaskPinSupport.Route.UNSUPPORTED,TaskPinSupport.select(36,"nubia","NX809J",true,true));
+    @Test public void redmagicUsesVerifiedWctNotRootApi(){
+        assertEquals(TaskPinSupport.Route.REDMAGIC_WCT,TaskPinSupport.select(36,"nubia","NX809J",true,true));
+        assertEquals(TaskPinSupport.Route.REDMAGIC_WCT,TaskPinSupport.select(36,"NUBIA","NX809J",true,false));
+        assertEquals(TaskPinSupport.Route.UNSUPPORTED,TaskPinSupport.select(36,"nubia","NX809J",false,true));
+        assertEquals(TaskPinSupport.Route.WCT,TaskPinSupport.select(36,"nubia","Other",true,false));
+        assertEquals(TaskPinSupport.Route.WCT,TaskPinSupport.select(35,"nubia","NX809J",true,false));
+    }
+    @Test public void redmagicDoesNotEnableUnverifiedExternalDisplays(){
+        assertTrue(TaskPinSupport.supportsDisplay(TaskPinSupport.Route.REDMAGIC_WCT,0));
+        assertFalse(TaskPinSupport.supportsDisplay(TaskPinSupport.Route.REDMAGIC_WCT,1));
+        assertFalse(TaskPinSupport.supportsDisplay(TaskPinSupport.Route.REDMAGIC_WCT,42));
+        assertFalse(TaskPinSupport.supportsDisplay(TaskPinSupport.Route.REDMAGIC_WCT,-1));
     }
     @Test public void sonyOnlyEnablesTheVisuallyVerifiedMainDisplay(){
         assertTrue(TaskPinSupport.supportsDisplay(TaskPinSupport.Route.SONY_ROOT,0));

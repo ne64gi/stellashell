@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.regex.*;
 import net.fuyumori.stellashell.core.layout.CornerDockGesture;
+import net.fuyumori.stellashell.core.layout.GetEventParser;
 import net.fuyumori.stellashell.core.layout.TouchFrames;
 
 /** Optional passive built-in touchscreen reader. No grabs, injection, input logging or polling. */
@@ -113,14 +114,11 @@ final class DockGestureMonitor implements AutoCloseable {
                 public void up(float x,float y,long t){CornerDockGesture.Result result=gesture.finish(x,y,t);if(result!=null)gesture(result);}
                 public void cancel(){gesture.cancel();}
             });
-            Pattern event=Pattern.compile("\\[\\s*(\\d+)\\.(\\d{6})\\]\\s+(?:/dev/input/event\\d+:\\s+)?([0-9a-fA-F]{4})\\s+([0-9a-fA-F]{4})\\s+([0-9a-fA-F]{8})\\s*");
+            GetEventParser event=new GetEventParser();
             try(BufferedReader input=new BufferedReader(new InputStreamReader(process.getInputStream(),StandardCharsets.US_ASCII))){
                 String line;
                 while((line=input.readLine())!=null){
-                    if(line.length()>160)continue;
-                    Matcher m=event.matcher(line);if(!m.matches())continue;
-                    long millis=Long.parseLong(m.group(1))*1000+Integer.parseInt(m.group(2))/1000;
-                    frames.event(Integer.parseInt(m.group(3),16),Integer.parseInt(m.group(4),16),(int)Long.parseLong(m.group(5),16),millis);
+                    if(event.parse(line))frames.event(event.type(),event.code(),event.value(),event.millis());
                 }
             }catch(Exception ignored){/* Closed, disconnected or unsupported: keep fallback handles. */}
             finally{

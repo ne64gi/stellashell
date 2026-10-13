@@ -35,7 +35,9 @@ platform bridgeは既存Java/AIDL package `net.fuyumori.stellashell` を維持�
 - appの`AppMenu`はViewと検索入力、`SearchSettingsActivity`は設定画面、`WebSearchLauncher`はAndroid URL解決・現在displayへの起動だけを担当する。featureからそれらの型を呼ばず、navigator/callbackを注入する。
 - 起動profileは `LaunchProfileOwner` / `LaunchProfileSnapshot`。`setMode` / `setSize` / `setPosition` / `setRememberBounds` / `setCustomSize` / 観測commandだけを使う。古いsnapshot全体の保存窓口は提供しない。
 - 保存port `LaunchProfileStore` を実装するAndroid adapterだけが`launch_profiles`を開く。同じ保存領域を包むadapterは共通lock上でread/merge/writeする。既存JSON互換は`LaunchProfileCodec`が担当する。
-- `AppCatalog`はアプリ変更イベントで無効化するメタデータcache（同時loadを世代ごとに共有・古いloadを破棄）と最大64件の標準icon state cacheを所有する。Activity/Viewを保持しない。`MenuAppIcon`は描画されたStartタイルだけ非同期にiconを読む。`AppCatalog`はcatalogの取得、`PublicLauncher`は同じpackage内の公開launcher解決と通常Android起動。catalogの不変entryをapp側のView型へ変換し、内部Activity・権限保護・stale entryのfallbackと明示aliasを維持する。
+- `AppCatalog`はアプリ変更イベントで無効化するメタデータcache（同時loadを世代ごとに共有・古いloadを破棄）を所有する。`LabelCache`は構成・package更新情報に対応する文字列だけを私有領域へ保存し、元iconのDrawable/Resourcesを保持しない。appの`IconArtwork`が最終表示画像を最大256px・8MiB/64件で管理し、`MenuAppIcon`は可視タイルだけ非同期にiconを要求する。cache上限はprocess全体の上限ではない。`PublicLauncher`は同じpackage内の公開launcher解決と通常Android起動。catalogの不変entryをapp側のView型へ変換し、内部Activity・権限保護・stale entryのfallbackと明示aliasを維持する。
+- 通知件数の正本はlistenerが所有するappの`NotificationPresence`。接続時のsnapshotと投稿・削除・rankingイベントからidentity/user/groupだけを更新し、coreの`NotificationIndex`がsummary重複除外と不変count snapshotを所有する。Dock/Startは通知本文を取得せずこの窓口を使う。本文は可視の通知欄だけが取得し、非表示時は行・payloadを解放する。通知本文・画像・PendingIntentをcount cacheや保存領域へ持ち込まない。
+- カスタム画像の保存解像度は`WidgetImages`、表示画像の寿命は`WidgetImageView`。表示枠の実pixelに合わせてdecodeし、隠れたページ・停止・detach・破棄では画像参照と保留要求を解放する。workerはActivityを保持せず、世代で古い完了を破棄する。AppWidget providerの更新・host・既存配置保存形式とは独立する。
 - `ExternalAppLaunch`は長押しメニューの接続先選択と短いエラー案内のみを担当する。`PublicLauncher.launchExternalFullscreen`は通常app UIDでpublic外部・secondary-activity対応・起動可否を再検証し、全画面を要求する。Bridge・保存profile・workspace選択に依存せず、本体へのfallbackを持たない。全画面optionの採否はOSの制約に従い、外部入力routingやタスク終了権限を追加しない。
 - 専用モードはcoreの`ExclusiveDisplaySession`で一時leaseの同一性を管理し、appの`ExternalAppMode`が変更を通知する。本体`ExternalAppActivity`は非focus待機画面を先に作り、外部アプリを最後に起動する。`ShellController`は表示/タスク購読、`PhoneNavigationOwner`は本体Dock/Taskbarを一時停止し、終了時は最新設定へ戻す。入力転送・強制focus・task kill・永続設定・FGSを専用モードへ追加しない。
 - `LaunchItems`は注入された既存SharedPreferencesの4系統pins・共通recent・profile別desktop配置だけを所有する。読み取りは不変detached snapshot、操作は最新値へのcommand。同じSharedPreferences上のlockで複数adapterの更新を直列化する。group参照の削除もこの窓口を使う。legacy初期profile copyだけはappの`WorkspaceProfile`に残る。
@@ -80,4 +82,4 @@ platform bridgeは既存Java/AIDL package `net.fuyumori.stellashell` を維持�
 
 既知のHOME/PiP/mouse・長期性能の未検証事項は、この構造変更で解決済みとはしない。
 
-任意位置Dockの形状認識・Type-B touch frame・配置・二連HOME判定はcore、選別された内蔵タッチパネルのread-only監視はplatform/bridge、可用性と画面寿命・チュートリアル・表示はappに置く。Bridge UserServiceは39。既存AIDL番号を保ち、gesture購読29/解除30に続いてExtensions終了31を追加。raw入力をapp側へ流さない。
+任意位置Dockの形状認識・Type-B touch frame・配置・二連HOME判定はcore、選別された内蔵タッチパネルのread-only監視はplatform/bridge、可用性と画面寿命・チュートリアル・表示はappに置く。Bridge UserServiceは41。既存AIDL番号を保ち、gesture購読29/解除30に続いてExtensions終了31を追加。raw入力をapp側へ流さない。

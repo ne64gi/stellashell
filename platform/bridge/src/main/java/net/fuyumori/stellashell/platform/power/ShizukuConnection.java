@@ -12,7 +12,7 @@ import rikka.shizuku.Shizuku;
 
 /** SDK-only transport. It knows nothing about shell preferences, leases, or base runtime. */
 public final class ShizukuConnection {
-    public static final int SERVICE_VERSION=39;
+    public static final int SERVICE_VERSION=41;
     public enum Status { NOT_RUNNING, OLD_API, PERMISSION, WAITING, READY, ERROR }
     private final Handler main=new Handler(Looper.getMainLooper());
     private final Shizuku.UserServiceArgs args;

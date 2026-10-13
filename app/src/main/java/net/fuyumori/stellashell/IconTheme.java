@@ -79,29 +79,42 @@ final class IconTheme {
             cache.put(pkg,pack);return pack;
         }
     }
-    static synchronized void invalidate(){packGeneration++;cache.clear();}
+    static synchronized void invalidate(){packGeneration++;cache.clear();IconArtwork.clear();}
     static boolean changed(String key){return key!=null&&(key.equals(PACK)||key.equals(REVISION)||key.startsWith(PREFIX));}
     static String key(String component){return PREFIX+canonical(component);}
-    static void selectPack(Context c,String pkg){Launches.prefs(c).edit().putString(PACK,pkg).apply();}
+    static void selectPack(Context c,String pkg){Launches.prefs(c).edit().putString(PACK,pkg).apply();invalidate();}
     static void override(Context c,String component,String value){
         SharedPreferences prefs=Launches.prefs(c);String key=key(component),old=prefs.getString(key,"");
         SharedPreferences.Editor edit=prefs.edit();if(value.isEmpty())edit.remove(key);else edit.putString(key,value);edit.apply();
+        invalidate();
         if(old.startsWith("file:")&&!old.equals(value)){File file=localFile(c,old.substring(5));if(file!=null)file.delete();}
     }
     private static File localFile(Context c,String name){return name.matches("icon-[a-zA-Z0-9-]+\\.png")?new File(c.getFilesDir(),name):null;}
     static Drawable resolve(Context c,String component,Drawable original){
+        return resolve(c,component,original,0);
+    }
+    static Drawable resolve(Context c,String component,Drawable original,int targetPx){
         String requested=Profiles.requestedComponent(c,component);SharedPreferences prefs=Launches.prefs(c);
         String custom=prefs.getString(key(requested),"");
+        String selected=prefs.getString(PACK,"");int pixels=IconArtwork.side(c,targetPx);
+        IconArtwork.Key cacheKey=original==null?new IconArtwork.Key(c,prefs,component,requested,custom,selected,prefs.getLong(REVISION,0),pixels):null;
+        return IconArtwork.resolve(c,cacheKey,pixels,()->resolveSource(c,component,requested,custom,selected,original,pixels));
+    }
+    private static Drawable resolveSource(Context c,String component,String requested,String custom,String selected,Drawable original,int pixels){
         if("default".equals(custom))return defaultIcon(c,component,original);
         if(custom.startsWith("file:"))try{
             File file=localFile(c,custom.substring(5));if(file!=null&&file.isFile()){
-                Bitmap bitmap=BitmapFactory.decodeFile(file.getPath());if(bitmap!=null)return new BitmapDrawable(c.getResources(),bitmap);
+                Bitmap bitmap=ImageDecoder.decodeBitmap(ImageDecoder.createSource(file),(decoder,info,source)->{
+                    int w=info.getSize().getWidth(),h=info.getSize().getHeight();float scale=Math.min(1f,pixels/(float)Math.max(w,h));
+                    decoder.setTargetSize(Math.max(1,Math.round(w*scale)),Math.max(1,Math.round(h*scale)));decoder.setAllocator(ImageDecoder.ALLOCATOR_SOFTWARE);
+                });
+                if(bitmap!=null)return new BitmapDrawable(c.getResources(),bitmap);
             }
-        }catch(RuntimeException ignored){}
+        }catch(IOException|RuntimeException ignored){}
         if(custom.startsWith("pack:")){
             String[] parts=custom.split(":",3);if(parts.length==3){Pack pack=pack(c,parts[1]);Drawable icon=pack==null?null:pack.drawable(parts[2]);if(icon!=null)return icon;}
         }
-        Pack pack=pack(c,prefs.getString(PACK,""));
+        Pack pack=pack(c,selected);
         if(pack!=null){String icon=pack.mappings.get(canonical(requested));if(icon==null)icon=pack.mappings.get(canonical(component));Drawable drawable=icon==null?null:pack.drawable(icon);if(drawable!=null)return drawable;}
         return defaultIcon(c,component,original);
     }
@@ -122,7 +135,12 @@ final class IconTheme {
         IntentFilter filter=new IntentFilter();filter.addAction(Intent.ACTION_PACKAGE_ADDED);filter.addAction(Intent.ACTION_PACKAGE_REMOVED);filter.addAction(Intent.ACTION_PACKAGE_CHANGED);filter.addAction(Intent.ACTION_PACKAGE_REPLACED);filter.addDataScheme("package");
         // Package broadcasts are protected system broadcasts; no externally callable command surface.
         BroadcastReceiver changed=new BroadcastReceiver(){@Override public void onReceive(Context context,Intent intent){
-            net.fuyumori.stellashell.feature.launch.AppCatalog.invalidate();invalidate();Launches.prefs(context).edit().putLong(REVISION,System.nanoTime()).apply();
+            String pkg=intent.getData()==null?null:intent.getData().getSchemeSpecificPart();
+            String[] packages=intent.getStringArrayExtra(Intent.EXTRA_CHANGED_PACKAGE_LIST);
+            if(pkg!=null)net.fuyumori.stellashell.feature.launch.AppCatalog.invalidatePackage(pkg);
+            else if(packages!=null&&packages.length>0){for(String changedPackage:packages)net.fuyumori.stellashell.feature.launch.AppCatalog.invalidatePackage(changedPackage);}
+            else net.fuyumori.stellashell.feature.launch.AppCatalog.invalidate();
+            invalidate();Launches.prefs(context).edit().putLong(REVISION,System.nanoTime()).apply();
         }};
         c.registerReceiver(changed,filter);
         IntentFilter external=new IntentFilter();external.addAction(Intent.ACTION_EXTERNAL_APPLICATIONS_AVAILABLE);external.addAction(Intent.ACTION_EXTERNAL_APPLICATIONS_UNAVAILABLE);

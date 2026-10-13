@@ -293,17 +293,18 @@ public final class HubActivity extends Activity implements DisplayManager.Displa
     private void renderNotifications(){
         if(!started){notificationList.clear();notificationState=-1;navigation.setNotificationPresence(false,false,null);return;}
         boolean locked=screenOff||ShellNotifications.locked(this),available=ShellNotifications.ready(this);
-        java.util.List<StatusBarNotification> snapshot=locked||!available?java.util.Collections.emptyList():ShellNotifications.current(this);
+        java.util.List<StatusBarNotification> snapshot=locked||!available||!notifications?java.util.Collections.emptyList():ShellNotifications.current(this);
         // Recheck after snapshot acquisition so a newly lost lock/access guard also clears old cards.
         locked=locked||ShellNotifications.locked(this);available=available&&ShellNotifications.ready(this);
-        navigation.setNotificationPresence(locked,available,snapshot);
+        navigation.setNotificationPresence(locked,available,notifications?!snapshot.isEmpty():ShellNotifications.hasNotifications(this));
         int state=locked?NOTIFICATIONS_LOCKED:available?NOTIFICATIONS_LIVE:NOTIFICATIONS_UNAVAILABLE;
         if(state!=notificationState){
             // Only privacy/notice transitions discard rows; live updates keep the renderer and its anchors.
             notificationList.clear();notificationState=state;
             if(state!=NOTIFICATIONS_LIVE)Ui.note(notificationRows,getString(state==NOTIFICATIONS_LOCKED?R.string.hub_locked:R.string.hub_access_note));
         }
-        // A hidden notification page need not rebuild when providers post/update while widgets are in use.
+        // Hidden tabs keep expansion identifiers, not old notification payloads or app resources.
+        if(!notifications&&state==NOTIFICATIONS_LIVE)notificationList.hide();
         if(notifications&&state==NOTIFICATIONS_LIVE)notificationList.render(snapshot);
     }
     private void openNotification(StatusBarNotification item){

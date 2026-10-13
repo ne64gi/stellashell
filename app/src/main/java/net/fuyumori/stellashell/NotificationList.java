@@ -30,6 +30,7 @@ final class NotificationList {
     private final Set<String> expanded=new HashSet<>();
     private final Map<String,Section> sections=new LinkedHashMap<>();
     private View empty;
+    private int hiddenOffset=-1;
     private final NotificationScrollAnchor scrollAnchor;
 
     NotificationList(LinearLayout rows,Consumer<StatusBarNotification> open,Consumer<StatusBarNotification> dismiss){
@@ -42,14 +43,20 @@ final class NotificationList {
 
     /** Privacy boundary: erase live content, callbacks and pending view references immediately. */
     void clear(){
+        hiddenOffset=-1;
         scrollAnchor.cancel();
         for(Section section:sections.values())section.clear();
         sections.clear();rows.removeAllViews();empty=null;
         // Only package/user expansion identifiers may survive a temporary lock/access loss.
     }
 
+    void hide(){
+        if(hiddenOffset>=0)return;
+        int offset=scrollAnchor.offset();clear();hiddenOffset=offset;
+    }
+
     void render(List<StatusBarNotification> snapshot){
-        preservePosition();
+        if(hiddenOffset>=0){scrollAnchor.restoreOffset(hiddenOffset);hiddenOffset=-1;}else preservePosition();
         List<NotificationGroups.Group> groups=NotificationGroups.collect(snapshot);
         Set<String> present=new HashSet<>();for(NotificationGroups.Group group:groups)present.add(group.key);
         expanded.retainAll(present);

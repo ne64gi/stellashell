@@ -46,7 +46,7 @@ final class PhoneRunningTasks implements AutoCloseable {
         public void connect(){if(bridge.authorized())bridge.connect();}
         public void observe(Runnable listener){events=ShellTaskEvents.of(context).observe(0,listener);}
         public void remove(Runnable listener){if(events!=null)try{events.close();}catch(Exception ignored){}events=null;}
-        public void snapshot(Bridge.Reply reply){bridge.read(s->s.phoneTaskSnapshot(),reply);}
+        public void snapshot(Bridge.Reply reply){ShellTaskEvents.of(context).phoneSnapshot(reply);}
         public void focus(TaskSnapshot.Task task,Bridge.Reply reply){taskState.focusPhoneTask(task,reply);}
         public void operation(TaskSnapshot.Task task,String action,Rect bounds,Bridge.Reply reply){taskState.phoneOperation(context,task,action,bounds,reply);}
     },changed);}

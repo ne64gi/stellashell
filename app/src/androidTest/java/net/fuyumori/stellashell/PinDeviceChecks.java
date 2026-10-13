@@ -20,10 +20,16 @@ final class PinDeviceChecks {
         main(()->Bridge.get(context).call(work,(value,error)->{answer[0]=value;answer[1]=error;done.countDown();}));
         require(done.await(15,TimeUnit.SECONDS),"Bridge timeout");require(answer[1]==null,"Bridge failure: "+answer[1]);return answer[0];
     }
-    private void await(java.util.function.BooleanSupplier condition,String message)throws Exception{
-        long until=SystemClock.uptimeMillis()+10000;
-        while(SystemClock.uptimeMillis()<until){boolean[] ok={false};main(()->ok[0]=condition.getAsBoolean());if(ok[0])return;Thread.sleep(100);}
-        throw new AssertionError(message);
+    private void settleAndCheck(java.util.function.BooleanSupplier condition,String message)throws Exception{
+        // One bounded frame/transition settle after an explicit UI action, not polling.
+        Thread.sleep(1200);boolean[] ok={false};main(()->ok[0]=condition.getAsBoolean());require(ok[0],message);
+    }
+    private void connect()throws Exception{
+        CountDownLatch ready=new CountDownLatch(1);
+        Runnable changed=()->{if(Bridge.get(context).ready())ready.countDown();};
+        main(()->{Bridge.get(context).observe(changed);ShellRuntime.start(context,0,false);Bridge.get(context).connect();changed.run();});
+        try{require(ready.await(15,TimeUnit.SECONDS),"Shizuku service not ready");}
+        finally{main(()->Bridge.get(context).remove(changed));}
     }
     private static Object field(Class<?> type,Object object,String name)throws Exception{java.lang.reflect.Field f=type.getDeclaredField(name);f.setAccessible(true);return f.get(object);}
     private View button(int id){
@@ -36,6 +42,12 @@ final class PinDeviceChecks {
             }return null;
         }catch(Exception e){throw new AssertionError(e);}
     }
+    private String fixtureTree(View view)throws Exception{
+        String value=view.getClass().getSimpleName()+":"+view.getVisibility();
+        if(view.getClass().getSimpleName().equals("CaptionButton"))value+="/"+field(view.getClass(),view,"action");
+        if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++)value+="["+fixtureTree(((ViewGroup)view).getChildAt(i))+"]";
+        return value;
+    }
     private View findPin(View view)throws Exception{
         if(view.getClass().getSimpleName().equals("CaptionButton")&&"pin".equals(field(view.getClass(),view,"action"))&&view.isShown())return view;
         if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++){View found=findPin(((ViewGroup)view).getChildAt(i));if(found!=null)return found;}
@@ -47,12 +59,11 @@ final class PinDeviceChecks {
         return null;
     }
     void run()throws Exception{
-        require("SOG06".equals(Build.MODEL)&&Build.VERSION.SDK_INT==34,"SOG06 Android14 check only");
+        require(("SOG06".equals(Build.MODEL)&&Build.VERSION.SDK_INT==34)||("NX809J".equals(Build.MODEL)&&Build.VERSION.SDK_INT==36),"Verified Sony/REDMAGIC main display only");
         require(!context.getSystemService(android.app.KeyguardManager.class).isDeviceLocked(),"Unlock normally first");
         require(Launches.prefs(context).getBoolean("enabled",false)&&Launches.prefs(context).getBoolean("primary_mode",false),"Requires an already enabled main-display session");
         SharedPreferences profiles=context.getSharedPreferences("launch_profiles",0);Map<String,?> before=profiles.getAll();int fixture=-1;
-        main(()->{ShellRuntime.start(context,0,false);Bridge.get(context).connect();});
-        await(()->Bridge.get(context).ready(),"Shizuku service not ready");
+        connect();
         try{
             JSONObject initial=new JSONObject(call(s->s.taskSnapshot(0)));
             require(initial.getJSONObject("capabilities").getBoolean("alwaysOnTop"),"Installed service did not advertise pinning");
@@ -61,16 +72,29 @@ final class PinDeviceChecks {
             JSONObject taskRecord=launched.getJSONObject("task");
             TaskSnapshot.Task model=new TaskSnapshot.Task(taskRecord);fixture=model.id;int id=fixture;
             JSONObject ownershipRecord=new JSONObject().put("task",taskRecord);
+            CountDownLatch owned=new CountDownLatch(1);
             main(()->{
-                try{TaskState.of(context).launched(context,ownershipRecord,0,true,()->{});}
+                try{TaskState.of(context).launched(context,ownershipRecord,0,true,owned::countDown);}
                 catch(org.json.JSONException error){throw new AssertionError(error);}
             });
-            await(()->button(id)!=null,"Pin caption did not render");
+            require(owned.await(15,TimeUnit.SECONDS),"Fixture role transition did not complete");
+            main(()->TaskState.of(context).refresh());
+            try{settleAndCheck(()->button(id)!=null,"Pin caption did not render");}
+            catch(AssertionError missing){
+                String[] state={""};main(()->{TaskSnapshot t=TaskState.of(context).snapshot();state[0]=" chrome="+(ShellFixtureAccess.chrome()!=null)+" display="+ShellRuntime.selectedDisplay()+" canArrange="+t.canArrange+" canPin="+t.canPin;
+                    for(TaskSnapshot.Task row:t.tasks)if(row.id==id)state[0]+=" modelMode="+row.mode+" visible="+row.visible+" focused="+row.focused+" bounds="+row.bounds();
+                    try{WindowChrome chrome=ShellFixtureAccess.chrome();if(chrome!=null){Object frame=((Map<?,?>)field(WindowChrome.class,chrome,"frames")).get(id);state[0]+=" frame="+(frame!=null);
+                        if(frame!=null){List<?> parts=(List<?>)((List<?>)field(frame.getClass(),frame,"parts")).get(0);state[0]+=" captions="+parts.size();
+                            for(Object part:parts){View root=(View)field(part.getClass(),part,"root");state[0]+=" attached="+root.isAttachedToWindow()+" shown="+root.isShown()+" size="+root.getWidth()+"x"+root.getHeight()+" tree="+fixtureTree(root);}}}}
+                    catch(Exception error){throw new AssertionError(error);}});
+                JSONObject nativeTask=task(id);
+                throw new AssertionError(missing.getMessage()+state[0]+" nativeMode="+(nativeTask==null?-1:nativeTask.getInt("mode")));
+            }
             main(()->require(button(id).performClick(),"Pin caption click failed"));
-            await(()->button(id)!=null&&button(id).isSelected(),"Pin caption did not select");
+            settleAndCheck(()->button(id)!=null&&button(id).isSelected(),"Pin caption did not select");
             require(task(id).getBoolean("pinActive"),"Selected caption lacks native pin");
             main(()->require(button(id).performClick(),"Unpin caption click failed"));
-            await(()->button(id)!=null&&!button(id).isSelected(),"Pin caption did not deselect");
+            settleAndCheck(()->button(id)!=null&&!button(id).isSelected(),"Pin caption did not deselect");
             require(!task(id).getBoolean("pinActive"),"Unpin caption left native pin");
         }finally{
             if(fixture>=0&&task(fixture)!=null){int id=fixture;call(s->s.taskOperation(0,id,"close",0,0,0,0));}

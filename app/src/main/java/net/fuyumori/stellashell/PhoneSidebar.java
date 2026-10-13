@@ -199,7 +199,7 @@ final class PhoneSidebar implements AutoCloseable {
             android.content.ComponentName name=android.content.ComponentName.unflattenFromString(component);
             if(name==null)continue;
             android.content.pm.ApplicationInfo app=context.getPackageManager().getApplicationInfo(name.getPackageName(),0);
-            BadgedAppButton icon=new BadgedAppButton(context);pinnedIcons.put(component,icon);icon.setTag(app.loadLabel(context.getPackageManager()));icon.notificationCount(notificationApps.count(component));icon.setImageDrawable(AppIcons.forApp(context,component,app.loadIcon(context.getPackageManager())));
+            BadgedAppButton icon=new BadgedAppButton(context);pinnedIcons.put(component,icon);icon.setTag(app.loadLabel(context.getPackageManager()));icon.notificationCount(notificationApps.count(component));icon.setImageDrawable(AppIcons.forApp(context,component,null,dp(36)));
             icon.setScaleType(ImageView.ScaleType.FIT_CENTER);icon.setBackground(Ui.toolbarBackground(context,10));icon.setPadding(dp(horizontal?8:14),dp(horizontal?14:8),dp(horizontal?8:14),dp(horizontal?14:8));
             icon.setContentDescription(app.loadLabel(context.getPackageManager()));icon.setTooltipText(app.loadLabel(context.getPackageManager()));
             icon.setOnClickListener(v->{hide();Launches.app(context,component,0);});
@@ -377,7 +377,7 @@ final class PhoneSidebar implements AutoCloseable {
         for(TaskSnapshot.Task task:tasks){
             android.content.ComponentName name=android.content.ComponentName.unflattenFromString(task.component);if(name==null)continue;
             CharSequence label=name.getPackageName();android.graphics.drawable.Drawable image=context.getDrawable(android.R.drawable.sym_def_app_icon);
-            try{android.content.pm.ApplicationInfo app=context.getPackageManager().getApplicationInfo(name.getPackageName(),0);label=app.loadLabel(context.getPackageManager());image=AppIcons.forApp(context,task.component,app.loadIcon(context.getPackageManager()));}
+            try{android.content.pm.ApplicationInfo app=context.getPackageManager().getApplicationInfo(name.getPackageName(),0);label=app.loadLabel(context.getPackageManager());image=AppIcons.forApp(context,task.component,null);}
             catch(android.content.pm.PackageManager.NameNotFoundException|RuntimeException ignored){}
             int window=seen.getOrDefault(task.component,0)+1;seen.put(task.component,window);
             if(totals.get(task.component)>1)label=context.getString(R.string.phone_sidebar_task_window,label,window);

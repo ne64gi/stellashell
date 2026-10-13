@@ -5,6 +5,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.content.pm.PackageInfo;
+import android.os.Build;
 import android.graphics.drawable.Drawable;
 import android.content.res.Configuration;
 import java.text.Collator;
@@ -16,6 +18,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.io.File;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -28,20 +31,21 @@ public final class AppCatalog {
         private Entry(String component,String label,Drawable icon){this.component=component;this.label=label;this.icon=icon;}
     }
     private static final Map<String,CatalogCache<Entry>> catalogs=new LinkedHashMap<>();
-    private static final Map<String,Drawable.ConstantState> icons=new LinkedHashMap<>(64,.75f,true);
     private static final ExecutorService warmer=Executors.newSingleThreadExecutor();
-    private static long iconGeneration;
+    private static LabelCache labels;
     private final Context context;
     public AppCatalog(Context context){this.context=Objects.requireNonNull(context);}
     private CatalogCache<Entry> cache(){
         Configuration configuration=context.getResources().getConfiguration();
-        String key=context.getPackageName()+":"+configuration.getLocales().toLanguageTags();
+        String key=context.getPackageName()+":"+configurationKey(configuration);
         synchronized(catalogs){
             CatalogCache<Entry> cache=catalogs.get(key);
             if(cache==null){
                 Context application=context.getApplicationContext();
                 Context source=(application==null?context:application).createConfigurationContext(new Configuration(configuration));
-                cache=new CatalogCache<>(()->read(source));
+                if(labels==null)labels=new LabelCache(new File(source.getNoBackupFilesDir(),"launcher-labels-v1.bin"));
+                LabelCache store=labels;
+                cache=new CatalogCache<>(()->read(source,store));
                 if(catalogs.size()>=2)catalogs.remove(catalogs.keySet().iterator().next());
                 catalogs.put(key,cache);
             }
@@ -55,39 +59,53 @@ public final class AppCatalog {
     /** Finite startup event, not a periodic background refresh. */
     public void warm(){CatalogCache<Entry> cache=cache();warmer.execute(()->{try{cache.get();}catch(RuntimeException ignored){}});}
     public static void invalidate(){
-        synchronized(catalogs){for(CatalogCache<Entry> cache:catalogs.values())cache.invalidate();}
-        synchronized(icons){iconGeneration++;icons.clear();}
+        invalidatePackage(null);
     }
-    /** Small LRU of drawable states, not drawables shared between Views. */
-    public static Drawable icon(Context context,String component){
-        String key=context.getResources().getConfiguration().getLocales().toLanguageTags()+":"
-                +context.getResources().getConfiguration().densityDpi+":"+component;
-        long generation;
-        synchronized(icons){
-            generation=iconGeneration;
-            Drawable.ConstantState state=icons.get(key);
-            if(state!=null)return state.newDrawable(context.getResources()).mutate();
+    /** Package broadcasts may preserve scalar labels belonging to unchanged packages. */
+    public static void invalidatePackage(String packageName){
+        synchronized(catalogs){
+            if(labels!=null)labels.invalidate(packageName);
+            for(CatalogCache<Entry> cache:catalogs.values())cache.invalidate();
         }
+    }
+    /** Uncached source artwork. Consumers own any cache of final rendered icons. */
+    public static Drawable icon(Context context,String component){
+        PackageManager pm=context.getPackageManager();ComponentName name=null;
         Drawable drawable;
-        try{drawable=context.getPackageManager().getActivityIcon(ComponentName.unflattenFromString(component));}
-        catch(PackageManager.NameNotFoundException|RuntimeException error){drawable=context.getPackageManager().getDefaultActivityIcon();}
-        Drawable.ConstantState state=drawable.getConstantState();
-        if(state!=null)synchronized(icons){
-            if(generation==iconGeneration){
-                if(icons.size()>=64)icons.remove(icons.keySet().iterator().next());
-                icons.put(key,state);
-            }
+        try{name=ComponentName.unflattenFromString(component);drawable=pm.getActivityIcon(name);}
+        catch(PackageManager.NameNotFoundException|RuntimeException error){
+            try{if(name==null)throw new IllegalArgumentException();drawable=pm.getApplicationIcon(name.getPackageName());}
+            catch(PackageManager.NameNotFoundException|RuntimeException unavailable){drawable=pm.getDefaultActivityIcon();}
         }
         return drawable.mutate();
     }
-    private static List<Entry> read(Context context){
+    private static String configurationKey(Configuration c){
+        return Build.FINGERPRINT+":"+c.getLocales().toLanguageTags()+":"+c.mcc+":"+c.mnc+":"+Float.floatToIntBits(c.fontScale)
+                +":"+c.touchscreen+":"+c.keyboard+":"+c.keyboardHidden+":"+c.hardKeyboardHidden+":"+c.navigation+":"+c.navigationHidden
+                +":"+c.orientation+":"+c.colorMode+":"+c.screenLayout+":"+c.uiMode+":"+c.screenWidthDp+":"+c.screenHeightDp
+                +":"+c.smallestScreenWidthDp+":"+c.densityDpi+":"+(Build.VERSION.SDK_INT>=31?c.fontWeightAdjustment:0)
+                +":"+(Build.VERSION.SDK_INT>=34?c.getGrammaticalGender():0);
+    }
+    private static List<Entry> read(Context context,LabelCache store){
+        long request=store.beginRefresh();
         PackageManager pm=context.getPackageManager();List<Entry> out=new ArrayList<>();Set<String> seen=new HashSet<>();
+        List<LabelCache.Item> current=new ArrayList<>();Map<String,String> identities=new LinkedHashMap<>();
         Intent query=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
         for(ResolveInfo info:pm.queryIntentActivities(query,0)){
             if(info.activityInfo==null||context.getPackageName().equals(info.activityInfo.packageName))continue;
             ComponentName component=new ComponentName(info.activityInfo.packageName,info.activityInfo.name);
-            if(seen.add(component.flattenToString()))out.add(new Entry(component.flattenToString(),info.loadLabel(pm).toString(),null));
+            String name=component.flattenToString(),pkg=info.activityInfo.packageName;
+            if(!seen.add(name))continue;
+            if(!identities.containsKey(pkg)){
+                String identity=null;
+                try{PackageInfo version=pm.getPackageInfo(pkg,0);identity=pkg+":"+version.getLongVersionCode()+":"+version.lastUpdateTime;}
+                catch(PackageManager.NameNotFoundException|RuntimeException ignored){}
+                identities.put(pkg,identity);
+            }
+            current.add(new LabelCache.Item(name,identities.get(pkg),()->info.loadLabel(pm).toString()));
         }
+        for(Map.Entry<String,String> entry:store.resolve(request,configurationKey(context.getResources().getConfiguration()),current).entrySet())
+            out.add(new Entry(entry.getKey(),entry.getValue(),null));
         Collator sorter=Collator.getInstance();out.sort((a,b)->sorter.compare(a.label,b.label));
         return Collections.unmodifiableList(out);
     }

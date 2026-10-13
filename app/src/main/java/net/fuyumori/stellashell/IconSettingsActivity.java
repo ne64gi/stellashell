@@ -38,7 +38,7 @@ public final class IconSettingsActivity extends Activity {
             try{
                 android.content.pm.ActivityInfo info=getPackageManager().getActivityInfo(ComponentName.unflattenFromString(component),0);
                 Ui.note(root,info.loadLabel(getPackageManager()).toString());ImageView preview=new ImageView(this);
-                preview.setImageDrawable(IconTheme.resolve(this,component,info.loadIcon(getPackageManager())));root.addView(preview,new LinearLayout.LayoutParams(dp(72),dp(72)));
+                preview.setImageDrawable(IconTheme.resolve(this,component,null,dp(72)));root.addView(preview,new LinearLayout.LayoutParams(dp(72),dp(72)));
             }catch(Exception ignored){}
             Ui.note(root,getString(R.string.icons_override_note));
             action(R.string.icons_choose_from_pack,()->packs(true));

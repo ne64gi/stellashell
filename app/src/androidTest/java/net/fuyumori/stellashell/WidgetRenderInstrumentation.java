@@ -26,6 +26,17 @@ public final class WidgetRenderInstrumentation extends Instrumentation {
     @Override public void onStart(){
         Bundle result=new Bundle();
         try{
+            if(shortcutArguments!=null&&"true".equals(shortcutArguments.getString("memory_stage2_checks"))){
+                NotificationPresenceChecks.run(this);WidgetImageMemoryChecks.run(this);
+                Throwable[] failure={null};
+                runOnMainSync(()->{try{NotificationGroupChecks.run(this);NotificationContentChecks.run(this);NotificationIndicatorChecks.run(this);NotificationSwipeChecks.run(this);}catch(Throwable e){failure[0]=e;}});
+                if(failure[0]!=null)throw failure[0];
+                result.putString("stream","Memory stage 2: event-owned badge metadata without repeated full payload queries; grouping/profile/privacy/hidden-tab contracts; bounded widget image decode and hidden/resize/stale lifecycle; existing notification rendering/swipe checks passed (synthetic fixtures, not process memory/battery measurement)\n");finish(-1,result);return;
+            }
+            if(shortcutArguments!=null&&"true".equals(shortcutArguments.getString("icon_memory_checks"))){
+                IconArtworkChecks.run(this);IconThemeChecks.run(this);MenuIconDemandChecks.run(this);
+                result.putString("stream","Icon memory: bounded final pixels, cache byte/count limit, adaptive alpha/pack artwork, independent drawable state, stale-cache invalidation and existing theme contracts passed (synthetic fixtures, not process memory measurement)\n");finish(-1,result);return;
+            }
             if(shortcutArguments!=null&&"true".equals(shortcutArguments.getString("widget_hub_ui_checks"))){
                 WidgetHubChecks.attached(this);
                 result.putString("stream","Attached Widget Hub: actual phone window, left/right rail, settings/close in rail and lower thumb tab position passed\n");finish(-1,result);return;
@@ -33,6 +44,10 @@ public final class WidgetRenderInstrumentation extends Instrumentation {
             if(shortcutArguments!=null&&"true".equals(shortcutArguments.getString("widget_hub_checks"))){
                 WidgetHubChecks.run(this);WidgetLayoutProfileChecks.run(this);
                 result.putString("stream","Widget Hub: isolated page persistence/rotation, compact inspector, typed details, thumb rail, tab memory and notification count/order checks passed\n");finish(-1,result);return;
+            }
+            if(shortcutArguments!=null&&"true".equals(shortcutArguments.getString("fuel_efficiency_checks"))){
+                new TaskSnapshotQueryChecks(this).run();WidgetPageUpdateChecks.run(this);
+                result.putString("stream","Fuel efficiency: shared in-flight Phone snapshot reads, event/lifecycle freshness and failure fanout; hidden widget latest-only RemoteViews deferral, reset/default and page replay passed (synthetic Android fixtures, not battery consumption measurement)\n");finish(-1,result);return;
             }
             if(shortcutArguments!=null&&"true".equals(shortcutArguments.getString("battery_efficiency_checks"))){
                 QuickSettingsEventChecks.run(this);WorkAreaEventChecks.run(this);

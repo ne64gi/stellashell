@@ -36,6 +36,7 @@ final class ShellTaskEvents {
 
     private final Context context;
     private final Bridge bridge;
+    private final TaskSnapshotQuery phoneSnapshots;
     private final DisplayManager displays;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final List<Subscription> subscriptions = new ArrayList<>();
@@ -58,8 +59,12 @@ final class ShellTaskEvents {
     private ShellTaskEvents(Context context) {
         this.context = context;
         bridge = Bridge.get(context);
+        phoneSnapshots = new TaskSnapshotQuery(reply ->
+                bridge.read(server -> server.phoneTaskSnapshot(), reply::done));
         displays = context.getSystemService(DisplayManager.class);
     }
+
+    void phoneSnapshot(Bridge.Reply reply) { phoneSnapshots.read(reply::done); }
 
     AutoCloseable observe(int display, Runnable changed) {
         Subscription subscription = new Subscription(display, changed);
@@ -119,12 +124,14 @@ final class ShellTaskEvents {
     }
 
     private void invalidate() {
+        phoneSnapshots.invalidate();
         if (subscriptions.isEmpty()) return;
         // Finite event-storm debounce. No callback schedules itself.
         if (!main.hasCallbacks(dispatch)) main.postDelayed(dispatch, 100);
     }
 
     private void detach() {
+        phoneSnapshots.invalidate();
         ITaskChangeListener previous = remote;
         remote = null;
         main.removeCallbacks(dispatch);

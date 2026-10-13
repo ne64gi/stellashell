@@ -293,7 +293,9 @@ final class IdleEventChecks {
         try {
             main(() -> {
                 check(bridge.ready() && bridge.authorized(), "Requires already active Power Mode");
-                check(bridge.serviceVersion() == 39, "Unexpected configured service version");
+                check(bridge.serviceVersion()
+                                == net.fuyumori.stellashell.platform.power.ShizukuConnection.SERVICE_VERSION,
+                        "Unexpected configured service version");
                 bridge.read(server -> { remote[0] = server; return "OK"; }, (result, error) -> {
                     connectionError[0] = error; connected.countDown();
                 });

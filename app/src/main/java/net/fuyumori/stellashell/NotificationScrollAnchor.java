@@ -14,6 +14,7 @@ final class NotificationScrollAnchor {
     private final LinearLayout rows;
     private ReadingAnchor pendingAnchor;
     private View pendingFocus;
+    private Integer pendingOffset;
     private ViewTreeObserver pendingObserver;
     private final ViewTreeObserver.OnGlobalLayoutListener restorePosition=this::restorePosition;
 
@@ -43,11 +44,18 @@ final class NotificationScrollAnchor {
     /** Also used at privacy/lifecycle boundaries to release pending View references immediately. */
     void cancel(){
         if(pendingObserver!=null&&pendingObserver.isAlive())pendingObserver.removeOnGlobalLayoutListener(restorePosition);
-        pendingObserver=null;pendingAnchor=null;pendingFocus=null;
+        pendingObserver=null;pendingAnchor=null;pendingFocus=null;pendingOffset=null;
+    }
+
+    int offset(){ScrollView scroll=scrollParent();return scroll==null?0:scroll.getScrollY();}
+    /** Restore a hidden tab without retaining any of its old rows, Drawables or notifications. */
+    void restoreOffset(int offset){
+        cancel();pendingOffset=offset;
+        pendingObserver=rows.getViewTreeObserver();pendingObserver.addOnGlobalLayoutListener(restorePosition);rows.requestLayout();
     }
 
     private void restorePosition(){
-        ReadingAnchor anchor=pendingAnchor;View focus=pendingFocus;cancel();
+        ReadingAnchor anchor=pendingAnchor;View focus=pendingFocus;Integer offset=pendingOffset;cancel();
         // A delayed snapshot must not override a newer keyboard selection, including
         // one outside this list (for example a Hub tab or settings button).
         View selected=rows.getRootView().findFocus();
@@ -57,6 +65,7 @@ final class NotificationScrollAnchor {
         // Do not programmatically assign accessibility focus. Keeping the same views
         // preserves existing focus; the accessibility service owns a newer selection.
         if(anchor!=null)anchor.restore();
+        if(offset!=null){ScrollView scroll=scrollParent();if(scroll!=null)scroll.scrollTo(scroll.getScrollX(),offset);}
     }
 
     private ScrollView scrollParent(){

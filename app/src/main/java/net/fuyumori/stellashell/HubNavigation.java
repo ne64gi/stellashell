@@ -47,7 +47,10 @@ final class HubNavigation extends LinearLayout {
         button.getCompoundDrawables()[1].setTint(selected?Ui.ACCENT:Ui.MUTED);
     }
     void setNotificationPresence(boolean locked,boolean available,java.util.List<?> snapshot) {
-        boolean present=!locked&&available&&snapshot!=null&&!snapshot.isEmpty();
+        setNotificationPresence(locked,available,snapshot!=null&&!snapshot.isEmpty());
+    }
+    void setNotificationPresence(boolean locked,boolean available,boolean any) {
+        boolean present=!locked&&available&&any;
         notificationDot.setVisibility(present?VISIBLE:GONE);
         notifications.setContentDescription(getContext().getString(present?
             R.string.hub_notifications_present:R.string.hub_notifications));

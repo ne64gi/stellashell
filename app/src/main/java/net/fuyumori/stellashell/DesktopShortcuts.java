@@ -80,7 +80,7 @@ final class DesktopShortcuts {
             bg.addState(new int[]{android.R.attr.state_hovered},Ui.rounded(activity,0x18ffffff,12));
             bg.addState(new int[]{android.R.attr.state_focused},Ui.rounded(activity,0x30ffffff,12));
             bg.addState(new int[]{},Ui.rounded(activity,Color.TRANSPARENT,12));cell.setBackground(bg);
-            ImageView icon=new ImageView(activity);icon.setImageDrawable(group==null?AppIcons.forApp(activity,component,info.loadIcon(activity.getPackageManager())):activity.getDrawable(R.drawable.ic_start_folder));cell.addView(icon,new LinearLayout.LayoutParams(dp(44),dp(44)));
+            ImageView icon=new ImageView(activity);icon.setImageDrawable(group==null?AppIcons.forApp(activity,component,null,dp(44)):activity.getDrawable(R.drawable.ic_start_folder));cell.addView(icon,new LinearLayout.LayoutParams(dp(44),dp(44)));
             TextView name=Ui.text(activity,label,13,0xffe7edf5);name.setGravity(Gravity.CENTER);name.setMaxLines(2);name.setEllipsize(android.text.TextUtils.TruncateAt.END);name.setShadowLayer(dp(2),0,dp(1),0xaa000000);cell.addView(name,new LinearLayout.LayoutParams(-1,-2));
             cell.setContentDescription(label);cell.setFocusable(true);cell.setTooltipText(label);
             cell.setOnClickListener(v->{if(moving==cell){cancelMove();return;}if(group==null)Launches.app(activity,component,display);else openGroup(group);});

@@ -21,7 +21,7 @@ final class DesktopWidgets {
     private final Activity activity;
     private final FrameLayout canvas;
     private final AppWidgetManager manager;
-    private final AppWidgetHost host;
+    private final PageWidgetHost host;
     private final android.content.SharedPreferences prefs;
     private final List<Entry> entries=new ArrayList<>();
     private static final String LAYOUTS="layout_profiles_v1";
@@ -40,7 +40,7 @@ final class DesktopWidgets {
     private final TextView[] values=new TextView[4];
     private int step=8;
     private int pending=-1;
-    private boolean destroyed;
+    private boolean destroyed,imagesActive;
     private AlertDialog contentDialog;
     private AlertDialog geometryDialog;
     private final java.util.concurrent.ExecutorService importer=java.util.concurrent.Executors.newSingleThreadExecutor();
@@ -49,6 +49,7 @@ final class DesktopWidgets {
         String kind="widget",text="",image="";
         int background=0xff1c2636,opacity=0,textColor=0xffe7edf5,textSize=20,align=0;
         WidgetViewport viewport;
+        WidgetImageView imageView;
         FrameLayout frame;
         AppWidgetHostView view;
         AppWidgetProviderInfo info;
@@ -59,7 +60,7 @@ final class DesktopWidgets {
         this(a,c,panel?(WorkspaceProfile.phone(a)?"phone_panel_widgets":"panel_widgets"):home?"home_widgets":"desktop_widgets",panel?(WorkspaceProfile.phone(a)?HOST+3:HOST+1):home?HOST+2:HOST);
     }
     DesktopWidgets(Activity a,FrameLayout c,String preferenceName,int hostId){
-        activity=a;canvas=c;manager=AppWidgetManager.getInstance(a);host=new AppWidgetHost(a,hostId);
+        activity=a;canvas=c;manager=AppWidgetManager.getInstance(a);host=new PageWidgetHost(a,hostId,id->pages==null||pages.page(id)==pages.current());
         prefs=a.getSharedPreferences(preferenceName,0);pending=prefs.getInt("pending",-1);
         try{
             JSONArray array=new JSONArray(prefs.getString("items","[]"));
@@ -105,7 +106,15 @@ final class DesktopWidgets {
     }
     private boolean onPage(Entry e){return pages==null||pages.page(e.id)==pages.current();}
     private List<Entry> visibleEntries(){List<Entry> out=new ArrayList<>();for(Entry e:entries)if(onPage(e))out.add(e);return out;}
-    private void applyPages(){for(Entry e:entries)if(e.frame!=null)e.frame.setVisibility(onPage(e)?View.VISIBLE:View.GONE);pagesChanged.run();}
+    private void applyPages(){
+        for(Entry e:entries)if(e.frame!=null){
+            boolean visible=onPage(e);
+            if(e.view instanceof PageWidgetHostView)((PageWidgetHostView)e.view).setPageVisible(visible);
+            if(e.imageView!=null)e.imageView.setPageVisible(visible);
+            e.frame.setVisibility(visible?View.VISIBLE:View.GONE);
+        }
+        pagesChanged.run();
+    }
     void selectPage(int page){
         if(pages==null||page<0||page>=pages.count()||page==pages.current())return;
         finishEditing();cancelGeometryInteraction();pages.select(page);savePages();applyPages();
@@ -122,8 +131,10 @@ final class DesktopWidgets {
             moveWidgetToPage(entry.id,index);dialog.dismiss();
         }).setNegativeButton(R.string.ui_cancel,null).create());
     }
-    void start(){try{host.startListening();}catch(RuntimeException e){Ui.message(activity,activity.getString(R.string.ui_widget_update)+e.getMessage());}}
-    void stop(){host.stopListening();}
+    private void imageActivity(boolean active){imagesActive=active;for(Entry e:entries)if(e.imageView!=null)e.imageView.setOwnerActive(active);}
+    private void closeImages(){for(Entry e:entries)if(e.imageView!=null){e.imageView.close();e.imageView=null;}}
+    void start(){imageActivity(true);try{host.startListening();}catch(RuntimeException e){Ui.message(activity,activity.getString(R.string.ui_widget_update)+e.getMessage());}}
+    void stop(){imageActivity(false);host.stopListening();}
     void configurationChanged(){
         // Pixel bounds may stay unchanged on a density-only display update.
         // Recreate content too: text sizes, provider resources and edit chrome
@@ -132,7 +143,7 @@ final class DesktopWidgets {
         switchProfile();
         rebuild();
     }
-    void destroy(){closeDetails();destroyed=true;canvas.removeOnLayoutChangeListener(layoutChanged);importer.shutdownNow();if(contentDialog!=null)contentDialog.dismiss();if(geometryDialog!=null)geometryDialog.dismiss();if(activity.isFinishing()&&pending>=0)cancel();}
+    void destroy(){closeDetails();destroyed=true;imagesActive=false;closeImages();host.releaseViews();canvas.removeOnLayoutChangeListener(layoutChanged);importer.shutdownNow();if(contentDialog!=null)contentDialog.dismiss();if(geometryDialog!=null)geometryDialog.dismiss();if(activity.isFinishing()&&pending>=0)cancel();}
     boolean isEditing(){return editing;}
     void onEditingChanged(Runnable listener){editingChanged=listener;}
     boolean finishEditing(){if(!editing)return false;setEditing(false);return true;}
@@ -308,6 +319,10 @@ final class DesktopWidgets {
         cancelGeometryInteraction();save();profile=next;applyProfile();if(pages!=null){loadPages();selected=null;applyPages();}return true;
     }
     private void rebuild(){
+        closeImages();
+        // Drop listeners for replaced or now-unavailable views, including their deferred
+        // update. The replacement createView obtains current state from the service.
+        host.releaseViews();
         canvas.removeAllViews();editor=null;for(Entry e:entries){
             e.info=e.kind.equals("widget")?manager.getAppWidgetInfo(e.id):null;
             e.frame=new WidgetEditFrame(activity,new WidgetEditFrame.Actions(){
@@ -344,7 +359,7 @@ final class DesktopWidgets {
                 TextView text=Ui.text(activity,e.text,e.textSize,e.textColor);text.setPadding(dp(12),dp(8),dp(12),dp(8));text.setGravity(Gravity.CENTER_VERTICAL|(e.align==0?Gravity.START:e.align==1?Gravity.CENTER_HORIZONTAL:Gravity.END));e.frame.addView(text,new FrameLayout.LayoutParams(-1,-1));
             }else if(e.kind.equals("image")){
                 java.io.File file=WidgetImages.file(activity,e.image);
-                if(file!=null&&file.isFile()){ImageView image=new ImageView(activity);image.setScaleType(ImageView.ScaleType.FIT_CENTER);image.setImageURI(android.net.Uri.fromFile(file));image.setContentDescription(activity.getString(R.string.widget_image));e.frame.addView(image,new FrameLayout.LayoutParams(-1,-1));}
+                if(file!=null&&file.isFile()){e.imageView=new WidgetImageView(activity,file);e.imageView.setOwnerActive(imagesActive);e.imageView.setPageVisible(onPage(e));e.imageView.setContentDescription(activity.getString(R.string.widget_image));e.frame.addView(e.imageView,new FrameLayout.LayoutParams(-1,-1));}
                 else e.frame.addView(Ui.text(activity,activity.getString(R.string.widget_image_failed),14,Ui.MUTED));
             }else if(e.info!=null){
                 e.view=host.createView(new WidgetLaunchContext(activity),e.id,e.info);e.viewport=new WidgetViewport(activity);e.viewport.addView(e.view);e.frame.addView(e.viewport,new FrameLayout.LayoutParams(-1,-1));

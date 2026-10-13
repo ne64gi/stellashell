@@ -7,8 +7,8 @@ android {
         minSdk 30
         targetSdk 34
         testInstrumentationRunner "net.fuyumori.stellashell.WidgetRenderInstrumentation"
-        versionCode 21
-        versionName '0.11.1'
+        versionCode 22
+        versionName '0.12.0'
     }
     buildFeatures { aidl true }
     compileOptions {

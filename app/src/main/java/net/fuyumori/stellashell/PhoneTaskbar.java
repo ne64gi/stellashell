@@ -69,7 +69,7 @@ final class PhoneTaskbar implements AutoCloseable {
         try{
             ComponentName name=ComponentName.unflattenFromString(component);if(name==null)return;
             android.content.pm.ApplicationInfo info=context.getPackageManager().getApplicationInfo(name.getPackageName(),0);CharSequence label=info.loadLabel(context.getPackageManager());
-            ImageButton icon=new ImageButton(context);icon.setImageDrawable(AppIcons.forApp(context,component,info.loadIcon(context.getPackageManager())));icon.setScaleType(ImageView.ScaleType.FIT_CENTER);icon.setBackground(Ui.toolbarBackground(context,10));icon.setPadding(dp(8),dp(6),dp(8),dp(6));icon.setContentDescription(label);icon.setTooltipText(label);
+            ImageButton icon=new ImageButton(context);icon.setImageDrawable(AppIcons.forApp(context,component,null,dp(32)));icon.setScaleType(ImageView.ScaleType.FIT_CENTER);icon.setBackground(Ui.toolbarBackground(context,10));icon.setPadding(dp(8),dp(6),dp(8),dp(6));icon.setContentDescription(label);icon.setTooltipText(label);
             icon.setSelected(task!=null&&task.focused);
             icon.setOnClickListener(v->{if(task==null)Launches.app(context,component,0);else running.focus(task,running::refresh,error->Launches.problem(context,error));});
             icon.setOnLongClickListener(v->{if(task==null)AppContextMenu.show(context,icon,component,0,()->{},null,null);else taskMenu(icon,task,component);return true;});icon.setOnContextClickListener(v->v.performLongClick());pinnedTasks.addView(icon,new LinearLayout.LayoutParams(dp(48),dp(44)));

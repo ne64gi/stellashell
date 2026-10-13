@@ -14,6 +14,7 @@ import java.util.concurrent.CopyOnWriteArraySet;
 /** Live OS notifications only: no notification database, network, or content logging. */
 public final class ShellNotifications extends NotificationListenerService {
     private static volatile ShellNotifications connected;
+    private NotificationPresence presence;
     private static final Set<Runnable> observers=new CopyOnWriteArraySet<>();
     private static final Handler main=new Handler(Looper.getMainLooper());
     private static final Runnable notifyObservers=()->{for(Runnable observer:observers)observer.run();};
@@ -27,6 +28,16 @@ public final class ShellNotifications extends NotificationListenerService {
         catch(SecurityException|IllegalStateException e){return false;}
     }
     static boolean locked(Context c){KeyguardManager keyguard=c.getSystemService(KeyguardManager.class);return keyguard!=null&&keyguard.isDeviceLocked();}
+    static Map<String,Integer> counts(Context context){
+        ShellNotifications service=connected;
+        if(service==null||service.presence==null||locked(context)||!ready(context))return Collections.emptyMap();
+        Map<String,Integer> result=service.presence.counts(android.os.Process.myUserHandle());
+        return service==connected&&!locked(context)&&ready(context)?result:Collections.emptyMap();
+    }
+    static boolean hasNotifications(Context context){
+        ShellNotifications service=connected;
+        return service!=null&&service.presence!=null&&!locked(context)&&ready(context)&&service.presence.any();
+    }
     static List<StatusBarNotification> current(Context context){
         ShellNotifications service=connected;
         if(service==null||locked(context)||!ready(context))return Collections.emptyList();
@@ -43,9 +54,12 @@ public final class ShellNotifications extends NotificationListenerService {
         try{for(StatusBarNotification item:current(context))if(item.getKey().equals(key)&&item.isClearable()){service.cancelNotification(key);return true;}}
         catch(SecurityException|IllegalStateException ignored){}return false;
     }
-    @Override public void onListenerConnected(){connected=this;changed();}
-    @Override public void onListenerDisconnected(){if(connected==this)connected=null;changed();}
-    @Override public void onNotificationPosted(StatusBarNotification item){changed();}
-    @Override public void onNotificationRemoved(StatusBarNotification item){changed();}
-    @Override public void onDestroy(){if(connected==this)connected=null;changed();super.onDestroy();}
+    @Override public void onListenerConnected(){presence=new NotificationPresence(getPackageName(),this::getActiveNotifications);presence.connect();connected=this;changed();}
+    @Override public void onListenerDisconnected(){if(connected==this)connected=null;if(presence!=null)presence.clear();changed();}
+    @Override public void onNotificationPosted(StatusBarNotification item){if(presence!=null)presence.posted(item);changed();}
+    @Override public void onNotificationRemoved(StatusBarNotification item){if(presence!=null)presence.removed(item);changed();}
+    @Override public void onNotificationPosted(StatusBarNotification item,RankingMap ranking){if(presence!=null){presence.posted(item);presence.ranking(ranking);}changed();}
+    @Override public void onNotificationRemoved(StatusBarNotification item,RankingMap ranking){if(presence!=null){presence.removed(item);presence.ranking(ranking);}changed();}
+    @Override public void onNotificationRankingUpdate(RankingMap ranking){if(presence!=null&&presence.ranking(ranking))changed();}
+    @Override public void onDestroy(){if(connected==this)connected=null;if(presence!=null)presence.clear();changed();super.onDestroy();}
 }

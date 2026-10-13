@@ -81,7 +81,7 @@ final class DesktopDock implements AutoCloseable {
             android.content.pm.ApplicationInfo info=context.getPackageManager().getApplicationInfo(name.getPackageName(),0);
             CharSequence label=info.loadLabel(context.getPackageManager());LinearLayout item=Ui.column(context);item.setGravity(Gravity.CENTER);item.setPadding(dp(4),dp(3),dp(4),0);
             item.setBackground(Ui.toolbarBackground(context,9));item.setSelected(task!=null&&task.focused);
-            MenuAppIcon icon=new MenuAppIcon(context,component,info.loadIcon(context.getPackageManager()));icon.notificationCount(notificationApps.count(component));item.addView(icon,new LinearLayout.LayoutParams(dp(29),dp(29)));
+            MenuAppIcon icon=new MenuAppIcon(context,component,null);icon.notificationCount(notificationApps.count(component));item.addView(icon,new LinearLayout.LayoutParams(dp(29),dp(29)));
             TextView mark=Ui.text(context,task==null?"":task.alwaysOnTop?"↑":task.visible?"━":"·",10,Ui.ACCENT);mark.setTextSize(10*factor());mark.setGravity(Gravity.CENTER);mark.setIncludeFontPadding(false);item.addView(mark,new LinearLayout.LayoutParams(-1,dp(11)));
             item.setContentDescription(notificationApps.label(label+(task==null?context.getString(R.string.ui_pinned):context.getString(R.string.ui_running)),component));item.setTooltipText(label);
             item.setOnClickListener(v->{hide();ShellPanels.dismiss(display);if(task==null)Launches.app(context,component,display);else if(tasks.compact(context,display))Launches.focus(context,task,display,tasks);else {

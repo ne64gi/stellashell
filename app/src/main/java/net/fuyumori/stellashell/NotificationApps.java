@@ -28,7 +28,7 @@ final class NotificationApps implements AutoCloseable {
     }
     private void refresh(boolean force){
         if(!started)return;
-        Map<String,Integer> next=screenOff||ShellNotifications.locked(context)?Collections.emptyMap():collect(ShellNotifications.current(context),android.os.Process.myUserHandle());
+        Map<String,Integer> next=screenOff||ShellNotifications.locked(context)?Collections.emptyMap():ShellNotifications.counts(context);
         if(screenOff||ShellNotifications.locked(context)||!ShellNotifications.ready(context))next=Collections.emptyMap();
         if(force||!counts.equals(next)){counts=next;changed.run();}
     }

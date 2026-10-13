@@ -36,6 +36,20 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     private FrameLayout root,folderLayer;
     private LinearLayout main,content;
     private ScrollView scroll;
+    private ScrollView folderScroll;
+    private final Set<MenuAppIcon> icons=Collections.newSetFromMap(new WeakHashMap<>());
+    private boolean iconDemandQueued;
+    private final ViewTreeObserver.OnGlobalLayoutListener iconLayout=this::queueIconDemand;
+    private final Runnable iconDemand=()->{
+        iconDemandQueued=false;
+        if(root==null||!root.isAttachedToWindow())return;
+        // One clipped-visibility pass per frame, not an observer or timer per tile.
+        for(Iterator<MenuAppIcon> iterator=icons.iterator();iterator.hasNext();){
+            MenuAppIcon icon=iterator.next();
+            if(!icon.isAttachedToWindow()){iterator.remove();continue;}
+            icon.setArtworkDemand(icon.artworkVisible());
+        }
+    };
     private EditText search;
     private Button webSearchAction;
     private String openGroup;
@@ -73,6 +87,13 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         activePopup=null;
         for(android.app.AlertDialog dialog:new HashSet<>(dialogs))dialog.dismiss();
         dialogs.clear();
+        if(root!=null){
+            root.removeCallbacks(iconDemand);
+            if(root.getViewTreeObserver().isAlive())root.getViewTreeObserver().removeOnGlobalLayoutListener(iconLayout);
+        }
+        if(scroll!=null)scroll.setOnScrollChangeListener(null);
+        if(folderScroll!=null)folderScroll.setOnScrollChangeListener(null);
+        iconDemandQueued=false;icons.clear();
         if(root!=null)try{windows.removeViewImmediate(root);}catch(RuntimeException ignored){}
         // The menu owner outlives its window. Do not keep the detached view tree
         // (and every catalog icon) reachable while Start is closed.
@@ -80,6 +101,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         main=null;
         content=null;
         scroll=null;
+        folderScroll=null;
         search=null;
         webSearchAction=null;
         folderLayer=null;
@@ -109,6 +131,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         menuWidth=Math.max(1,Math.min(dp(640),area.application.width()-dp(24)));
         menuHeight=Math.max(1,Math.min(dp(720),area.application.height()-dp(24)));
         root=new FrameLayout(context);root.setBackground(Appearance.surface(context,22));root.setClipToOutline(true);
+        root.getViewTreeObserver().addOnGlobalLayoutListener(iconLayout);
         main=Ui.column(context);main.setPadding(dp(20),dp(18),dp(20),dp(12));root.addView(main,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout heading=new LinearLayout(context);heading.setGravity(Gravity.CENTER_VERTICAL);
         search=new EditText(context);search.setTypeface(Appearance.face);search.setSingleLine();search.setTextSize(16);search.setTextColor(Ui.TEXT);search.setHintTextColor(Ui.MUTED);
@@ -133,6 +156,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         if(TaskState.of(context).compact(context,displayId))
             main.addView(Ui.text(context,context.getString(R.string.workspace_roles_hint),12,Ui.MUTED));
         scroll=new ScrollView(context);scroll.setFillViewport(false);scroll.setClipToPadding(false);scroll.setPadding(0,dp(8),0,0);
+        scroll.setOnScrollChangeListener((view,x,y,oldX,oldY)->queueIconDemand());
         content=Ui.column(context);scroll.addView(content);main.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout footer=new LinearLayout(context);footer.setGravity(Gravity.CENTER_VERTICAL);
         TextView hint=Ui.text(context,context.getString(R.string.ui_right_click_or_long_press_for_launch_settings),12,Ui.MUTED);hint.setPadding(0,dp(8),0,0);footer.addView(hint,new LinearLayout.LayoutParams(0,-2,1));
@@ -187,6 +211,13 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         });
     }
     private int dp(int value){return Ui.dp(context,value);}
+    private void queueIconDemand(){
+        if(root==null||iconDemandQueued)return;
+        iconDemandQueued=true;root.postOnAnimation(iconDemand);
+    }
+    private MenuAppIcon appIcon(Launches.App app){
+        MenuAppIcon icon=new MenuAppIcon(context,app.component,app.icon);icons.add(icon);return icon;
+    }
     private Button smallButton(String text,String description){Button b=Ui.button(context,text,()->{});b.setPadding(0,0,0,0);b.setMinWidth(0);b.setMinimumWidth(0);b.setContentDescription(description);b.setTooltipText(description);return b;}
     private void note(LinearLayout parent,int text){TextView view=Ui.text(context,context.getString(text),14,Ui.MUTED);view.setPadding(dp(6),dp(12),dp(6),dp(16));parent.addView(view);}
     private void heading(LinearLayout parent,String text){TextView view=Ui.text(context,text,16,Ui.TEXT);view.setTypeface(null,Typeface.BOLD);view.setPadding(dp(6),dp(18),0,dp(12));parent.addView(view);}
@@ -228,6 +259,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         FrameLayout renderedRoot=root;ScrollView renderedScroll=scroll;
         renderedScroll.post(()->{if(root==renderedRoot)renderedScroll.scrollTo(0,y);});
         if(openGroup!=null){if(!AppOrganization.groups(context).contains(openGroup))closeFolder();else buildFolder();}
+        queueIconDemand();
     }
     private void updateWebSearch(){
         StartSearchSession.State state=webSearchSession.state(search.getText().toString());
@@ -256,7 +288,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     }
     private void label(LinearLayout tile,String name){TextView label=Ui.text(context,name,12,Ui.TEXT);label.setGravity(Gravity.TOP|Gravity.CENTER_HORIZONTAL);label.setMaxLines(2);label.setEllipsize(TextUtils.TruncateAt.END);label.setPadding(0,dp(6),0,0);label.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);tile.addView(label,new LinearLayout.LayoutParams(-1,-2));}
     private View appTile(Launches.App app){
-        LinearLayout tile=tile(app.label);ImageView icon=new MenuAppIcon(context,app.component,app.icon);icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);tile.addView(icon,new LinearLayout.LayoutParams(dp(42),dp(42)));label(tile,app.label);
+        LinearLayout tile=tile(app.label);ImageView icon=appIcon(app);icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);tile.addView(icon,new LinearLayout.LayoutParams(dp(42),dp(42)));label(tile,app.label);
         Runnable options=()->AppContextMenu.show(context,tile,app.component,displayId,this::close,null,null);
         tile.setOnClickListener(v->{if(hiddenMode)options.run();else{close();Launches.app(context,app.component,displayId);}});
         tile.setOnLongClickListener(v->{options.run();return true;});tile.setOnContextClickListener(v->{options.run();return true;});return tile;
@@ -264,7 +296,7 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
     private View groupTile(String group){
         LinearLayout tile=tile(group);FrameLayout preview=new FrameLayout(context);preview.setBackgroundResource(R.drawable.ic_start_folder);
         List<Launches.App> apps=members(group);
-        for(int i=0;i<Math.min(4,apps.size());i++){ImageView icon=new MenuAppIcon(context,apps.get(i).component,apps.get(i).icon);FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(dp(13),dp(13));p.leftMargin=dp(7+(i%2)*15);p.topMargin=dp(12+(i/2)*14);preview.addView(icon,p);}
+        for(int i=0;i<Math.min(4,apps.size());i++){ImageView icon=appIcon(apps.get(i));FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(dp(13),dp(13));p.leftMargin=dp(7+(i%2)*15);p.topMargin=dp(12+(i/2)*14);preview.addView(icon,p);}
         preview.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);tile.addView(preview,new LinearLayout.LayoutParams(dp(44),dp(44)));label(tile,group);
         tile.setContentDescription(context.getString(R.string.start_group_accessibility,group,apps.size()));
         tile.setOnClickListener(v->{folderAnchor=tile;openGroup=group;buildFolder();});
@@ -275,12 +307,15 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         // Search changes also call this. With no folder open, leave the editor's
         // focus and composing span alone instead of focusing the menu root.
         if(folderLayer==null&&openGroup==null)return;
+        if(folderScroll!=null)folderScroll.setOnScrollChangeListener(null);folderScroll=null;
         if(root!=null&&folderLayer!=null)root.removeView(folderLayer);folderLayer=null;openGroup=null;
         if(main!=null)main.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
         if(folderAnchor!=null&&folderAnchor.isAttachedToWindow())folderAnchor.requestFocus();else if(root!=null)root.requestFocus();folderAnchor=null;
+        queueIconDemand();
     }
     private void buildFolder(){
         if(root==null||openGroup==null)return;
+        if(folderScroll!=null)folderScroll.setOnScrollChangeListener(null);
         if(folderLayer!=null)root.removeView(folderLayer);
         main.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         folderLayer=new FrameLayout(context);folderLayer.setBackgroundColor(0x8808121c);folderLayer.setOnClickListener(v->closeFolder());root.addView(folderLayer,new FrameLayout.LayoutParams(-1,-1));
@@ -293,9 +328,11 @@ final class AppMenu implements SharedPreferences.OnSharedPreferenceChangeListene
         Button tools=smallButton("⋯",context.getString(R.string.start_group_options));tools.setOnClickListener(v->groupTools(tools,group));header.addView(tools,new LinearLayout.LayoutParams(dp(44),dp(44)));
         Button close=smallButton("×",context.getString(R.string.ui_close));close.setOnClickListener(v->closeFolder());header.addView(close,new LinearLayout.LayoutParams(dp(44),dp(44)));panel.addView(header);
         ScrollView scroller=new ScrollView(context);LinearLayout children=Ui.column(context);List<View> tiles=new ArrayList<>();for(Launches.App app:members(group))tiles.add(appTile(app));
+        folderScroll=scroller;scroller.setOnScrollChangeListener((view,x,y,oldX,oldY)->queueIconDemand());
         if(tiles.isEmpty())note(children,R.string.start_group_empty);else children.addView(grid(tiles,Math.max(2,Math.min(4,(width-dp(36))/dp(96)))));
         scroller.addView(children);panel.addView(scroller,new LinearLayout.LayoutParams(-1,0,1));
         panel.setFocusableInTouchMode(true);panel.requestFocus();panel.setOnKeyListener((v,key,event)->{if((key==KeyEvent.KEYCODE_ESCAPE||key==KeyEvent.KEYCODE_BACK)&&event.getAction()==KeyEvent.ACTION_UP){closeFolder();return true;}return false;});
+        queueIconDemand();
     }
     @Override public void onSharedPreferenceChanged(SharedPreferences prefs,String key){
         if(root==null || prefs==Launches.prefs(context)&&!WorkspaceProfile.changed(key,"start_pinned")&&!IconTheme.changed(key))return;

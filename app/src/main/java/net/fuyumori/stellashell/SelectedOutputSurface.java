@@ -267,7 +267,7 @@ final class SelectedOutputSurface implements SharedPreferences.OnSharedPreferenc
             CharSequence label=info.loadLabel(getPackageManager());
             LinearLayout item=Ui.column(c);item.setGravity(Gravity.CENTER);item.setPadding(taskbarDp(c,7),taskbarDp(c,3),taskbarDp(c,7),0);
             item.setBackground(Ui.toolbarBackground(c,9));item.setSelected(task!=null&&task.focused);
-            ImageView icon=new ImageView(c);icon.setImageDrawable(AppIcons.forApp(c,component,info.loadIcon(getPackageManager())));item.addView(icon,new LinearLayout.LayoutParams(taskbarDp(c,29),taskbarDp(c,29)));
+            ImageView icon=new ImageView(c);icon.setImageDrawable(AppIcons.forApp(c,component,null,taskbarDp(c,29)));item.addView(icon,new LinearLayout.LayoutParams(taskbarDp(c,29),taskbarDp(c,29)));
             String role=task!=null&&TaskState.of(context).compact(context,displayId)?TaskState.of(context).label(c,task):"";
             if(task!=null&&task.alwaysOnTop)role+=(role.isEmpty()?"":" · ")+c.getString(R.string.window_pin);
             TextView mark=Ui.text(c,task!=null&&task.alwaysOnTop?"↑":!role.isEmpty()?c.getString(task.id==TaskState.of(context).primary()?R.string.workspace_primary_badge:R.string.workspace_secondary_badge):task==null?"":task.visible?"━":"·",10,Ui.ACCENT);mark.setGravity(Gravity.CENTER);mark.setSingleLine(true);mark.setIncludeFontPadding(false);item.addView(mark,new LinearLayout.LayoutParams(-1,taskbarDp(c,11)));

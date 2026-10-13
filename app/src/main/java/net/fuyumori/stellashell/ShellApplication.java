@@ -17,4 +17,6 @@ public final class ShellApplication extends Application implements Application.A
     public void onActivityStopped(Activity a){}
     public void onActivitySaveInstanceState(Activity a,Bundle b){}
     public void onActivityDestroyed(Activity a){activities.remove(a);}
+    @Override public void onTrimMemory(int level){super.onTrimMemory(level);if(level>=TRIM_MEMORY_RUNNING_LOW)IconTheme.invalidate();}
+    @Override public void onLowMemory(){super.onLowMemory();IconTheme.invalidate();}
 }
