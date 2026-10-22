@@ -18,7 +18,7 @@ final class PhoneTaskbar implements AutoCloseable {
     private final PhoneRunningTasks running;private final PhoneTaskMenu taskMenu;
     private final WorkAreaObserver observer;
     private HorizontalScrollView panel;private LinearLayout row,pinnedTasks,activeTasks;private View backButton;
-    private TextView battery;private int batteryPercent=-1;private boolean charging,closed,registered,backPending;
+    private TextView battery;private int batteryPercent=-1;private boolean charging,closed,registered,backPending,keyboardVisible;
     private long startDownTime;
     private final BroadcastReceiver batteryReceiver=new BroadcastReceiver(){public void onReceive(Context c,Intent intent){
         int level=intent.getIntExtra(BatteryManager.EXTRA_LEVEL,-1),scale=intent.getIntExtra(BatteryManager.EXTRA_SCALE,-1);
@@ -33,7 +33,7 @@ final class PhoneTaskbar implements AutoCloseable {
         settings=ShellSettings.of(context);windows=context.getSystemService(WindowManager.class);area=areaSupplier==null?()->WorkArea.get(context,0):areaSupplier;
         menu=new AppMenu(context,windows,0);taskMenu=new PhoneTaskMenu(context);
         running=backend==null?new PhoneRunningTasks(context,this::renderRunning):new PhoneRunningTasks(backend,this::renderRunning);
-        observer=areaSupplier==null?new WorkAreaObserver(context,0,()->{relayout();areaChanged.run();}):null;
+        observer=areaSupplier==null?new WorkAreaObserver(context,0,()->{relayout();areaChanged.run();},this::keyboardVisible):null;
         try{
             IntentFilter filter=new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
             Intent initial=Build.VERSION.SDK_INT>=33?receiverContext.registerReceiver(batteryReceiver,filter,Context.RECEIVER_NOT_EXPORTED):receiverContext.registerReceiver(batteryReceiver,filter);
@@ -44,6 +44,13 @@ final class PhoneTaskbar implements AutoCloseable {
     void toggleStart(){if(!closed)menu.toggle(loader,startDownTime);startDownTime=0;}
     void rebuild(){if(closed)return;removeViews();build();}
     void refreshArea(){if(!closed){if(observer!=null)observer.refresh();relayout();}}
+    void keyboardVisible(boolean visible){
+        if(closed||keyboardVisible==visible)return;
+        keyboardVisible=visible;
+        if(visible)taskMenu.close();
+        // Keep the Start/search window alive, and retain the observer for IME dismissal.
+        relayout();
+    }
     private void build(){
         row=new LinearLayout(context);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(6),dp(4),dp(6),dp(4));
         ImageButton start=new ImageButton(context);start.setImageDrawable(AppIcons.stella(context));start.setScaleType(ImageView.ScaleType.FIT_CENTER);
@@ -58,7 +65,7 @@ final class PhoneTaskbar implements AutoCloseable {
         TextClock clock=new TextClock(context);clock.setBackground(Ui.toolbarBackground(context,12));clock.setTypeface(Appearance.face);clock.setFormat24Hour("HH:mm");clock.setFormat12Hour("HH:mm");clock.setTextColor(Ui.TEXT);clock.setTextSize(16*factor());clock.setGravity(Gravity.CENTER);clock.setContentDescription(context.getString(R.string.hub_title));clock.setTooltipText(context.getString(R.string.hub_title));clock.setOnClickListener(v->{menu.close();HubActivity.open(context,0);});item(clock,58);
         panel=new HorizontalScrollView(context);panel.setFillViewport(true);panel.setBackground(Appearance.surface(context,18));panel.setClipToOutline(true);panel.addView(row,new FrameLayout.LayoutParams(-2,-1));
         WindowManager.LayoutParams p=new WindowManager.LayoutParams(1,1,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,PixelFormat.TRANSLUCENT);
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,PixelFormat.TRANSLUCENT);
         p.gravity=Gravity.TOP|Gravity.LEFT;p.setFitInsetsTypes(0);p.setTitle("StellaShell main taskbar");windows.addView(panel,p);relayout();
     }
     private void item(View view,int width){row.addView(view,new LinearLayout.LayoutParams(dp(width),dp(44)));}
@@ -112,7 +119,14 @@ final class PhoneTaskbar implements AutoCloseable {
     }
     void relayout(){
         if(closed||panel==null)return;WorkArea area=this.area.get();WindowManager.LayoutParams p=(WindowManager.LayoutParams)panel.getLayoutParams();
-        p.width=area.usable.width();p.height=Math.min(dp(52),area.usable.height());p.x=area.usable.left;p.y=Math.max(area.usable.top,area.usable.bottom-dp(56));windows.updateViewLayout(panel,p);menu.relayout();
+        int oldWidth=p.width,oldHeight=p.height,oldX=p.x,oldY=p.y,oldFlags=p.flags;float oldAlpha=p.alpha;
+        p.width=area.usable.width();p.height=Math.min(dp(52),area.usable.height());p.x=area.usable.left;p.y=Math.max(area.usable.top,area.usable.bottom-dp(56));
+        p.alpha=keyboardVisible?0:1;
+        if(keyboardVisible)p.flags|=WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;else p.flags&=~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+        row.setVisibility(keyboardVisible?View.INVISIBLE:View.VISIBLE);
+        panel.setImportantForAccessibility(keyboardVisible?View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS:View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+        if(oldWidth!=p.width||oldHeight!=p.height||oldX!=p.x||oldY!=p.y||oldFlags!=p.flags||oldAlpha!=p.alpha)windows.updateViewLayout(panel,p);
+        menu.relayout();
     }
     private int scale(){return settings.snapshot().phoneTaskbar.scalePercent;}
     private float factor(){return NavigationScale.factor(scale());}

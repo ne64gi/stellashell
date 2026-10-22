@@ -26,6 +26,10 @@ public final class WidgetRenderInstrumentation extends Instrumentation {
     @Override public void onStart(){
         Bundle result=new Bundle();
         try{
+            if(shortcutArguments!=null&&"true".equals(shortcutArguments.getString("phone_ime_checks"))){
+                PhoneImeChecks.run(this);
+                result.putString("stream","Phone IME: real keyboard show/hide, non-touchable hidden Dock/Taskbar, restored handles, Start search retention, rebuild/late-callback cleanup and external observer isolation passed\n");finish(-1,result);return;
+            }
             if(shortcutArguments!=null&&"true".equals(shortcutArguments.getString("memory_stage2_checks"))){
                 NotificationPresenceChecks.run(this);WidgetImageMemoryChecks.run(this);
                 Throwable[] failure={null};

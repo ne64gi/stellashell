@@ -47,7 +47,7 @@ final class PhoneSidebar implements AutoCloseable {
     private boolean pullingWidgets;
     private HubPullAxis widgetAxis;
     private HubActivity.SidebarDrag drag;
-    private boolean shown,right=true,closed,home,taskbarReady;
+    private boolean shown,right=true,closed,home,taskbarReady,keyboardVisible;
     PhoneSidebar(Context service,Runnable areaChanged){this(service,areaChanged,null,null);}
     PhoneSidebar(Context service,Runnable areaChanged,PhoneRunningTasks.Backend backend,java.util.function.Supplier<WorkArea> geometry){
         context=new android.view.ContextThemeWrapper(service.createDisplayContext(service.getSystemService(android.hardware.display.DisplayManager.class).getDisplay(0))
@@ -60,7 +60,7 @@ final class PhoneSidebar implements AutoCloseable {
         running=backend==null?new PhoneRunningTasks(context,this::renderRunning):new PhoneRunningTasks(backend,this::renderRunning);
         area=geometry==null?()->WorkArea.get(context,0):geometry;
         monitorGestures=geometry==null;
-        observer=geometry==null?new WorkAreaObserver(context,0,()->{relayout();areaChanged.run();}):null;
+        observer=geometry==null?new WorkAreaObserver(context,0,()->{relayout();areaChanged.run();},this::keyboardVisible):null;
         try{
             build();
             relayout();
@@ -69,7 +69,17 @@ final class PhoneSidebar implements AutoCloseable {
     boolean ready(){return !closed&&panel!=null&&handles.size()==2;}
     void homeVisible(boolean visible){home=visible;relayout();}
     void taskbarReady(boolean ready){if(closed||taskbarReady==ready)return;taskbarReady=ready;rebuild();}
-    private boolean allowed(){return settings.snapshot().phoneDock.overApps||home;}
+    private boolean allowed(){return !keyboardVisible&&(settings.snapshot().phoneDock.overApps||home);}
+    void keyboardVisible(boolean visible){
+        if(closed||keyboardVisible==visible)return;
+        keyboardVisible=visible;
+        if(visible){
+            // Never close AppMenu here: its own search field can be the IME target.
+            shown=false;revealProgress=null;pullX=null;pullY=null;gestureAnchor=null;
+            resetHandles();cancelWidgetPull();taskMenu.close();
+        }
+        relayout();
+    }
     void toggleStart(){hide();menu.toggle(loader,0);}
     void show(boolean fromRight){
         if(!allowed())return;ShellSettings.Snapshot snapshot=settings.snapshot();
@@ -254,7 +264,7 @@ final class PhoneSidebar implements AutoCloseable {
     }
     private WindowManager.LayoutParams params(int width,int height,String title){
         WindowManager.LayoutParams p=new WindowManager.LayoutParams(width,height,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN|WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,PixelFormat.TRANSLUCENT);
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN|WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,PixelFormat.TRANSLUCENT);
         p.gravity=Gravity.TOP|Gravity.LEFT;p.setFitInsetsTypes(0);p.setTitle(title);return p;
     }
     void relayout(){
@@ -296,7 +306,7 @@ final class PhoneSidebar implements AutoCloseable {
         boolean visible=shown||revealProgress!=null&&revealProgress>0;
         int oldWidth=p.width,oldHeight=p.height,oldX=p.x,oldY=p.y,oldFlags=p.flags;
         p.width=visible?width:1;p.height=visible?height:1;p.x=pullX==null?panelBounds[0]:Math.round(pullX);p.y=pullY==null?panelBounds[1]:Math.round(pullY);
-        if(revealProgress!=null)p.flags|=WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;else p.flags&=~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+        if(!visible||revealProgress!=null)p.flags|=WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;else p.flags&=~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
         panel.setVisibility(visible?View.VISIBLE:View.GONE);
         float offset=revealProgress==null?0:1-revealProgress;
         strip.setTranslationX("left".equals(edge)?-width*offset:"right".equals(edge)?width*offset:0);
